@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="JustClick POS — Point of Sale untuk restoran dan FnB.">
+  <!-- Default brand primary (BrandPreset.presets[0]); keep in sync with manifest.json. -->
+  <meta name="theme-color" content="#1E40AF">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="JustClick POS">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>JustClick POS</title>
+  <link rel="manifest" href="manifest.json">
+
+  <!--
+    Receipt printing on web goes through package:printing, which renders the
+    PDF preview with pdf.js. Left alone it fetches pdf.js from unpkg.com at the
+    moment the cashier taps "Print receipt" — so printing would break on a
+    machine with no internet, and a demo behind a tunnel would depend on a
+    third-party CDN answering in time. `dartPdfJsBaseUrl` is the package's own
+    override hook; the library is vendored under web/pdfjs/ (version must stay
+    3.2.146, the version printing 5.14.3 expects) so the app stays one
+    self-contained static bundle.
+  -->
+  <script>window.dartPdfJsBaseUrl = "pdfjs/";</script>
+
+  <!--
+    Boot splash. The compiled bundle is a few megabytes, so over a tunnel the
+    page sat on blank white until Flutter painted its first frame — which reads
+    as "the link is broken" to whoever was sent it. This paints instantly from
+    HTML, using the default brand's gradient so it hands over to the app's own
+    substrate without a flash. Removed on `flutter-first-frame`.
+
+    THE ONE PLACE BRAND COLOURS ARE DUPLICATED, and unavoidably so: this markup
+    runs before any Dart has loaded, so it cannot read `BrandColors`. The
+    values below mirror the `nti` preset in lib/core/theme/app_colors.dart:
+
+      #1E40AF  accent.primary          (mark, progress bar, theme-color)
+      #1E3A8A  darker primary          (wordmark)
+      #F1F5FB  accent.gradient[0]      (page background, gradient start)
+      #DCE6F7  accent.gradient[1]      (gradient end)
+
+    Plus #FFFFFF for the mark's plate, which is not a brand token: the
+    JustClick logo is a blue-and-grey shape on transparency and needs a light
+    ground under it. It mirrors `BrandMark.plated`, which resolves the same
+    plate from `colorScheme.onPrimary`.
+
+    Change the default brand and these have to move with it, or the first
+    second of the app is the old colour. Nothing else outside
+    lib/core/theme/ may hardcode a colour.
+  -->
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: #F1F5FB; }
+    #boot {
+      position: fixed; inset: 0; z-index: 9999;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 20px;
+      background: linear-gradient(160deg, #F1F5FB 0%, #DCE6F7 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      transition: opacity .25s ease;
+    }
+    #boot.done { opacity: 0; pointer-events: none; }
+    #boot .mark {
+      width: 88px; height: 88px; border-radius: 24px; background: #FFFFFF;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 10px 30px rgba(30, 64, 175, .28);
+    }
+    #boot .mark img { width: 60px; height: 60px; display: block; }
+    #boot .name {
+      font-size: 20px; font-weight: 700; letter-spacing: .14em; color: #1E3A8A;
+    }
+    #boot .bar {
+      width: 132px; height: 3px; border-radius: 3px; overflow: hidden;
+      background: rgba(30, 64, 175, .18);
+    }
+    #boot .bar i {
+      display: block; width: 40%; height: 100%; border-radius: 3px; background: #1E40AF;
+      animation: slide 1.1s ease-in-out infinite;
+    }
+    @keyframes slide {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(330%); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #boot .bar i { animation: none; width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div id="boot">
+    <div class="mark">
+      <!--
+        The JustClick mark, the same assets/images/justclick_logo.png the app
+        bundles. Inlined as a data URI rather than linked: the whole point of
+        this splash is to paint in the first request, and a second round trip
+        over a tunnel is what it exists to avoid. Rendered at 192px rather
+        than reusing the 1024px asset, which would put ~23KB of base64 in
+        front of the first paint to draw a 60px mark.
+      -->
+      <img src="data:image/png;base64,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" alt="">
+    </div>
+    <div class="name">JustClick POS</div>
+    <div class="bar"><i></i></div>
+  </div>
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      var boot = document.getElementById('boot');
+      if (!boot) return;
+      boot.classList.add('done');
+      setTimeout(function () { boot.remove(); }, 300);
+    });
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

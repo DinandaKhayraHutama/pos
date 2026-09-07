@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>NTI POS — Ringkasan Fitur</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm 16mm 14mm; }
+
+  :root {
+    --brand: #1E40AF;
+    --brand-dark: #1E3A8A;
+    --brand-soft: #EEF2FB;
+    --ink: #111827;
+    --ink-2: #374151;
+    --ink-3: #6B7280;
+    --line: #E5E7EB;
+    --ok: #15803D;
+    --no: #B91C1C;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+    font-size: 9.6pt;
+    line-height: 1.45;
+    color: var(--ink);
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* ---------- Cover ---------- */
+  .cover {
+    height: 247mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    page-break-after: always;
+  }
+  .mark {
+    width: 54px; height: 54px; border-radius: 14px;
+    background: var(--brand);
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 22px;
+  }
+  .mark svg { width: 28px; height: 28px; fill: #fff; }
+  .cover h1 {
+    font-size: 30pt; line-height: 1.15; margin: 0 0 8px;
+    letter-spacing: -0.6px; color: var(--brand-dark);
+  }
+  .cover .sub { font-size: 12pt; color: var(--ink-2); margin: 0 0 30px; max-width: 118mm; }
+  .cover .meta { font-size: 9pt; color: var(--ink-3); border-top: 1px solid var(--line); padding-top: 12px; }
+  .cover .meta b { color: var(--ink-2); font-weight: 600; }
+
+  .scorecards { display: flex; gap: 10px; margin: 0 0 30px; }
+  .score {
+    flex: 1; border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .score .n { font-size: 22pt; font-weight: 700; line-height: 1; color: var(--brand); }
+  .score .n.muted { color: var(--ink-3); }
+  .score .l { font-size: 8pt; color: var(--ink-3); margin-top: 5px; }
+
+  /* ---------- Content ---------- */
+  h2 {
+    font-size: 13pt; margin: 0 0 4px; color: var(--brand-dark);
+    letter-spacing: -0.2px;
+  }
+  h2 .num {
+    display: inline-block; min-width: 20px;
+    color: var(--brand); font-weight: 700;
+  }
+  .lead { color: var(--ink-2); margin: 0 0 12px; max-width: 165mm; }
+
+  /* Sections are taller than a page, so only the groups are kept whole —
+     a section marked `avoid` that cannot fit just breaks somewhere worse. */
+  section { margin-bottom: 20px; }
+  .group { page-break-inside: avoid; margin-bottom: 14px; }
+  h2 { page-break-after: avoid; }
+  h3 { page-break-after: avoid; }
+  table { page-break-inside: auto; }
+  tr { page-break-inside: avoid; }
+
+  h3 {
+    font-size: 9.4pt; text-transform: uppercase; letter-spacing: 0.7px;
+    color: var(--ink-3); margin: 0 0 6px; font-weight: 700;
+  }
+
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left; font-size: 7.8pt; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--ink-3); font-weight: 600;
+    padding: 0 8px 5px; border-bottom: 1px solid var(--line);
+  }
+  td { padding: 5px 8px; border-bottom: 1px solid #F3F4F6; vertical-align: top; }
+  tr:last-child td { border-bottom: 1px solid var(--line); }
+
+  .c-st { width: 16mm; }
+  .c-ac { width: 26mm; color: var(--ink-3); font-size: 8.6pt; white-space: nowrap; }
+  .c-ft b { font-weight: 600; }
+  .c-ft .d { color: var(--ink-3); font-size: 8.6pt; display: block; }
+
+  .ok  { color: var(--ok); font-weight: 700; white-space: nowrap; }
+  .no  { color: var(--no); font-weight: 700; white-space: nowrap; }
+  .ok::before { content: "\2713\00a0 Ada"; }
+  .no::before { content: "\2014\00a0 Belum"; }
+
+  .note {
+    border-left: 3px solid var(--brand);
+    background: var(--brand-soft);
+    padding: 10px 13px; border-radius: 0 8px 8px 0;
+    margin: 14px 0; page-break-inside: avoid;
+  }
+  .note b { color: var(--brand-dark); }
+  .note.warn { border-left-color: #B45309; background: #FEF6E7; }
+  .note.warn b { color: #92400E; }
+
+  ul.tight { margin: 6px 0 0; padding-left: 18px; }
+  ul.tight li { margin-bottom: 3px; }
+
+  /* The credentials table is short and is the thing a reader goes hunting for;
+     splitting it over a page turn is the one break worth forbidding. */
+  .acct { width: 100%; border-collapse: collapse; margin-top: 4px;
+          page-break-inside: avoid; }
+  .acct th { background: transparent; }
+  .acct td { font-size: 9pt; }
+  .pin { font-family: "SF Mono", Menlo, monospace; font-weight: 700; color: var(--brand-dark); }
+
+  .pagebreak { page-break-before: always; }
+
+  footer {
+    margin-top: 26px; padding-top: 10px; border-top: 1px solid var(--line);
+    font-size: 8pt; color: var(--ink-3);
+  }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="mark">
+    <svg viewBox="0 0 24 24"><path d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z"/></svg>
+  </div>
+  <h1>NTI POS<br>Ringkasan Fitur</h1>
+  <p class="sub">Status pengembangan aplikasi Point of Sale untuk restoran &mdash; disusun terhadap daftar permintaan yang diberikan.</p>
+
+  <div class="scorecards">
+    <div class="score"><div class="n">7 / 7</div><div class="l">Permintaan terpenuhi</div></div>
+    <div class="score"><div class="n">54</div><div class="l">Fitur tersedia</div></div>
+    <div class="score"><div class="n muted">19</div><div class="l">Belum dikerjakan</div></div>
+  </div>
+
+  <div class="meta">
+    <b>Disusun oleh</b> &nbsp; Dani Rycki Dinata<br>
+    <b>Tanggal</b> &nbsp; 30 Juli 2026<br>
+    <b>Platform</b> &nbsp; iOS &middot; Android &middot; macOS &middot; Web
+  </div>
+</div>
+
+<section>
+  <h2>1 &nbsp; Daftar permintaan</h2>
+  <p class="lead">Tujuh butir yang diminta, seluruhnya sudah berjalan. Rincian di bawah menjelaskan apa yang sebenarnya dilakukan tiap fitur, bukan sekadar keberadaannya.</p>
+
+  <table>
+    <thead><tr><th class="c-st">Status</th><th>Permintaan &amp; isinya</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="ok"></span></td>
+        <td class="c-ft"><b>Print struk</b><span class="d">Struk 80&nbsp;mm siap printer thermal. Memuat identitas toko, nomor &amp; waktu order, tipe order, meja, kasir, rincian item beserta varian, subtotal, diskon dengan nama promo, pajak, total, metode bayar, dan kembalian. Bisa dicetak saat pembayaran maupun dicetak ulang dari riwayat.</span></td>
+      </tr>
+      <tr>
+        <td><span class="ok"></span></td>
+        <td class="c-ft"><b>Atur stok</b><span class="d">Stok masuk dan keluar dengan alasan wajib serta catatan. Setiap perubahan menulis baris bukti pada buku besar stok di transaksi yang sama dengan saldonya, sehingga angka stok tidak pernah berubah tanpa jejak. Penjualan memotong stok otomatis; pembatalan mengembalikannya.</span></td>
+      </tr>
+      <tr>
+        <td><span class="ok"></span></td>
+        <td class="c-ft"><b>Closing / tutup shift</b><span class="d">Buka shift dengan modal awal, tutup dengan hitung fisik. Sistem membandingkan kas seharusnya dengan kas terhitung lalu menyatakan selisih lebih, kurang, atau pas. Penjualan non-tunai ditampilkan terpisah agar tidak dikira ada di laci.</span></td>
+      </tr>
+      <tr>
+        <td><span class="ok"></span></td>
+        <td class="c-ft"><b>Laporan penjualan</b><span class="d">Rentang hari ini, 7 hari, 30 hari, bulan ini, atau tanggal pilihan sendiri. Memuat omzet, jumlah order, rata-rata struk, laba kotor dan margin, rincian per metode bayar, per tipe order, per kasir, tren harian, serta ekspor CSV. Order yang dibatalkan atau direfund otomatis dikeluarkan dari pendapatan.</span></td>
+      </tr>
+      <tr>
+        <td><span class="ok"></span></td>
+        <td class="c-ft"><b>Login</b><span class="d">Dua langkah: pilih akun, lalu masukkan PIN. PIN diperiksa terhadap akun yang dipilih, bukan dicocokkan global. Hak akses dijaga di lapisan routing, sehingga alamat yang diketik langsung pun tetap ditolak.</span></td>
+      </tr>
+      <tr>
+        <td><span class="ok"></span></td>
+        <td class="c-ft"><b>PIN karyawan</b><span class="d">Data karyawan sungguhan dengan tiga peran. Pemilik dapat menambah, mengubah, dan menonaktifkan staf serta mengatur PIN empat digit; PIN kembar ditolak. Termasuk pergantian kasir tanpa keluar aplikasi dan tanpa kehilangan keranjang, serta otorisasi atasan per aksi.</span></td>
+      </tr>
+      <tr>
+        <td><span class="ok"></span></td>
+        <td class="c-ft"><b>Konfigurasi produk</b><span class="d">Nama, kategori, harga jual, harga pokok, SKU, stok, deskripsi, foto, penanda tersedia dan populer, varian dengan selisih harga, serta tarif pajak per produk yang dapat menimpa tarif toko.</span></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<div class="note">
+  <b>Tiga hal yang membedakan dari POS sederhana.</b>
+  <ul class="tight">
+    <li><b>Otorisasi atasan per aksi.</b> Kasir tetap masuk, keranjang aman, dan nama penyetuju tercatat pada order — bukan berganti pengguna lalu salah atribusi sisa shift.</li>
+    <li><b>Buku besar stok.</b> Saldo selalu punya bukti; riwayat dapat direkonsiliasi, bukan angka yang bisa berubah diam-diam.</li>
+    <li><b>Serah terima kasir tanpa kehilangan keranjang.</b> Pergantian shift di tengah order adalah kejadian biasa, dan pesanan tamu tidak dibuang demi kerapian pencatatan.</li>
+  </ul>
+</div>
+
+<div class="pagebreak"></div>
+
+<section>
+  <h2>2 &nbsp; Fitur di luar permintaan</h2>
+  <p class="lead">Sudah tersedia dan dapat langsung diperagakan.</p>
+
+  <div class="group">
+    <h3>Kasir &amp; penjualan</h3>
+    <table>
+      <thead><tr><th class="c-st">Status</th><th>Fitur</th><th class="c-ac">Akses</th></tr></thead>
+      <tbody>
+        <tr><td><span class="ok"></span></td><td>Pencarian menu</td><td class="c-ac">Semua</td></tr>
+        <tr><td><span class="ok"></span></td><td>Filter kategori dan tab produk populer</td><td class="c-ac">Semua</td></tr>
+        <tr><td><span class="ok"></span></td><td>Varian produk dengan selisih harga</td><td class="c-ac">Semua</td></tr>
+        <tr><td><span class="ok"></span></td><td>Tipe order: makan di tempat, bawa pulang, antar</td><td class="c-ac">Semua</td></tr>
+        <tr><td><span class="ok"></span></td><td>Pemilih meja untuk makan di tempat</td><td class="c-ac">Semua</td></tr>
+        <tr><td><span class="ok"></span></td><td>Keranjang bertahan saat pergantian kasir</td><td class="c-ac">Semua</td></tr>
+        <tr><td><span class="ok"></span></td><td>Tata letak terbelah pada tablet dan desktop</td><td class="c-ac">Semua</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="group">
+    <h3>Pembayaran</h3>
+    <table>
+      <thead><tr><th class="c-st">Status</th><th>Fitur</th><th class="c-ac">Akses</th></tr></thead>
+      <tbody>
+        <tr><td><span class="ok"></span></td><td>Tunai, lengkap dengan kembalian dan tombol uang pas</td><td class="c-ac">Semua</td></tr>
+        <tr><td><span class="ok"></span></td><td>QRIS</td><td class="c-ac">Semua</td></tr>
+        <tr><td><span class="ok"></span></td><td>Kartu</td><td class="c-ac">Semua</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="group">
+    <h3>Meja</h3>
+    <table>
+      <thead><tr><th class="c-st">Status</th><th>Fitur</th><th class="c-ac">Akses</th></tr></thead>
+      <tbody>
+        <tr><td><span class="ok"></span></td><td>Denah 31 meja tersebar di empat area</td><td class="c-ac">Semua</td></tr>
+        <tr><td><span class="ok"></span></td><td>Status mengikuti order yang sedang berjalan</td><td class="c-ac">Semua</td></tr>
+        <tr><td><span class="ok"></span></td><td>Ringkasan total, kosong, dan terisi</td><td class="c-ac">Semua</td></tr>
+        <tr><td><span class="ok"></span></td><td>Ubah status meja secara manual</td><td class="c-ac">Semua</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="group">
+    <h3>Order</h3>
+    <table>
+      <thead><tr><th class="c-st">Status</th><th>Fitur</th><th class="c-ac">Akses</th></tr></thead>
+      <tbody>
+        <tr><td><span class="ok"></span></td><td>Alur dapur bertahap sampai lunas</td><td class="c-ac">Semua</td></tr>
+        <tr><td><span class="ok"></span></td><td>Penyaringan berdasarkan delapan status</td><td class="c-ac">Semua</td></tr>
+        <tr><td><span class="ok"></span></td><td>Halaman detail order</td><td class="c-ac">Semua</td></tr>
+        <tr><td><span class="ok"></span></td><td>Cetak ulang struk</td><td class="c-ac">Semua</td></tr>
+        <tr><td><span class="ok"></span></td><td>Pembatalan order dengan alasan wajib dan penyetuju</td><td class="c-ac">Manajer &amp; pemilik</td></tr>
+        <tr><td><span class="ok"></span></td><td>Pengembalian dana dengan penyetuju</td><td class="c-ac">Manajer &amp; pemilik</td></tr>
+        <tr><td><span class="ok"></span></td><td>Riwayat berjenjang: kasir hanya miliknya, atasan seluruhnya</td><td class="c-ac">Sesuai peran</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="group">
+    <h3>Promo &amp; diskon</h3>
+    <table>
+      <thead><tr><th class="c-st">Status</th><th>Fitur</th><th class="c-ac">Akses</th></tr></thead>
+      <tbody>
+        <tr><td><span class="ok"></span></td><td>Promo persen atau nominal dengan minimum belanja</td><td class="c-ac">Pemilik</td></tr>
+        <tr><td><span class="ok"></span></td><td>Nama promo ikut tercetak pada struk</td><td class="c-ac">Semua</td></tr>
+        <tr><td><span class="ok"></span></td><td>Diskon manual yang memerlukan PIN atasan</td><td class="c-ac">Manajer &amp; pemilik</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="group">
+    <h3>Dasbor</h3>
+    <table>
+      <thead><tr><th class="c-st">Status</th><th>Fitur</th><th class="c-ac">Akses</th></tr></thead>
+      <tbody>
+        <tr><td><span class="ok"></span></td><td>Omzet hari ini, jumlah order, rata-rata struk</td><td class="c-ac">Manajer &amp; pemilik</td></tr>
+        <tr><td><span class="ok"></span></td><td>Peringkat produk terlaris tujuh hari</td><td class="c-ac">Manajer &amp; pemilik</td></tr>
+        <tr><td><span class="ok"></span></td><td>Daftar order terbaru</td><td class="c-ac">Manajer &amp; pemilik</td></tr>
+        <tr><td><span class="ok"></span></td><td>Peringatan stok menipis</td><td class="c-ac">Manajer &amp; pemilik</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="group">
+    <h3>Katalog</h3>
+    <table>
+      <thead><tr><th class="c-st">Status</th><th>Fitur</th><th class="c-ac">Akses</th></tr></thead>
+      <tbody>
+        <tr><td><span class="ok"></span></td><td>Kelola kategori beserta ikonnya</td><td class="c-ac">Pemilik</td></tr>
+        <tr><td><span class="ok"></span></td><td>Kelola produk, urutan tampil, ketersediaan, penanda populer</td><td class="c-ac">Pemilik</td></tr>
+        <tr><td><span class="ok"></span></td><td>Foto produk dengan cadangan ikon bila gagal dimuat</td><td class="c-ac">Pemilik</td></tr>
+        <tr><td><span class="ok"></span></td><td>Beberapa varian per produk</td><td class="c-ac">Pemilik</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="group">
+    <h3>Persediaan</h3>
+    <table>
+      <thead><tr><th class="c-st">Status</th><th>Fitur</th><th class="c-ac">Akses</th></tr></thead>
+      <tbody>
+        <tr><td><span class="ok"></span></td><td>Buku besar stok: perubahan, saldo, alasan, pelaku, waktu</td><td class="c-ac">Manajer &amp; pemilik</td></tr>
+        <tr><td><span class="ok"></span></td><td>Enam jenis alasan pergerakan stok</td><td class="c-ac">Manajer &amp; pemilik</td></tr>
+        <tr><td><span class="ok"></span></td><td>Daftar produk yang stoknya menipis</td><td class="c-ac">Manajer &amp; pemilik</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="group">
+    <h3>Shift</h3>
+    <table>
+      <thead><tr><th class="c-st">Status</th><th>Fitur</th><th class="c-ac">Akses</th></tr></thead>
+      <tbody>
+        <tr><td><span class="ok"></span></td><td>Riwayat shift lengkap dengan selisih kas</td><td class="c-ac">Semua</td></tr>
+        <tr><td><span class="ok"></span></td><td>Posisi laci seluruh shift yang sedang berjalan</td><td class="c-ac">Manajer &amp; pemilik</td></tr>
+        <tr><td><span class="ok"></span></td><td>Pemisahan penjualan tunai dan non-tunai</td><td class="c-ac">Semua</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="group">
+    <h3>Sistem &amp; tampilan</h3>
+    <table>
+      <thead><tr><th class="c-st">Status</th><th>Fitur</th><th class="c-ac">Akses</th></tr></thead>
+      <tbody>
+        <tr><td><span class="ok"></span></td><td>Bekerja penuh tanpa internet</td><td class="c-ac">&mdash;</td></tr>
+        <tr><td><span class="ok"></span></td><td>Berjalan di iOS, Android, macOS, dan peramban web</td><td class="c-ac">&mdash;</td></tr>
+        <tr><td><span class="ok"></span></td><td>Dua bahasa: Indonesia dan Inggris</td><td class="c-ac">Semua</td></tr>
+        <tr><td><span class="ok"></span></td><td>Tema terang, gelap, atau mengikuti perangkat</td><td class="c-ac">Semua</td></tr>
+        <tr><td><span class="ok"></span></td><td>Lima pilihan warna merek</td><td class="c-ac">Semua</td></tr>
+        <tr><td><span class="ok"></span></td><td>Bilah samping dapat diciutkan dan pilihannya diingat</td><td class="c-ac">Semua</td></tr>
+        <tr><td><span class="ok"></span></td><td>Tata letak menyesuaikan ponsel hingga desktop</td><td class="c-ac">&mdash;</td></tr>
+        <tr><td><span class="ok"></span></td><td>Pemulihan data contoh untuk keperluan peragaan</td><td class="c-ac">Pemilik</td></tr>
+        <tr><td><span class="ok"></span></td><td>Pembaruan struktur data tanpa menghapus data lama</td><td class="c-ac">&mdash;</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>3 &nbsp; Belum dikerjakan</h2>
+  <p class="lead">Dicantumkan apa adanya agar keputusan tahap berikutnya berpijak pada gambaran yang utuh.</p>
+
+  <table>
+    <thead><tr><th class="c-st">Status</th><th>Fitur</th><th class="c-ac">Catatan</th></tr></thead>
+    <tbody>
+      <tr><td><span class="no"></span></td><td>Program loyalitas, keanggotaan, dan poin</td><td class="c-ac">Sering diminta</td></tr>
+      <tr><td><span class="no"></span></td><td>Pemisahan tagihan satu meja</td><td class="c-ac">Sering diminta</td></tr>
+      <tr><td><span class="no"></span></td><td>Catatan khusus per item pesanan</td><td class="c-ac">Sering diminta</td></tr>
+      <tr><td><span class="no"></span></td><td>Pengisian nama pelanggan saat memesan</td><td class="c-ac">Ringan</td></tr>
+      <tr><td><span class="no"></span></td><td>Kode voucher</td><td class="c-ac">&mdash;</td></tr>
+      <tr><td><span class="no"></span></td><td>Pemindai barcode</td><td class="c-ac">Perlu perangkat</td></tr>
+      <tr><td><span class="no"></span></td><td>Manajemen reservasi meja</td><td class="c-ac">&mdash;</td></tr>
+      <tr><td><span class="no"></span></td><td>Pindah dan gabung meja</td><td class="c-ac">&mdash;</td></tr>
+      <tr><td><span class="no"></span></td><td>Layar dapur terpisah</td><td class="c-ac">&mdash;</td></tr>
+      <tr><td><span class="no"></span></td><td>Resep dan stok bahan baku</td><td class="c-ac">Cakupan besar</td></tr>
+      <tr><td><span class="no"></span></td><td>Pemesanan pembelian dan data pemasok</td><td class="c-ac">Cakupan besar</td></tr>
+      <tr><td><span class="no"></span></td><td>Stock opname terjadwal</td><td class="c-ac">&mdash;</td></tr>
+      <tr><td><span class="no"></span></td><td>Rincian pecahan uang saat menghitung laci</td><td class="c-ac">Ringan</td></tr>
+      <tr><td><span class="no"></span></td><td>Laporan dalam format PDF</td><td class="c-ac">Saat ini CSV</td></tr>
+      <tr><td><span class="no"></span></td><td>Integrasi gerbang pembayaran sungguhan</td><td class="c-ac">Perlu penyedia</td></tr>
+      <tr><td><span class="no"></span></td><td>Cetak langsung ke printer thermal melalui Bluetooth atau jaringan</td><td class="c-ac">Perlu perangkat</td></tr>
+      <tr><td><span class="no"></span></td><td>Banyak cabang</td><td class="c-ac">Menunggu server</td></tr>
+      <tr><td><span class="no"></span></td><td>Server dan sinkronisasi antar perangkat</td><td class="c-ac">Prasyarat</td></tr>
+      <tr><td><span class="no"></span></td><td>Autentikasi tingkat produksi</td><td class="c-ac">Prasyarat</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note warn">
+    <b>Dua hal yang perlu disampaikan terus terang.</b>
+    <ul class="tight">
+      <li><b>Data masih tersimpan di masing-masing perangkat.</b> Dua tablet belum saling berbagi data. Struktur aplikasi sudah disiapkan agar lapisan datanya dapat ditukar ke server tanpa menyentuh tampilan, namun servernya sendiri belum dibangun. Ini prasyarat bagi banyak cabang dan bagi autentikasi yang layak produksi.</li>
+      <li><b>PIN belum diamankan.</b> Tersimpan apa adanya di perangkat. Memadai untuk peragaan dan uji coba, tidak memadai untuk dipakai melayani uang sungguhan.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <h2>4 &nbsp; Mencoba langsung</h2>
+  <p class="lead">Aplikasi dapat dibuka melalui peramban tanpa pemasangan. Data yang tampil adalah contoh sebuah restoran dengan 31 meja dan riwayat penjualan satu bulan.</p>
+
+  <table class="acct">
+    <thead><tr><th style="width:22mm">PIN</th><th>Nama</th><th style="width:38mm">Peran</th><th>Yang dapat diakses</th></tr></thead>
+    <tbody>
+      <tr><td class="pin">9999</td><td>Farhan Sabili</td><td>Pemilik</td><td>Seluruh fitur</td></tr>
+      <tr><td class="pin">1234</td><td>Siwi Wiyono Raharjo</td><td>Manajer</td><td>Tambah pembatalan, pengembalian dana, diskon, stok, dasbor</td></tr>
+      <tr><td class="pin">2345</td><td>Siti Rahayu</td><td>Kasir</td><td>Menjual, meja, shift, penjualan sendiri</td></tr>
+      <tr><td class="pin">3456</td><td>Dani Rycki Dinata</td><td>Kasir</td><td>Menjual, meja, shift, penjualan sendiri</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <b>Saran urutan peragaan.</b>
+    <ul class="tight">
+      <li>Masuk sebagai <b>kasir</b>, buat satu pesanan, lalu coba beri diskon &mdash; aplikasi akan meminta PIN atasan. Ini memperlihatkan pemisahan wewenang bekerja sungguhan.</li>
+      <li>Ketuk lencana nama di pojok kanan atas untuk <b>berganti kasir</b>; perhatikan keranjang tidak hilang.</li>
+      <li>Masuk sebagai <b>pemilik</b> untuk membuka laporan penjualan dan laba, serta ekspor CSV.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  NTI POS &mdash; Ringkasan Fitur &middot; 30 Juli 2026 &middot; Disusun oleh Dani Rycki Dinata
+</footer>
+
+</body>
+</html>

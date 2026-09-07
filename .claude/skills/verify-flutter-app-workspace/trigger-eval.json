@@ -1,0 +1,22 @@
+[
+  {"query": "aku baru ganti warna tombol Add di POS, coba jalanin di simulator terus screenshot biar aku liat hasilnya", "should_trigger": true},
+  {"query": "cek dong tab Tables render bener nggak di iphone, kayaknya ada tile yang overflow", "should_trigger": true},
+  {"query": "run the app on macos and confirm the split layout shows the cart panel inline at tablet width", "should_trigger": true},
+  {"query": "bisa reproduce bug pas buka cart bottom sheet yang katanya crash? jalanin di sim", "should_trigger": true},
+  {"query": "I just edited the dashboard stat cards, does it still look right on the phone? screenshot it", "should_trigger": true},
+  {"query": "verifikasi checkout flow jalan sampai muncul receipt, drive langsung di app nya", "should_trigger": true},
+  {"query": "tolong konfirmasi perubahan greeting di home muncul, hot reload aja app yang lagi jalan", "should_trigger": true},
+  {"query": "launch nti pos di chrome dan cek apakah halaman orders keluar tanpa error", "should_trigger": true},
+  {"query": "after my edit to product_card, tap a product and make sure add-to-cart works on the simulator", "should_trigger": true},
+  {"query": "aku mau liat tampilan dark mode di settings page, buka di simulator", "should_trigger": true},
+  {"query": "tulisin unit test buat formatRupiah di formatters.dart, banyak edge case pembulatan", "should_trigger": false},
+  {"query": "tambahin regression test buat routerProvider biar ga ke-watch settings lagi", "should_trigger": false},
+  {"query": "kenapa flutter analyze ngasih warning unused import di order_provider.dart?", "should_trigger": false},
+  {"query": "buatin fitur split payment di checkout, user bisa bayar sebagian cash sebagian qris", "should_trigger": false},
+  {"query": "migrasiin database tambah kolom discount di tabel products, bump version-nya ke 5", "should_trigger": false},
+  {"query": "ada bug di OrderRepository.create, items-nya balik kosong padahal cart ada isinya, tolong root cause", "should_trigger": false},
+  {"query": "refactor CartPanel biar ga duplikat kode antara mount sheet sama split", "should_trigger": false},
+  {"query": "commit perubahan testing policy yang tadi ke main terus push", "should_trigger": false},
+  {"query": "jelasin gimana settingsProvider bootstrap kerja di main.dart sebelum MaterialApp dibuild", "should_trigger": false},
+  {"query": "update app_id.arb sama app_en.arb tambah string empty state buat orders terus jalanin gen-l10n", "should_trigger": false}
+]
