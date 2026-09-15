@@ -1,0 +1,114 @@
+package views
+
+import (
+	"strconv"
+
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/promos"
+)
+
+func promoValue(p promos.Promo) string {
+	if p.Kind == promos.KindPercent {
+		return strconv.FormatInt(p.Value, 10) + "%"
+	}
+	return Rupiah(p.Value)
+}
+
+func promoScope(p promos.Promo) string {
+	if p.AllOutlets {
+		return "Semua outlet"
+	}
+	return strconv.Itoa(len(p.OutletIDs)) + " outlet"
+}
+
+templ PromosPage(s Session, list []promos.Promo) {
+	@Shell("Promo", s) {
+		<div class="head">
+			<div>
+				<h1>Promo</h1>
+				<p class="sub">Potongan yang diterapkan kasir di till, diatur terpusat.</p>
+			</div>
+			<a class="button primary" href="/backoffice/promos/new">Tambah promo</a>
+		</div>
+		<div class="card">
+			<table>
+				<thead><tr><th>Nama</th><th class="num">Potongan</th><th class="num">Min. belanja</th><th>Berlaku di</th><th>Status</th><th></th></tr></thead>
+				<tbody>
+					for _, p := range list {
+						<tr>
+							<td>{ p.Name }</td>
+							<td class="num">{ promoValue(p) }</td>
+							<td class="num">{ Rupiah(p.MinSpend) }</td>
+							<td>{ promoScope(p) }</td>
+							<td>
+								@ActiveBadge(p.Active)
+							</td>
+							<td style="text-align:right"><a href={ templ.URL("/backoffice/promos/" + p.ID) }>Ubah</a></td>
+						</tr>
+					}
+					if len(list) == 0 {
+						<tr><td colspan="6" class="sub">Belum ada promo.</td></tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}
+
+templ PromoNewPage(s Session, outlets []Option, f Form) {
+	@Shell("Tambah promo", s) {
+		<p><a href="/backoffice/promos">← Promo</a></p>
+		<h1>Tambah promo</h1>
+		<div class="card">
+			@PromoForm("/backoffice/promos", outlets, f)
+		</div>
+	}
+}
+
+templ PromoPage(s Session, id string, outlets []Option, f Form) {
+	@Shell("Ubah promo", s) {
+		<p><a href="/backoffice/promos">← Promo</a></p>
+		<h1>{ f.V("name") }</h1>
+		<p class="sub">Perubahan sampai ke setiap till pada sinkron berikutnya.</p>
+		<div class="card">
+			@PromoForm("/backoffice/promos/"+id, outlets, f)
+		</div>
+		<div class="card">
+			<h2>Hapus</h2>
+			<button
+				class="danger"
+				hx-post={ "/backoffice/promos/" + id + "/delete" }
+				hx-confirm="Hapus promo ini dari semua till?"
+			>Hapus promo</button>
+		</div>
+	}
+}
+
+// PromoForm spells the scope out rather than leaving it implied. "No outlet
+// ticked" is refused instead of read as "everywhere": the difference between
+// the two is a discount that silently spreads across the whole company.
+templ PromoForm(action string, outlets []Option, f Form) {
+	<form class="grid" hx-post={ action } hx-swap="outerHTML">
+		@Field(f, "Nama", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+		@Select(f, "Jenis", "kind", PromoKindOptions)
+		@Field(f, "Nilai", "value", "number", templ.Attributes{"required": true, "min": "1", "step": "1"})
+		@Field(f, "Minimal belanja (Rp)", "min_spend", "number", templ.Attributes{"min": "0", "step": "1"})
+		@Field(f, "Urutan", "sort_order", "number", templ.Attributes{"step": "1"})
+		<div class="actions wide">
+			@Check(f, "Aktif", "active")
+		</div>
+		<div class="wide group">
+			@Check(f, "Berlaku di semua outlet", "all_outlets")
+			<p class="hint">Jika tidak dicentang, promo hanya berlaku di outlet yang dipilih di bawah.</p>
+			<div class="options">
+				for _, o := range outlets {
+					<label class="check">
+						<input type="checkbox" name="outlets" value={ o.Value } checked?={ f.Has("outlets", o.Value) }/>
+						{ o.Label }
+					</label>
+				}
+			</div>
+			@FormError(f, "outlets")
+		</div>
+		<div class="actions wide"><button type="submit" class="primary">Simpan</button></div>
+	</form>
+}

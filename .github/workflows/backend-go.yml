@@ -1,0 +1,151 @@
+name: backend-go
+
+on:
+  push:
+    paths:
+      - "backend-go/**"
+      - ".github/workflows/backend-go.yml"
+  pull_request:
+    paths:
+      - "backend-go/**"
+      - ".github/workflows/backend-go.yml"
+
+defaults:
+  run:
+    working-directory: backend-go
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # Real PostgreSQL, never SQLite: RLS policies and partial unique
+        # indexes are the invariants under test and do not exist there.
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: justclick
+          POSTGRES_PASSWORD: justclick
+          POSTGRES_DB: justclick
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U justclick"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      # Three credentials, mirroring production. The suite asserts that the
+      # tenant one cannot bypass RLS, which is only meaningful if it really is
+      # a different role from the owner.
+      MIGRATE_DATABASE_URL: postgres://justclick:justclick@127.0.0.1:5432/justclick?sslmode=disable
+      DATABASE_URL: postgres://justclick_app:ci-app-password@127.0.0.1:5432/justclick?sslmode=disable
+      UNSCOPED_DATABASE_URL: postgres://justclick_unscoped:ci-unscoped-password@127.0.0.1:5432/justclick?sslmode=disable
+      APP_DB_PASSWORD: ci-app-password
+      UNSCOPED_DB_PASSWORD: ci-unscoped-password
+      REDIS_URL: redis://127.0.0.1:6379/0
+      APP_KEY: ci-app-key
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend-go/go.mod
+          cache-dependency-path: backend-go/go.sum
+
+      # Pinned to the version in go.mod: a newer CLI emits slightly different
+      # code and would fail the freshness check for no real reason.
+      - name: install templ
+        run: go install github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ)
+
+      - name: generated views are current
+        run: |
+          templ generate
+          if ! git diff --quiet; then
+            echo "::error::Views are stale. Run 'templ generate' and commit the result."
+            git diff --stat
+            exit 1
+          fi
+
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...
+      - name: generated API contract is current
+        run: |
+          go generate ./api
+          git diff --exit-code -- internal/httpapi/wire
+
+      - name: generated SQL queries are current
+        run: |
+          go generate ./internal/store
+          git diff --exit-code -- internal/store
+
+      # The login roles are created by a migration but their passwords are not,
+      # so the suite cannot connect as them until this has run.
+      - name: create login roles
+        run: |
+          go run ./cmd/justclick migrate up
+          go run ./cmd/justclick roles set-password
+
+      - run: go test ./... -race -count=1
+
+      - name: verify the running API and Backoffice
+        env:
+          VERIFY_BASE_URL: http://127.0.0.1:9000
+          ENVIRONMENT: local
+          MEDIA_DIR: /tmp/justclick-media
+          MEDIA_PUBLIC_BASE_URL: http://127.0.0.1:9000/media
+          REPORTS_DIR: /tmp/justclick-reports
+        run: |
+          go build -o /tmp/justclick ./cmd/justclick
+          /tmp/justclick serve > /tmp/justclick-verify.log 2>&1 &
+          api_pid=$!
+          trap 'kill "$api_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent "$VERIFY_BASE_URL/health" >/dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail --silent "$VERIFY_BASE_URL/health"
+          go run ./scripts/verify-activation
+          go run ./scripts/verify-backoffice
+          go run ./scripts/verify-backoffice-crud
+          go run ./scripts/verify-sync
+          go run ./scripts/verify-push
+          go run ./scripts/verify-stock
+          go run ./scripts/verify-tables
+          go run ./scripts/verify-reports
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend-go/go.mod
+          cache-dependency-path: backend-go/go.sum
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.2
+          working-directory: backend-go
+
+  no-tenant-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend-go/go.mod
+      - name: reject tenant row locks including multiline SQL
+        run: go test ./internal/architecture -count=1

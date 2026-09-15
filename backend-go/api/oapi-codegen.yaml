@@ -1,0 +1,6 @@
+package: wire
+output: ../internal/httpapi/wire/models.gen.go
+generate:
+  models: true
+output-options:
+  skip-prune: true

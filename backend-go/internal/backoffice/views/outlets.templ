@@ -1,0 +1,183 @@
+package views
+
+import (
+	"strconv"
+
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/outlets"
+)
+
+templ OutletsPage(s Session, list []outlets.Outlet, f Form) {
+	@Shell("Outlet", s) {
+		<h1>Outlet</h1>
+		<p class="sub">Cabang dan till di dalamnya. Outlet dan till tidak pernah dihapus — penjualan lamanya tetap menunjuk ke sana — hanya dinonaktifkan.</p>
+		@OutletsSection(list, f)
+	}
+}
+
+templ OutletsSection(list []outlets.Outlet, f Form) {
+	<div id="outlets">
+		<div class="card">
+			<h2>Tambah outlet</h2>
+			<form class="inline" hx-post="/backoffice/outlets" hx-target="#outlets" hx-swap="outerHTML">
+				@Field(f, "Nama", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+				@Field(f, "Alamat", "address", "text", templ.Attributes{"maxlength": "255"})
+				@Field(f, "Telepon", "phone", "tel", templ.Attributes{"maxlength": "32"})
+				<button type="submit" class="primary">Tambah</button>
+			</form>
+		</div>
+		<div class="card">
+			<table>
+				<thead><tr><th>Nama</th><th>Alamat</th><th class="num">Till</th><th>Status</th><th></th></tr></thead>
+				<tbody>
+					for _, o := range list {
+						<tr>
+							<td>{ o.Name }</td>
+							<td>
+								if o.Address != nil {
+									{ *o.Address }
+								}
+							</td>
+							<td class="num">{ strconv.Itoa(o.RegisterCount) }</td>
+							<td>
+								@ActiveBadge(o.Active)
+							</td>
+							<td style="text-align:right"><a href={ templ.URL("/backoffice/outlets/" + o.ID) }>Kelola</a></td>
+						</tr>
+					}
+					if len(list) == 0 {
+						<tr><td colspan="5" class="sub">Belum ada outlet.</td></tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	</div>
+}
+
+templ OutletPage(s Session, o outlets.Outlet, f Form) {
+	@Shell("Kelola outlet", s) {
+		<p><a href="/backoffice/outlets">← Outlet</a></p>
+		<h1>{ o.Name }</h1>
+		<p class="sub">
+			Kode aktivasi untuk till diterbitkan di halaman <a href="/backoffice/devices">Perangkat</a>.
+		</p>
+		<div class="card">
+			<h2>Data outlet</h2>
+			@OutletForm(o.ID, f)
+		</div>
+		<div class="card">
+			@OutletActiveCard(o)
+		</div>
+		@RegistersCard(o, "", NewForm())
+		<div class="card">
+			<h2>Meja</h2>
+			<p class="sub">Denah meja dikirim ke setiap till di outlet ini, dan status mejanya bisa dipantau langsung.</p>
+			<a href={ templ.URL("/backoffice/outlets/" + o.ID + "/tables") }>Kelola meja</a>
+		</div>
+	}
+}
+
+templ OutletForm(id string, f Form) {
+	<form class="grid" hx-post={ "/backoffice/outlets/" + id } hx-swap="outerHTML">
+		@Field(f, "Nama", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+		@Field(f, "Alamat", "address", "text", templ.Attributes{"maxlength": "255"})
+		@Field(f, "Telepon", "phone", "tel", templ.Attributes{"maxlength": "32"})
+		@Field(f, "Urutan", "sort_order", "number", templ.Attributes{"step": "1"})
+		<div class="actions wide"><button type="submit" class="primary">Simpan</button></div>
+	</form>
+}
+
+// OutletActiveCard closes or reopens a branch. Closing signs out every till in
+// it on their next request — the cached binding is invalidated as the change
+// commits, not left to expire.
+templ OutletActiveCard(o outlets.Outlet) {
+	<div id="outlet-active">
+		<h2>Status</h2>
+		if o.Active {
+			<p class="sub">Menonaktifkan outlet langsung menghentikan semua till di dalamnya.</p>
+			<button
+				class="danger"
+				hx-post={ "/backoffice/outlets/" + o.ID + "/active" }
+				hx-vals={ activeVals(false) }
+				hx-target="#outlet-active"
+				hx-swap="outerHTML"
+				hx-confirm="Tutup outlet ini? Semua till di dalamnya langsung berhenti."
+			>Nonaktifkan outlet</button>
+		} else {
+			<p class="sub">Outlet ini nonaktif. Till di dalamnya tidak bisa dipakai.</p>
+			<button
+				class="primary"
+				hx-post={ "/backoffice/outlets/" + o.ID + "/active" }
+				hx-vals={ activeVals(true) }
+				hx-target="#outlet-active"
+				hx-swap="outerHTML"
+			>Aktifkan kembali</button>
+		}
+	</div>
+}
+
+func registerForm(r outlets.Register, failed string, f Form) Form {
+	if failed == r.ID {
+		return f
+	}
+
+	out := NewForm()
+	out.Values["name"] = r.Name
+	out.Values["sort_order"] = strconv.Itoa(r.SortOrder)
+	if r.TableService {
+		out.Values["table_service"] = "on"
+	}
+	return out
+}
+
+func newRegisterForm(failed string, f Form) Form {
+	if failed == "new" {
+		return f
+	}
+	out := NewForm()
+	out.Values["table_service"] = "on"
+	return out
+}
+
+templ RegistersCard(o outlets.Outlet, failed string, f Form) {
+	<div id="registers" class="card">
+		<h2>Till</h2>
+		<p class="sub">Layanan meja diatur per till: satu kasir bisa melayani meja sementara kasir sebelahnya takeaway.</p>
+		for _, r := range o.Registers {
+			<form class="row" hx-post={ "/backoffice/outlets/" + o.ID + "/registers/" + r.ID } hx-target="#registers" hx-swap="outerHTML">
+				@registerFields(registerForm(r, failed, f))
+				<span class="hint">{ pluralDevices(r.DeviceCount) }</span>
+				@ActiveBadge(r.Active)
+				<button type="submit">Simpan</button>
+				if r.Active {
+					<button
+						type="button"
+						class="danger"
+						hx-post={ "/backoffice/outlets/" + o.ID + "/registers/" + r.ID + "/active" }
+						hx-vals={ activeVals(false) }
+						hx-target="#registers"
+						hx-swap="outerHTML"
+						hx-confirm="Nonaktifkan till ini? Tablet yang terikat langsung berhenti."
+					>Nonaktifkan</button>
+				} else {
+					<button
+						type="button"
+						hx-post={ "/backoffice/outlets/" + o.ID + "/registers/" + r.ID + "/active" }
+						hx-vals={ activeVals(true) }
+						hx-target="#registers"
+						hx-swap="outerHTML"
+					>Aktifkan</button>
+				}
+			</form>
+		}
+		<form class="row" hx-post={ "/backoffice/outlets/" + o.ID + "/registers" } hx-target="#registers" hx-swap="outerHTML">
+			@registerFields(newRegisterForm(failed, f))
+			<button type="submit" class="primary">Tambah till</button>
+		</form>
+	</div>
+}
+
+templ registerFields(f Form) {
+	@Field(f, "Nama till", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+	@Field(f, "Urutan", "sort_order", "number", templ.Attributes{"step": "1"})
+	@Check(f, "Layanan meja", "table_service")
+}

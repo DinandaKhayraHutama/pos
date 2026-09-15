@@ -1,0 +1,46 @@
+{
+	admin off
+}
+
+# tls internal issues from Caddy's own local CA. The Flutter till rejects plain
+# http for anything but loopback, so every environment above dev needs real
+# certificates here — swap this block for the public hostname and Caddy will
+# obtain them from Let's Encrypt automatically.
+localhost {
+	tls internal
+
+	# Product images, straight off the volume the API writes to — the bytes a
+	# fleet of tablets downloads never pass through the Go process. Only a
+	# well-formed key that exists as a file is served; everything else is a
+	# plain 404, so a missing image is never cached as immutable.
+	#
+	# The API serves the same path with the same headers (internal/infra/media)
+	# for deployments without this block. Moving the files to object storage
+	# or a CDN later changes this block, not a single published URL.
+	handle_path /media/* {
+		root * /srv/media
+
+		@image {
+			path_regexp ^/products/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{64}\.(jpg|png)$
+			file
+		}
+
+		handle @image {
+			header Cache-Control "public, max-age=31536000, immutable"
+			header X-Content-Type-Options nosniff
+			header Content-Security-Policy "default-src 'none'; sandbox"
+			file_server
+		}
+
+		handle {
+			respond 404
+		}
+	}
+
+	handle {
+		encode zstd gzip
+		reverse_proxy api:9000 {
+			header_up X-Justclick-Client-IP {remote_host}
+		}
+	}
+}

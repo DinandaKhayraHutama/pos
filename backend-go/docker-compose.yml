@@ -1,0 +1,173 @@
+name: justclick
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-justclick}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-justclick}
+    ports:
+      # 5433 on the host: 5432 belongs to the native PostgreSQL 18 install.
+      - "127.0.0.1:5433:5432"
+    volumes:
+      # 18+ images want the mount one level up, at /var/lib/postgresql, and
+      # place the cluster in a major-version subdirectory themselves. Mounting
+      # .../data instead makes the container refuse to start.
+      - pgdata:/var/lib/postgresql
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - track_io_timing=on
+      - -c
+      - max_connections=200
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-justclick} -d ${POSTGRES_DB:-justclick}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redisdata:/data
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-512mb}
+      # noeviction, never LRU: silently evicting a rate-limit key is a bypass.
+      - --maxmemory-policy
+      - noeviction
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+
+  api:
+    build: .
+    restart: unless-stopped
+    environment:
+      # Inside the network Postgres is reachable by service name on 5432; the
+      # 5433 in .env is the host-side mapping only.
+      #
+      # The serving process gets the tenant credential and the escape hatch,
+      # and deliberately NOT the owner: DDL and cross-tenant table ownership
+      # are not privileges an HTTP handler should be one bug away from.
+      DATABASE_URL: postgres://justclick_app:${APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-justclick}?sslmode=disable
+      UNSCOPED_DATABASE_URL: postgres://justclick_unscoped:${UNSCOPED_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-justclick}?sslmode=disable
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      APP_KEY: ${APP_KEY:?set APP_KEY in .env}
+      HTTP_ADDR: ":9000"
+      TRUST_PROXY: "true"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      # Widening this and restarting is how the fleet's polling is throttled
+      # during an incident, without shipping an app release.
+      SYNC_POLL_INTERVAL: ${SYNC_POLL_INTERVAL:-60s}
+      # Product images: written to the shared volume, served by Caddy under
+      # /media. In production this is the public https hostname tills reach.
+      MEDIA_DIR: /var/lib/justclick/media
+      MEDIA_PUBLIC_BASE_URL: https://localhost:8443/media
+      # Report exports: written by the worker, served to signed-in employees and
+      # e-mailed links by the API. Both mount the same private volume.
+      REPORTS_DIR: /var/lib/justclick/reports
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://localhost:8443}
+      GOTENBERG_URL: ${GOTENBERG_URL:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+    volumes:
+      - media:/var/lib/justclick/media
+      - reports:/var/lib/justclick/reports
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  worker:
+    image: justclick-api
+    command: ["worker"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://justclick_app:${APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-justclick}?sslmode=disable
+      UNSCOPED_DATABASE_URL: postgres://justclick_unscoped:${UNSCOPED_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-justclick}?sslmode=disable
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      APP_KEY: ${APP_KEY:?set APP_KEY in .env}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      REPORTS_DIR: /var/lib/justclick/reports
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://localhost:8443}
+      GOTENBERG_URL: ${GOTENBERG_URL:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+    volumes:
+      - reports:/var/lib/justclick/reports
+    stop_grace_period: 35s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # PDF rendering for report exports. Opt in with `--profile reports` and set
+  # GOTENBERG_URL=http://gotenberg:3000; without it a PDF export fails with a
+  # message and CSV/XLSX still work. Never published to the host.
+  gotenberg:
+    image: gotenberg/gotenberg:8.20.1
+    restart: unless-stopped
+    profiles: ["reports"]
+
+  # A local inbox for scheduled report e-mail during development: set
+  # SMTP_HOST=mailpit, SMTP_PORT=1025, MAIL_FROM=laporan@localhost, and read
+  # the mail at http://127.0.0.1:8025.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    restart: unless-stopped
+    profiles: ["reports"]
+    ports:
+      - "127.0.0.1:8025:8025"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Read-only: Caddy serves images, only the API writes them.
+      - media:/srv/media:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  # Uploaded product images. Not covered by pgBackRest — back it up
+  # alongside the database.
+  media:
+  # Report export files. Short-lived deliveries (kept 30 days), not an archive:
+  # the rollups in PostgreSQL are what is backed up.
+  reports:
+  redisdata:
+  caddydata:
+  caddyconfig:

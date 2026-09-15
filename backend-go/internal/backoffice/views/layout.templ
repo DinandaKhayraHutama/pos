@@ -1,0 +1,169 @@
+package views
+
+import "fmt"
+
+func csrfHeaders(token string) string {
+	return fmt.Sprintf(`{"X-CSRF-Token": %q}`, token)
+}
+
+templ Shell(title string, s Session) {
+	<!DOCTYPE html>
+	<html lang="id">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ title } · JustClick POS</title>
+			<!-- No icon yet; declaring an empty one stops every page load from asking for /favicon.ico and logging a 404. -->
+			<link rel="icon" href="data:,"/>
+			<script src="/backoffice/static/htmx.min.js"></script>
+			@styles()
+		</head>
+		<body hx-headers={ csrfHeaders(s.CSRFToken) }>
+			<header class="topbar">
+				<div class="brand">JustClick POS</div>
+				<nav>
+					if s.CanDashboard {
+						<a href="/backoffice/dashboard">Dashboard</a>
+					}
+					if s.CanReports {
+						<a href="/backoffice/reports">Laporan</a>
+					}
+					if s.CanCatalogue {
+						<a href="/backoffice/catalogue/products">Produk</a>
+						<a href="/backoffice/catalogue/categories">Kategori</a>
+						<a href="/backoffice/catalogue/modifiers">Modifier</a>
+					}
+					if s.CanPromos {
+						<a href="/backoffice/promos">Promo</a>
+					}
+					if s.CanStaff {
+						<a href="/backoffice/staff">Karyawan</a>
+					}
+					if s.CanOutlets {
+						<a href="/backoffice/outlets">Outlet</a>
+					}
+					if s.CanStock {
+						<a href="/backoffice/stock">Stok</a>
+					}
+					<a href="/backoffice/devices">Perangkat</a>
+				</nav>
+				<div class="who">
+					<span>{ s.EmployeeName } · { RoleLabel(s.Role) }</span>
+					<form method="post" action="/backoffice/logout">
+						<input type="hidden" name="gorilla.csrf.Token" value={ s.CSRFToken }/>
+						<button type="submit" class="link">Keluar</button>
+					</form>
+				</div>
+			</header>
+			<main>
+				{ children... }
+			</main>
+			<div id="toast" class="toast" hidden></div>
+			@toastScript()
+		</body>
+	</html>
+}
+
+// toastScript shows the message a handler sends in HX-Trigger, and — just as
+// important — says something when a request fails. HTMX does not swap a 4xx or
+// 5xx response, so without this a refused click looks like a click that did
+// nothing at all.
+templ toastScript() {
+	<script>
+		(function () {
+			var box = document.getElementById("toast"), timer;
+			function show(message, bad) {
+				box.textContent = message;
+				box.className = bad ? "toast bad" : "toast";
+				box.hidden = false;
+				clearTimeout(timer);
+				timer = setTimeout(function () { box.hidden = true; }, 3500);
+			}
+			document.body.addEventListener("toast", function (e) { show(e.detail.value, false); });
+			document.body.addEventListener("toastError", function (e) { show(e.detail.value, true); });
+			document.body.addEventListener("htmx:responseError", function (e) {
+				var status = e.detail.xhr.status;
+				show(status === 403 ? "Anda tidak punya izin untuk tindakan ini."
+					: status === 404 ? "Data tidak ditemukan. Muat ulang halaman."
+					: "Terjadi kesalahan di server. Coba lagi.", true);
+			});
+			document.body.addEventListener("htmx:sendError", function () {
+				show("Tidak terhubung ke server.", true);
+			});
+		})();
+	</script>
+}
+
+templ Bare(title string) {
+	<!DOCTYPE html>
+	<html lang="id">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ title } · JustClick POS</title>
+			<!-- No icon yet; declaring an empty one stops every page load from asking for /favicon.ico and logging a 404. -->
+			<link rel="icon" href="data:,"/>
+			@styles()
+		</head>
+		<body class="centered">
+			{ children... }
+		</body>
+	</html>
+}
+
+templ styles() {
+	<style>
+		:root { --ink:#101828; --muted:#667085; --line:#e4e7ec; --bg:#f8f9fb; --blue:#1e40af; --danger:#b42318; --ok:#067647; }
+		* { box-sizing:border-box; }
+		body { margin:0; font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; color:var(--ink); background:var(--bg); }
+		body.centered { display:grid; place-items:center; min-height:100vh; }
+		.topbar { display:flex; align-items:center; gap:24px; padding:12px 24px; background:#fff; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+		.brand { font-weight:650; color:var(--blue); }
+		.topbar nav { display:flex; gap:4px; flex:1; flex-wrap:wrap; }
+		.topbar a { color:var(--ink); text-decoration:none; padding:6px 10px; border-radius:6px; }
+		.topbar a:hover { background:var(--bg); }
+		.who { display:flex; align-items:center; gap:12px; color:var(--muted); font-size:13px; }
+		main { padding:24px; max-width:1100px; margin:0 auto; }
+		h1 { font-size:20px; margin:0 0 4px; }
+		h2 { font-size:16px; margin:0 0 12px; }
+		.sub { color:var(--muted); margin:0 0 20px; font-size:14px; }
+		.head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+		.card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:20px; margin-bottom:20px; }
+		table { width:100%; border-collapse:collapse; }
+		th,td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:middle; }
+		th { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+		td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+		tr:last-child td { border-bottom:0; }
+		a { color:var(--blue); }
+		button, a.button { font:inherit; cursor:pointer; border-radius:7px; border:1px solid var(--line); background:#fff; padding:7px 12px; color:var(--ink); text-decoration:none; display:inline-block; }
+		button.primary, a.button.primary { background:var(--blue); border-color:var(--blue); color:#fff; }
+		button.danger { color:var(--danger); border-color:#f5c2bd; }
+		button.link { border:0; background:none; color:var(--muted); padding:0; text-decoration:underline; }
+		.badge { font-size:12px; padding:2px 8px; border-radius:999px; background:var(--bg); border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+		.badge.off { color:var(--danger); border-color:#f5c2bd; }
+		.badge.on { color:var(--ok); border-color:#abefc6; }
+		form.stack { display:grid; gap:14px; width:340px; }
+		form.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; align-items:start; }
+		form.grid .wide { grid-column:1/-1; }
+		form.inline { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
+		form.inline label { min-width:140px; }
+		.actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+		label { display:grid; gap:6px; font-size:13px; color:var(--muted); }
+		label.check { display:flex; gap:8px; align-items:center; color:var(--ink); font-size:14px; }
+		input, select, textarea { font:inherit; padding:9px 11px; border:1px solid var(--line); border-radius:7px; background:#fff; color:var(--ink); }
+		input[type=checkbox] { width:16px; height:16px; padding:0; }
+		.invalid input, .invalid select, .invalid textarea { border-color:var(--danger); }
+		.error { color:var(--danger); font-size:13px; margin:0; }
+		.hint { color:var(--muted); font-size:12px; }
+		.code { font:600 26px/1 ui-monospace,SFMono-Regular,Consolas,monospace; letter-spacing:.14em; padding:14px 0; }
+		.notice { background:#fffaeb; border:1px solid #fedf89; border-radius:8px; padding:12px 14px; font-size:13px; }
+		.pager { display:flex; gap:10px; justify-content:flex-end; margin-top:12px; }
+		.group { border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin-bottom:10px; }
+		.group .options { display:flex; flex-wrap:wrap; gap:6px 18px; margin:8px 0 0 24px; }
+		.row { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; padding:10px 0; border-bottom:1px solid var(--line); }
+		.row:last-child { border-bottom:0; }
+		.toast { position:fixed; right:20px; bottom:20px; background:var(--ink); color:#fff; padding:10px 14px; border-radius:8px; font-size:14px; max-width:380px; }
+		.toast.bad { background:var(--danger); }
+		.product-image { display:block; max-width:240px; max-height:240px; border:1px solid var(--line); border-radius:8px; margin-bottom:14px; background:var(--bg); }
+	</style>
+}

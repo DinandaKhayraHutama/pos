@@ -1,0 +1,35 @@
+*.log
+.DS_Store
+.env
+.env.backup
+.env.production
+.phpactor.json
+.phpunit.result.cache
+/.fleet
+/.idea
+/.nova
+/.phpunit.cache
+/.vscode
+/.zed
+/auth.json
+/node_modules
+/public/build
+/public/css/filament
+/public/fonts/filament
+/public/hot
+/public/js/filament
+/public/storage
+/storage/*.key
+/storage/pail
+/vendor
+Homestead.json
+Homestead.yaml
+Thumbs.db
+
+# Filament publishes its compiled CSS/JS/fonts into public/ and republishes
+# them from `filament:upgrade` on every composer install, so they are build
+# output, not source. ~4MB of vendor assets that would otherwise be committed
+# and re-committed on every Filament bump.
+/public/css/filament
+/public/js/filament
+/public/fonts/filament

@@ -1,0 +1,128 @@
+package views
+
+templ DevicesPage(s Session, registers []Register, devices []Device) {
+	@Shell("Perangkat", s) {
+		<h1>Perangkat</h1>
+		<p class="sub">{ s.BusinessName } — terbitkan kode aktivasi untuk sebuah till, atau cabut perangkat yang hilang.</p>
+		<div class="card">
+			<h2 style="font-size:16px;margin:0 0 12px">Till</h2>
+			<table>
+				<thead>
+					<tr>
+						<th>Nama</th>
+						<th>Outlet</th>
+						<th>Layanan meja</th>
+						<th>Perangkat</th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, r := range registers {
+						<tr>
+							<td>
+								{ r.Name }
+								if !r.Active {
+									<span class="badge off">nonaktif</span>
+								}
+							</td>
+							<td>{ r.OutletName }</td>
+							<td>
+								if r.TableService {
+									<span class="badge">ya</span>
+								} else {
+									<span class="badge">tidak</span>
+								}
+							</td>
+							<td>{ pluralDevices(r.DeviceCount) }</td>
+							<td style="text-align:right">
+								if r.Active {
+									<button
+										class="primary"
+										hx-post={ "/backoffice/registers/" + r.ID + "/activation-code" }
+										hx-target="#issued-code"
+										hx-swap="innerHTML"
+									>Terbitkan kode</button>
+								}
+							</td>
+						</tr>
+					}
+					if len(registers) == 0 {
+						<tr><td colspan="5" class="sub">Belum ada till.</td></tr>
+					}
+				</tbody>
+			</table>
+		</div>
+		<div id="issued-code"></div>
+		<div class="card">
+			<h2 style="font-size:16px;margin:0 0 12px">Perangkat terdaftar</h2>
+			<table>
+				<thead>
+					<tr>
+						<th>Label</th>
+						<th>Till</th>
+						<th>Platform</th>
+						<th>Terakhir terlihat</th>
+						<th>Status</th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody id="device-rows">
+					for _, d := range devices {
+						@DeviceRow(d)
+					}
+					if len(devices) == 0 {
+						<tr><td colspan="6" class="sub">Belum ada perangkat yang diaktivasi.</td></tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}
+
+templ DeviceRow(d Device) {
+	<tr id={ "device-" + d.ID }>
+		<td>{ d.Label }</td>
+		<td>{ d.OutletName } · { d.RegisterName }</td>
+		<td>{ d.Platform }</td>
+		<td>{ d.LastSeen }</td>
+		<td>
+			if d.Revoked {
+				<span class="badge off">dicabut</span>
+			} else {
+				<span class="badge">aktif</span>
+			}
+		</td>
+		<td style="text-align:right">
+			if !d.Revoked {
+				<button
+					class="danger"
+					hx-post={ "/backoffice/devices/" + d.ID + "/revoke" }
+					hx-target={ "#device-" + d.ID }
+					hx-swap="outerHTML"
+					hx-confirm="Cabut perangkat ini? Token-nya langsung berhenti berlaku."
+				>Cabut</button>
+			}
+		</td>
+	</tr>
+}
+
+// IssuedCodeCard shows the plaintext exactly once. It is never written to a
+// row, a log, or a flash message — anywhere it would outlive this response is
+// somewhere a live credential sits waiting to be read.
+templ IssuedCodeCard(c IssuedCode) {
+	<div class="card">
+		<h2 style="font-size:16px;margin:0 0 4px">Kode aktivasi untuk { c.RegisterName }</h2>
+		<p class="sub">Bacakan ke orang yang memegang tablet.</p>
+		<div class="code">{ c.Code }</div>
+		<p class="notice">
+			Kode ini hanya ditampilkan sekali dan tidak disimpan di mana pun. Berlaku { c.ExpiresIn },
+			sekali pakai, dan menerbitkan kode baru akan membatalkan yang ini.
+		</p>
+	</div>
+}
+
+templ ErrorCard(message string) {
+	<div class="card">
+		<p class="error">{ message }</p>
+	</div>
+}

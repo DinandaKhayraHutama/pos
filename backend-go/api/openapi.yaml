@@ -1,0 +1,700 @@
+openapi: 3.0.3
+info:
+  title: JustClick Device API
+  version: 2.2.0
+  description: |
+    Frozen baseline for Flutter v2, extended additively in 2.1.0 with the stock
+    ledger (Fase 5): the outlet-scoped feeds outlet_stock and stock_movements,
+    pushable stock_movements, and stock_seq/balance_after on push results; and
+    in 2.2.0 with the floor plan (Fase 6): the outlet-scoped feeds tables and
+    table_status, pushable table_status_events, and status_seq/outcome on push
+    results.
+    Outlet-scoped feeds page and count per bound outlet only.
+    All successful responses are JSON objects.
+    Timestamps are epoch milliseconds, money is integer rupiah. Identity comes
+    exclusively from the bearer token. Unknown pull keys must be ignored.
+    A pull cursor advances only after rows and cursor commit together locally;
+    /sync/changes cursors are hints and MUST NOT be saved as applied cursors.
+    Push rows carry a monotonically increasing revision per entity id. Snapshot
+    the payload and revision atomically into the outbox. Acknowledge only the
+    matching sent revision; an edit made during HTTP must remain queued.
+    Exact retries are accepted, including closed sessions and settled orders.
+    Unknown/missing/invalid results, transport errors and non-object bodies
+    retain the outbox. Rejected rows move atomically to recoverable dead-letter.
+servers:
+  - url: /api/v2
+security:
+  - deviceToken: []
+paths:
+  /devices/activate:
+    post:
+      operationId: activateDevice
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ActivateRequest'}
+      responses:
+        '200':
+          description: One-time token and binding. Cache-Control no-store.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ActivateResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        default: {$ref: '#/components/responses/Error'}
+  /devices/me:
+    get:
+      operationId: getDevice
+      responses:
+        '200':
+          description: Current binding
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MeResponse'}
+        default: {$ref: '#/components/responses/Error'}
+  /sync/manifest:
+    get:
+      operationId: getManifest
+      parameters: [{$ref: '#/components/parameters/SchemaVersion'}]
+      responses:
+        '200':
+          description: Dependency order and application rules
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Manifest'}
+        default: {$ref: '#/components/responses/Error'}
+  /sync/changes:
+    get:
+      operationId: getChanges
+      parameters: [{$ref: '#/components/parameters/SchemaVersion'}]
+      responses:
+        '200':
+          description: Advisory watermarks; compare with locally applied cursors
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Changes'}
+        default: {$ref: '#/components/responses/Error'}
+  /sync/pull:
+    get:
+      operationId: pullChanges
+      parameters:
+        - {$ref: '#/components/parameters/SchemaVersion'}
+        - {name: entity, in: query, required: true, schema: {type: string}}
+        - {name: after_seq, in: query, schema: {type: integer, format: int64, minimum: 0, default: 0}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 1000, default: 500}}
+      responses:
+        '200':
+          description: Rows and next_seq from one database snapshot
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PullPage'}
+        default: {$ref: '#/components/responses/Error'}
+  /sync/push:
+    post:
+      operationId: pushChanges
+      description: |
+        At most 200 rows total and 4 MiB encoded body. Batches must put
+        pos_sessions before orders; stock_movements are independent of both
+        and are applied at the token's outlet, as are table_status_events.
+        Each row is independent and logged before domain processing. Results
+        correlate by zero-based batch_index and row_index, even for unreadable
+        ids. A transaction commits before an
+        accepted/rejected result is emitted. Retry means commit is not known
+        to have succeeded; resend identical bytes. The database business date
+        wins over a changed retry date. Never choose tenant/outlet/register
+        from a payload. Financial figures and lines are immutable after first
+        acceptance; only status and its audit fields may change thereafter.
+      parameters: [{$ref: '#/components/parameters/SchemaVersion'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PushRequest'}
+      responses:
+        '200':
+          description: Exactly one result per submitted row, in request order
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PushResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '413': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+        default: {$ref: '#/components/responses/Error'}
+  /time:
+    get:
+      operationId: getTime
+      security: []
+      responses:
+        '200':
+          description: Server clock
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ServerTime'}
+  /health:
+    get:
+      operationId: getHealth
+      security: []
+      responses:
+        '200':
+          description: Database ready; Redis failure is degraded but usable
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Health'}
+        '503':
+          description: Database unavailable
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Health'}
+components:
+  securitySchemes:
+    deviceToken: {type: http, scheme: bearer}
+  parameters:
+    SchemaVersion:
+      name: X-Schema-Version
+      in: header
+      required: true
+      schema: {type: integer, minimum: 1}
+      description: Missing/obsolete returns 409 device_schema_outdated; invalid returns 400.
+  responses:
+    Error:
+      description: Request failed; retain all queued rows. 429/503 include Retry-After seconds.
+      headers:
+        Retry-After: {schema: {type: integer, minimum: 1}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+  schemas:
+    ID: {type: string, minLength: 1, maxLength: 128}
+    UUID: {type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'}
+    Millis: {type: integer, format: int64, minimum: 0}
+    Money: {type: integer, format: int64, minimum: 0, maximum: 1000000000000}
+    Name: {type: string, minLength: 1, maxLength: 255}
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: {type: string}
+            message: {type: string}
+    Device:
+      type: object
+      required: [id, device_uuid, label, platform]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        device_uuid: {$ref: '#/components/schemas/ID'}
+        label: {type: string, nullable: true, maxLength: 120}
+        platform: {type: string, nullable: true, maxLength: 32}
+    Tenant:
+      type: object
+      required: [id, name]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        name: {type: string}
+    Outlet:
+      type: object
+      required: [id, name, address, phone]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        name: {type: string}
+        address: {type: string, nullable: true}
+        phone: {type: string, nullable: true}
+    Register:
+      type: object
+      required: [id, outlet_id, name, table_service]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        outlet_id: {$ref: '#/components/schemas/ID'}
+        name: {type: string}
+        table_service: {type: boolean}
+    Binding:
+      type: object
+      required: [device, tenant, outlet, pos_register]
+      properties:
+        device: {$ref: '#/components/schemas/Device'}
+        tenant: {$ref: '#/components/schemas/Tenant'}
+        outlet: {$ref: '#/components/schemas/Outlet'}
+        pos_register: {$ref: '#/components/schemas/Register'}
+    ActivateRequest:
+      type: object
+      additionalProperties: false
+      required: [code, device_uuid]
+      properties:
+        code: {type: string, minLength: 12, maxLength: 12}
+        device_uuid: {$ref: '#/components/schemas/ID'}
+        label: {type: string, nullable: true, maxLength: 120}
+        platform: {type: string, nullable: true, maxLength: 32}
+    ActivateResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          allOf:
+            - {$ref: '#/components/schemas/Binding'}
+            - type: object
+              required: [token, token_expires_at_ms]
+              properties:
+                token: {type: string}
+                token_expires_at_ms: {$ref: '#/components/schemas/Millis'}
+    MeResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/Binding'}
+    ManifestEntity:
+      type: object
+      required: [name, scope, key, depends_on, pull, push, apply]
+      properties:
+        name: {type: string}
+        scope: {type: string, enum: [company, outlet]}
+        key: {type: array, items: {type: string}}
+        depends_on: {type: array, items: {type: string}}
+        pull: {type: boolean}
+        push: {type: boolean}
+        apply: {type: string, enum: [upsert, replace]}
+    Manifest:
+      type: object
+      required: [schema_version, entities]
+      properties:
+        schema_version: {type: integer}
+        entities: {type: array, items: {$ref: '#/components/schemas/ManifestEntity'}}
+    Changes:
+      type: object
+      required: [cursors, device_revision, server_time_ms, next_poll_ms]
+      properties:
+        cursors: {type: object, additionalProperties: {type: integer, format: int64, minimum: 0}}
+        device_revision: {$ref: '#/components/schemas/Millis'}
+        server_time_ms: {$ref: '#/components/schemas/Millis'}
+        next_poll_ms: {type: integer, format: int64, minimum: 1}
+    PullPage:
+      type: object
+      required: [entity, rows, next_seq, has_more, schema_version]
+      properties:
+        entity: {type: string}
+        rows:
+          type: array
+          items:
+            type: object
+            description: Entity-specific Row schemas below are checked against the registry. All columns are required; nullable fields still appear as null.
+            x-go-type: rawjson.RawMessage
+            x-go-type-import: {path: encoding/json, name: rawjson}
+        next_seq: {type: integer, format: int64, minimum: 0}
+        has_more: {type: boolean}
+        schema_version: {type: integer}
+    ServerTime:
+      type: object
+      required: [server_time_ms]
+      properties:
+        server_time_ms: {$ref: '#/components/schemas/Millis'}
+    Health:
+      type: object
+      required: [status, service, database, cache]
+      properties:
+        status: {type: string}
+        service: {type: string}
+        database: {type: string}
+        cache: {type: string}
+    PushRequest:
+      type: object
+      additionalProperties: false
+      required: [batches]
+      properties:
+        batches:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: {$ref: '#/components/schemas/PushBatch'}
+    PushBatch:
+      type: object
+      additionalProperties: false
+      required: [entity, rows]
+      properties:
+        entity: {type: string, minLength: 1}
+        rows:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            description: Session or Order; invalid rows are logged and individually rejected.
+            x-go-type: rawjson.RawMessage
+            x-go-type-import: {path: encoding/json, name: rawjson}
+    PushResponse:
+      type: object
+      required: [results, server_time_ms]
+      properties:
+        results: {type: array, items: {$ref: '#/components/schemas/PushResult'}}
+        server_time_ms: {$ref: '#/components/schemas/Millis'}
+    PushResult:
+      type: object
+      required: [batch_index, row_index, entity, status]
+      properties:
+        batch_index: {type: integer, minimum: 0}
+        row_index: {type: integer, minimum: 0}
+        entity: {type: string}
+        id: {type: string}
+        revision: {type: integer, format: int64}
+        status: {type: string, enum: [accepted, rejected, retry]}
+        code:
+          type: string
+          enum: [duplicate, settled, session_closed, unknown_entity, schema_rejected, stale_revision, register_busy, dependency_pending, server_unavailable, archived]
+        message: {type: string}
+        inserted: {type: boolean}
+        business_date: {type: string, pattern: '^\d{4}-\d{2}-\d{2}$'}
+        holder_session_id: {type: string}
+        holder_employee_name: {type: string}
+        stock_seq:
+          type: integer
+          format: int64
+          description: For an accepted stock movement, the outlet_stock sync_seq of its product after the movement was applied. A snapshot at or past it already includes the movement.
+        balance_after:
+          type: integer
+          format: int64
+          description: For an accepted stock movement, the outlet's quantity immediately after it (a count's computed delta included).
+        status_seq:
+          type: integer
+          format: int64
+          description: For an accepted table status event, the table_status sync_seq it was recorded at. A snapshot at or past it already reflects the event.
+        outcome:
+          type: string
+          enum: [applied, superseded]
+          description: For an accepted table status event, whether the table took its status (applied) or kept a later change by another till (superseded).
+    Session:
+      type: object
+      additionalProperties: false
+      required: [id, revision, employee_name, opened_at_ms, opening_cash]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        revision: {type: integer, format: int64, minimum: 1}
+        employee_id: {type: string, nullable: true}
+        employee_name: {$ref: '#/components/schemas/Name'}
+        pos_name: {type: string, nullable: true, maxLength: 255}
+        outlet_name: {type: string, nullable: true, maxLength: 255}
+        opened_at_ms: {$ref: '#/components/schemas/Millis'}
+        opening_cash: {$ref: '#/components/schemas/Money'}
+        closed_at_ms: {type: integer, format: int64, minimum: 0, nullable: true}
+        counted_cash: {type: integer, format: int64, minimum: 0, nullable: true}
+        expected_cash: {type: integer, format: int64, nullable: true}
+        closed_by_id: {type: string, nullable: true}
+        closed_by_name: {type: string, nullable: true, maxLength: 255}
+        note: {type: string, nullable: true, maxLength: 2000}
+    Order:
+      type: object
+      additionalProperties: false
+      required: [id, revision, business_date, number, placed_at_ms, type, status, pos_session_id, subtotal, discount, tax, service_charge_amount, total, amount_paid, payment_method, cashier_name, items]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        revision: {type: integer, format: int64, minimum: 1}
+        business_date: {type: string, pattern: '^\d{4}-\d{2}-\d{2}$'}
+        number: {type: string, minLength: 1, maxLength: 64}
+        placed_at_ms: {$ref: '#/components/schemas/Millis'}
+        server_time_delta_ms: {type: integer, format: int64}
+        type: {type: string, minLength: 1, maxLength: 32}
+        status: {type: string, enum: [pending, preparing, ready, served, paid, cancelled, refunded]}
+        pos_session_id: {$ref: '#/components/schemas/UUID'}
+        table_id: {type: string, nullable: true}
+        table_name: {type: string, nullable: true, maxLength: 255}
+        customer_name: {type: string, nullable: true, maxLength: 255}
+        note: {type: string, nullable: true, maxLength: 2000}
+        subtotal: {$ref: '#/components/schemas/Money'}
+        discount: {$ref: '#/components/schemas/Money'}
+        tax: {$ref: '#/components/schemas/Money'}
+        service_charge_amount: {$ref: '#/components/schemas/Money'}
+        total: {$ref: '#/components/schemas/Money'}
+        amount_paid: {$ref: '#/components/schemas/Money'}
+        pb1_rate: {type: number, format: double, minimum: 0, maximum: 100, nullable: true}
+        service_charge_rate: {type: number, format: double, minimum: 0, maximum: 100, nullable: true}
+        payment_method: {type: string, minLength: 1, maxLength: 32}
+        promo_name: {type: string, nullable: true, maxLength: 255}
+        cashier_id: {type: string, nullable: true}
+        cashier_name: {$ref: '#/components/schemas/Name'}
+        outlet_name: {type: string, nullable: true, maxLength: 255}
+        pos_name: {type: string, nullable: true, maxLength: 255}
+        authorized_by: {type: string, nullable: true, maxLength: 255}
+        void_reason: {type: string, nullable: true, maxLength: 2000}
+        refunded_amount: {type: integer, format: int64, minimum: 0, nullable: true}
+        items: {type: array, minItems: 1, maxItems: 200, items: {$ref: '#/components/schemas/OrderItem'}}
+    OrderItem:
+      type: object
+      description: unit_price is the final per-unit snapshot including variant/modifier deltas; never add modifier price_delta to it again. subtotal equals sum(unit_price * quantity).
+      additionalProperties: false
+      required: [id, product_name, unit_price, quantity, modifiers]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        product_id: {type: string, nullable: true}
+        product_name: {$ref: '#/components/schemas/Name'}
+        variant_name: {type: string, nullable: true, maxLength: 255}
+        unit_price: {$ref: '#/components/schemas/Money'}
+        unit_cost: {type: integer, format: int64, minimum: 0, nullable: true}
+        quantity: {type: integer, minimum: 1, maximum: 1000000}
+        note: {type: string, nullable: true, maxLength: 2000}
+        category_id: {type: string, nullable: true}
+        category_name: {type: string, nullable: true, maxLength: 255}
+        modifiers: {type: array, maxItems: 50, items: {$ref: '#/components/schemas/OrderItemModifier'}}
+    OrderItemModifier:
+      type: object
+      additionalProperties: false
+      required: [id, group_name, option_name, price_delta, sort_order]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        group_name: {$ref: '#/components/schemas/Name'}
+        option_name: {$ref: '#/components/schemas/Name'}
+        price_delta: {type: integer, format: int64, minimum: -1000000000000, maximum: 1000000000000}
+        sort_order: {type: integer, minimum: 0}
+    EmployeeRow:
+      type: object
+      required: [id, name, pin_hash, role, active, sort_order, sync_seq, deleted_at_ms]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        pin_hash: {type: string, nullable: true}
+        role: {type: string}
+        active: {type: boolean}
+        sort_order: {type: integer, format: int64}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    OutletRow:
+      type: object
+      required: [id, name, address, active, sort_order, sync_seq, deleted_at_ms]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        address: {type: string, nullable: true}
+        active: {type: boolean}
+        sort_order: {type: integer, format: int64}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    RegisterRow:
+      type: object
+      required: [id, outlet_id, name, table_service, active, sort_order, sync_seq, deleted_at_ms]
+      properties:
+        id: {type: string}
+        outlet_id: {type: string}
+        name: {type: string}
+        table_service: {type: boolean}
+        active: {type: boolean}
+        sort_order: {type: integer, format: int64}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    CategoryRow:
+      type: object
+      required: [id, name, icon_key, sort_order, is_popular, sync_seq, deleted_at_ms]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        icon_key: {type: string, nullable: true}
+        sort_order: {type: integer, format: int64}
+        is_popular: {type: boolean}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    ProductRow:
+      type: object
+      required: [id, category_id, name, price, cost, sku, tax_rate, description, image_url, icon_key, available, is_popular, sort_order, sync_seq, deleted_at_ms]
+      properties:
+        id: {type: string}
+        category_id: {type: string, nullable: true}
+        name: {type: string}
+        price: {type: integer, format: int64}
+        cost: {type: integer, format: int64, nullable: true}
+        sku: {type: string, nullable: true}
+        tax_rate: {type: number, nullable: true}
+        description: {type: string, nullable: true}
+        image_url: {type: string, nullable: true}
+        icon_key: {type: string, nullable: true}
+        available: {type: boolean}
+        is_popular: {type: boolean}
+        sort_order: {type: integer, format: int64}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    VariantRow:
+      type: object
+      required: [id, product_id, name, price_delta, sort_order, sync_seq, deleted_at_ms]
+      properties:
+        id: {type: string}
+        product_id: {type: string}
+        name: {type: string}
+        price_delta: {type: integer, format: int64}
+        sort_order: {type: integer, format: int64}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    ModifierGroupRow:
+      type: object
+      required: [id, name, selection_type, required, max_select, sort_order, active, sync_seq, deleted_at_ms]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        selection_type: {type: string}
+        required: {type: boolean}
+        max_select: {type: integer, format: int64, nullable: true}
+        sort_order: {type: integer, format: int64}
+        active: {type: boolean}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    ModifierOptionRow:
+      type: object
+      required: [id, group_id, name, price_delta, sort_order, active, sync_seq, deleted_at_ms]
+      properties:
+        id: {type: string}
+        group_id: {type: string}
+        name: {type: string}
+        price_delta: {type: integer, format: int64}
+        sort_order: {type: integer, format: int64}
+        active: {type: boolean}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    ProductModifierGroupRow:
+      type: object
+      required: [product_id, group_id, sync_seq, deleted_at_ms]
+      properties:
+        product_id: {type: string}
+        group_id: {type: string}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    ProductModifierOptionRow:
+      type: object
+      required: [product_id, option_id, is_default, sync_seq, deleted_at_ms]
+      properties:
+        product_id: {type: string}
+        option_id: {type: string}
+        is_default: {type: boolean}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    PromoRow:
+      type: object
+      required: [id, name, kind, value, min_spend, active, sort_order, all_outlets, sync_seq, deleted_at_ms]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        kind: {type: string}
+        value: {type: integer, format: int64}
+        min_spend: {type: integer, format: int64}
+        active: {type: boolean}
+        sort_order: {type: integer, format: int64}
+        all_outlets: {type: boolean}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    PromoOutletRow:
+      type: object
+      required: [promo_id, outlet_id, sync_seq, deleted_at_ms]
+      properties:
+        promo_id: {type: string}
+        outlet_id: {type: string}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    StockMovement:
+      type: object
+      additionalProperties: false
+      description: |
+        One immutable ledger movement, applied at the token's outlet. delta_qty
+        is signed: sale and waste negative, voidReturn and received positive,
+        correction and opening non-zero. A count carries counted_qty; the server
+        replaces its delta_qty with counted_qty minus the server's current
+        quantity (server wins). An exact retry, including one at a newer
+        revision, is accepted with the originally recorded result.
+      required: [id, revision, product_id, product_name, reason, delta_qty, occurred_at_ms, employee_name]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        revision: {type: integer, format: int64, minimum: 1}
+        product_id: {$ref: '#/components/schemas/UUID'}
+        product_name: {type: string, minLength: 1, maxLength: 120}
+        reason: {type: string, enum: [sale, voidReturn, received, waste, correction, opening, count]}
+        delta_qty: {type: integer, format: int64, minimum: -1000000, maximum: 1000000}
+        counted_qty: {type: integer, format: int64, minimum: 0, maximum: 1000000, nullable: true}
+        basis_seq: {type: integer, format: int64, minimum: 0, nullable: true}
+        occurred_at_ms: {$ref: '#/components/schemas/Millis'}
+        employee_id: {type: string, nullable: true}
+        employee_name: {type: string, maxLength: 120}
+        note: {type: string, nullable: true, maxLength: 200}
+    OutletStockRow:
+      type: object
+      required: [outlet_id, product_id, qty_on_hand, sync_seq, deleted_at_ms]
+      properties:
+        outlet_id: {type: string}
+        product_id: {type: string}
+        qty_on_hand: {type: integer, format: int64}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    StockMovementRow:
+      type: object
+      required: [id, outlet_id, product_id, product_name, reason, delta_qty, counted_qty, balance_after, occurred_at_ms, employee_name, note, source, stock_seq, sync_seq, deleted_at_ms]
+      properties:
+        id: {type: string}
+        outlet_id: {type: string}
+        product_id: {type: string}
+        product_name: {type: string}
+        reason: {type: string}
+        delta_qty: {type: integer, format: int64}
+        counted_qty: {type: integer, format: int64, nullable: true}
+        balance_after: {type: integer, format: int64}
+        occurred_at_ms: {type: integer, format: int64}
+        employee_name: {type: string}
+        note: {type: string, nullable: true}
+        source: {type: string}
+        stock_seq: {type: integer, format: int64}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    TableStatusEvent:
+      type: object
+      additionalProperties: false
+      description: |
+        One immutable change of a table's live status, applied at the token's
+        outlet. basis_seq is the table_status sync_seq the till had pulled for
+        the table when it made the change (0 if it had none). An event made
+        against the current sequence, or following the same device's own latest
+        write, applies. One that raced another till's write is applied or
+        superseded by occurred_at_ms (the event id breaks a tie) and marks the
+        table contested; the next uncontested change clears the mark. An exact
+        retry, including one at a newer revision, is accepted with the
+        originally recorded result. client_seq orders this device's events even
+        across clock corrections or reordered delivery; an older number is
+        recorded as superseded. Tills number events max(previous + 1, wall-clock
+        milliseconds), so a store reinstalled under the same device never reuses
+        a number. A basis_seq ahead of the current table projection is refused.
+      required: [id, revision, table_id, status, client_seq, basis_seq, occurred_at_ms, employee_name]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        revision: {type: integer, format: int64, minimum: 1}
+        table_id: {$ref: '#/components/schemas/UUID'}
+        client_seq:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Monotonic per-device per-table event number, persisted offline. Older events never undo a later event from the same device.
+        status: {type: string, enum: [available, occupied, reserved]}
+        basis_seq: {type: integer, format: int64, minimum: 0}
+        occurred_at_ms: {$ref: '#/components/schemas/Millis'}
+        employee_name: {type: string, maxLength: 120}
+    TableRow:
+      type: object
+      required: [id, outlet_id, name, area, capacity, pos_x, pos_y, sort_order, active, sync_seq, deleted_at_ms]
+      properties:
+        id: {type: string}
+        outlet_id: {type: string}
+        name: {type: string}
+        area: {type: string}
+        capacity: {type: integer, format: int64}
+        pos_x: {type: integer, format: int64, nullable: true}
+        pos_y: {type: integer, format: int64, nullable: true}
+        sort_order: {type: integer, format: int64}
+        active: {type: boolean}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    TableStatusRow:
+      type: object
+      required: [table_id, outlet_id, status, occurred_at_ms, employee_name, contested, sync_seq, deleted_at_ms]
+      properties:
+        table_id: {type: string}
+        outlet_id: {type: string}
+        status: {type: string}
+        occurred_at_ms: {type: integer, format: int64}
+        employee_name: {type: string}
+        contested: {type: boolean}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}

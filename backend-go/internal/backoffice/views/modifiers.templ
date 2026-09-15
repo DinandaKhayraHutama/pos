@@ -1,0 +1,122 @@
+package views
+
+import (
+	"strconv"
+
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/catalogue"
+)
+
+templ ModifiersPage(s Session, groups []catalogue.ModifierGroup, f Form) {
+	@Shell("Modifier", s) {
+		<h1>Modifier</h1>
+		<p class="sub">Pilihan tambahan di atas varian — level pedas, topping, gula. Satu grup bisa dipakai banyak produk.</p>
+		@ModifiersSection(groups, f)
+	}
+}
+
+templ ModifiersSection(groups []catalogue.ModifierGroup, f Form) {
+	<div id="modifier-groups">
+		<div class="card">
+			<h2>Tambah grup</h2>
+			<form class="grid" hx-post="/backoffice/catalogue/modifiers" hx-target="#modifier-groups" hx-swap="outerHTML">
+				@groupFields(f)
+				<div class="actions wide"><button type="submit" class="primary">Tambah grup</button></div>
+			</form>
+		</div>
+		<div class="card">
+			<table>
+				<thead><tr><th>Grup</th><th>Aturan</th><th class="num">Opsi</th><th>Status</th><th></th></tr></thead>
+				<tbody>
+					for _, g := range groups {
+						<tr>
+							<td>{ g.Name }</td>
+							<td>{ groupRule(g) }</td>
+							<td class="num">{ strconv.Itoa(len(g.Options)) }</td>
+							<td>
+								@ActiveBadge(g.Active)
+							</td>
+							<td style="text-align:right"><a href={ templ.URL("/backoffice/catalogue/modifiers/" + g.ID) }>Ubah</a></td>
+						</tr>
+					}
+					if len(groups) == 0 {
+						<tr><td colspan="5" class="sub">Belum ada grup modifier.</td></tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	</div>
+}
+
+templ groupFields(f Form) {
+	@Field(f, "Nama grup", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+	@Select(f, "Cara memilih", "selection_type", SelectionOptions)
+	<div>
+		@Field(f, "Maks. pilihan", "max_select", "number", templ.Attributes{"min": "1", "step": "1"})
+		<span class="hint">Hanya untuk "pilih beberapa". Kosongkan untuk tanpa batas.</span>
+	</div>
+	@Field(f, "Urutan", "sort_order", "number", templ.Attributes{"step": "1"})
+	<div class="actions wide">
+		@Check(f, "Wajib dipilih", "required")
+		@Check(f, "Aktif", "active")
+	</div>
+}
+
+templ ModifierGroupPage(s Session, g catalogue.ModifierGroup, f Form) {
+	@Shell("Ubah grup modifier", s) {
+		<p><a href="/backoffice/catalogue/modifiers">← Modifier</a></p>
+		<h1>{ g.Name }</h1>
+		<p class="sub">Perubahan sampai ke setiap till pada sinkron berikutnya.</p>
+		<div class="card">
+			@ModifierGroupForm(g.ID, f)
+		</div>
+		@OptionsCard(g, "", NewForm())
+		<div class="card">
+			<h2>Hapus</h2>
+			<p class="sub">Menghapus grup juga menghapus opsinya dan melepasnya dari setiap produk.</p>
+			<button
+				class="danger"
+				hx-post={ "/backoffice/catalogue/modifiers/" + g.ID + "/delete" }
+				hx-confirm="Hapus grup ini beserta semua opsinya dari semua till?"
+			>Hapus grup</button>
+		</div>
+	}
+}
+
+templ ModifierGroupForm(id string, f Form) {
+	<form class="grid" hx-post={ "/backoffice/catalogue/modifiers/" + id } hx-swap="outerHTML">
+		@groupFields(f)
+		<div class="actions wide"><button type="submit" class="primary">Simpan</button></div>
+	</form>
+}
+
+templ OptionsCard(g catalogue.ModifierGroup, failed string, f Form) {
+	<div id="options" class="card">
+		<h2>Opsi</h2>
+		<p class="sub">Tambahan harga tidak boleh negatif — potongan harga diatur lewat promo.</p>
+		for _, o := range g.Options {
+			<form class="row" hx-post={ "/backoffice/catalogue/modifiers/" + g.ID + "/options/" + o.ID } hx-target="#options" hx-swap="outerHTML">
+				@optionFields(optionForm(o, failed, f))
+				<button type="submit">Simpan</button>
+				<button
+					type="button"
+					class="danger"
+					hx-post={ "/backoffice/catalogue/modifiers/" + g.ID + "/options/" + o.ID + "/delete" }
+					hx-target="#options"
+					hx-swap="outerHTML"
+					hx-confirm="Hapus opsi ini dari semua produk?"
+				>Hapus</button>
+			</form>
+		}
+		<form class="row" hx-post={ "/backoffice/catalogue/modifiers/" + g.ID + "/options" } hx-target="#options" hx-swap="outerHTML">
+			@optionFields(newOptionForm(failed, f))
+			<button type="submit" class="primary">Tambah opsi</button>
+		</form>
+	</div>
+}
+
+templ optionFields(f Form) {
+	@Field(f, "Nama", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+	@Field(f, "Tambahan harga (Rp)", "price_delta", "number", templ.Attributes{"min": "0", "step": "1"})
+	@Field(f, "Urutan", "sort_order", "number", templ.Attributes{"step": "1"})
+	@Check(f, "Aktif", "active")
+}

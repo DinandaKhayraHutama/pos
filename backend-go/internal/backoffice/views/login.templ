@@ -1,0 +1,25 @@
+package views
+
+templ LoginPage(csrfToken, email, errMessage string) {
+	@Bare("Masuk") {
+		<div class="card">
+			<h1>Masuk ke Backoffice</h1>
+			<p class="sub">Akun kasir tidak bisa masuk ke sini.</p>
+			<form class="stack" method="post" action="/backoffice/login">
+				<input type="hidden" name="gorilla.csrf.Token" value={ csrfToken }/>
+				<label>
+					Email
+					<input type="email" name="email" value={ email } required autofocus autocomplete="username"/>
+				</label>
+				<label>
+					Kata sandi
+					<input type="password" name="password" required autocomplete="current-password"/>
+				</label>
+				if errMessage != "" {
+					<p class="error">{ errMessage }</p>
+				}
+				<button type="submit" class="primary">Masuk</button>
+			</form>
+		</div>
+	}
+}

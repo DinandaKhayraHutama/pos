@@ -1,0 +1,76 @@
+package views
+
+// Field is one labelled input with its error beside it. Every form here is
+// built from these so a rejected value is always shown next to what was typed.
+templ Field(f Form, label, name, kind string, attrs templ.Attributes) {
+	<label class={ templ.KV("invalid", f.E(name) != "") }>
+		{ label }
+		<input type={ kind } name={ name } value={ f.V(name) } { attrs... }/>
+		if f.E(name) != "" {
+			<span class="error">{ f.E(name) }</span>
+		}
+	</label>
+}
+
+templ TextArea(f Form, label, name string, attrs templ.Attributes) {
+	<label class={ "wide", templ.KV("invalid", f.E(name) != "") }>
+		{ label }
+		<textarea name={ name } rows="3" { attrs... }>{ f.V(name) }</textarea>
+		if f.E(name) != "" {
+			<span class="error">{ f.E(name) }</span>
+		}
+	</label>
+}
+
+templ Select(f Form, label, name string, options []Option) {
+	<label class={ templ.KV("invalid", f.E(name) != "") }>
+		{ label }
+		<select name={ name }>
+			for _, o := range options {
+				<option value={ o.Value } selected?={ f.V(name) == o.Value }>{ o.Label }</option>
+			}
+		</select>
+		if f.E(name) != "" {
+			<span class="error">{ f.E(name) }</span>
+		}
+	</label>
+}
+
+// Check submits "on" when ticked and nothing when not, which is how the
+// handler reads a missing checkbox as false.
+templ Check(f Form, label, name string) {
+	<label class="check">
+		<input type="checkbox" name={ name } checked?={ f.Checked(name) }/>
+		{ label }
+	</label>
+	if f.E(name) != "" {
+		<span class="error">{ f.E(name) }</span>
+	}
+}
+
+// FormError shows a problem that belongs to the form as a whole rather than to
+// one input — a modifier configuration the till would reject, say.
+templ FormError(f Form, name string) {
+	if f.E(name) != "" {
+		<p class="error wide">{ f.E(name) }</p>
+	}
+}
+
+templ ActiveBadge(active bool) {
+	if active {
+		<span class="badge on">aktif</span>
+	} else {
+		<span class="badge off">nonaktif</span>
+	}
+}
+
+// MessagePage is a whole page carrying one message — what a full navigation to
+// something that does not exist, or is not allowed, gets instead of a bare card.
+templ MessagePage(s Session, title, message string) {
+	@Shell(title, s) {
+		<h1>{ title }</h1>
+		<div class="card">
+			<p>{ message }</p>
+		</div>
+	}
+}

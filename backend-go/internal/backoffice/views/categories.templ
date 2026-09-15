@@ -1,0 +1,88 @@
+package views
+
+import (
+	"strconv"
+
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/catalogue"
+)
+
+templ CategoriesPage(s Session, rows []catalogue.CategoryRow, f Form) {
+	@Shell("Kategori", s) {
+		<h1>Kategori</h1>
+		<p class="sub">Urutan di sini adalah urutan di layar jual setiap till.</p>
+		@CategoriesSection(rows, f)
+	}
+}
+
+// CategoriesSection is swapped as a whole after a create, so the new row and a
+// fresh form arrive together.
+templ CategoriesSection(rows []catalogue.CategoryRow, f Form) {
+	<div id="categories">
+		<div class="card">
+			<h2>Tambah kategori</h2>
+			<form class="inline" hx-post="/backoffice/catalogue/categories" hx-target="#categories" hx-swap="outerHTML">
+				@Field(f, "Nama", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+				@Field(f, "Urutan", "sort_order", "number", templ.Attributes{"step": "1"})
+				@Check(f, "Populer", "is_popular")
+				<button type="submit" class="primary">Tambah</button>
+			</form>
+		</div>
+		<div class="card">
+			<table>
+				<thead>
+					<tr><th>Nama</th><th class="num">Produk</th><th class="num">Urutan</th><th></th><th></th></tr>
+				</thead>
+				<tbody>
+					for _, c := range rows {
+						<tr>
+							<td>{ c.Name }</td>
+							<td class="num">{ strconv.Itoa(c.ProductCount) }</td>
+							<td class="num">{ strconv.Itoa(c.SortOrder) }</td>
+							<td>
+								if c.IsPopular {
+									<span class="badge">populer</span>
+								}
+							</td>
+							<td style="text-align:right"><a href={ templ.URL("/backoffice/catalogue/categories/" + c.ID) }>Ubah</a></td>
+						</tr>
+					}
+					if len(rows) == 0 {
+						<tr><td colspan="5" class="sub">Belum ada kategori.</td></tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	</div>
+}
+
+templ CategoryPage(s Session, id string, f Form) {
+	@Shell("Ubah kategori", s) {
+		<p><a href="/backoffice/catalogue/categories">← Kategori</a></p>
+		<h1>Ubah kategori</h1>
+		<p class="sub">Perubahan sampai ke setiap till pada sinkron berikutnya.</p>
+		<div class="card">
+			@CategoryForm(id, f)
+		</div>
+		<div class="card">
+			<h2>Hapus</h2>
+			<p class="sub">Kategori yang masih berisi produk tidak bisa dihapus.</p>
+			<button
+				class="danger"
+				hx-post={ "/backoffice/catalogue/categories/" + id + "/delete" }
+				hx-confirm="Hapus kategori ini dari semua till?"
+			>Hapus kategori</button>
+		</div>
+	}
+}
+
+templ CategoryForm(id string, f Form) {
+	<form class="grid" hx-post={ "/backoffice/catalogue/categories/" + id } hx-swap="outerHTML">
+		@Field(f, "Nama", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+		@Field(f, "Kunci ikon", "icon_key", "text", templ.Attributes{"maxlength": "64"})
+		@Field(f, "Urutan", "sort_order", "number", templ.Attributes{"step": "1"})
+		<div>
+			@Check(f, "Populer", "is_popular")
+		</div>
+		<div class="actions wide"><button type="submit" class="primary">Simpan</button></div>
+	</form>
+}

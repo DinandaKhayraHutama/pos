@@ -1,0 +1,12 @@
+.env
+/bin/
+/tmp/
+*.exe
+
+# Generated views (*_templ.go) are deliberately COMMITTED, not ignored:
+# the Docker build and a clean CI checkout compile them without needing the
+# templ CLI, and committing them is what makes the freshness check in CI
+# possible at all — it compares a fresh generate against what is in the tree.
+
+# Uploaded media when `justclick serve` runs outside Compose.
+var/

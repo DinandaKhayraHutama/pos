@@ -1,0 +1,245 @@
+package views
+
+import (
+	"strconv"
+	"time"
+
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/stock"
+)
+
+type StockView struct {
+	Outlets  []Option
+	OutletID string
+	Query    string
+	Levels   []stock.Level
+	Alerts   []stock.Alert
+}
+
+type StockDetailView struct {
+	Detail   stock.Detail
+	Targets  []Option
+	Adjust   Form
+	Count    Form
+	Transfer Form
+}
+
+var StockAdjustOptions = []Option{
+	{Value: stock.KindReceived, Label: "Barang masuk (+)"},
+	{Value: stock.KindWaste, Label: "Rusak / terbuang (−)"},
+	{Value: stock.KindCorrectionIn, Label: "Koreksi tambah (+)"},
+	{Value: stock.KindCorrectionOut, Label: "Koreksi kurang (−)"},
+}
+
+func qtyLabel(q *int64) string {
+	if q == nil {
+		return "—"
+	}
+	return strconv.FormatInt(*q, 10)
+}
+
+func signedQty(n int64) string {
+	if n > 0 {
+		return "+" + strconv.FormatInt(n, 10)
+	}
+	return strconv.FormatInt(n, 10)
+}
+
+func stockURL(outletID, productID string) string {
+	return "/backoffice/stock/" + outletID + "/" + productID
+}
+
+func stockTime(t time.Time) string { return t.Local().Format("02 Jan 2006 15:04") }
+
+func stockSource(source string) string {
+	if source == stock.SourceDevice {
+		return "Till"
+	}
+	return "Backoffice"
+}
+
+func stockReasonLabel(reason string) string {
+	switch reason {
+	case stock.ReasonSale:
+		return "Terjual"
+	case stock.ReasonVoidReturn:
+		return "Retur void"
+	case stock.ReasonReceived:
+		return "Barang masuk"
+	case stock.ReasonWaste:
+		return "Rusak / terbuang"
+	case stock.ReasonCorrection:
+		return "Koreksi"
+	case stock.ReasonOpening:
+		return "Stok awal"
+	case stock.ReasonCount:
+		return "Stok opname"
+	case stock.ReasonTransferIn:
+		return "Transfer masuk"
+	case stock.ReasonTransferOut:
+		return "Transfer keluar"
+	}
+	return reason
+}
+
+templ StockLevelBadge(q *int64) {
+	if q == nil {
+		<span class="badge">tidak dilacak</span>
+	} else if *q < 0 {
+		<span class="badge off">minus</span>
+	} else if *q <= stock.LowStockThreshold {
+		<span class="badge off">menipis</span>
+	} else {
+		<span class="badge on">aman</span>
+	}
+}
+
+templ StockPage(s Session, v StockView) {
+	@Shell("Stok", s) {
+		<div class="head">
+			<div>
+				<h1>Stok</h1>
+				<p class="sub">Jumlah per outlet dihitung dari buku besar pergerakan. Stok minus diizinkan dan ditandai, tidak pernah memblokir penjualan.</p>
+			</div>
+		</div>
+		if len(v.Alerts) > 0 {
+			<div class="card">
+				<h2>Perlu perhatian</h2>
+				<p class="hint">Produk yang dilacak dengan stok { strconv.FormatInt(stock.LowStockThreshold, 10) } atau kurang, di semua outlet.</p>
+				<table>
+					<thead><tr><th>Outlet</th><th>Produk</th><th class="num">Stok</th><th></th></tr></thead>
+					<tbody>
+						for _, a := range v.Alerts {
+							<tr>
+								<td>{ a.OutletName }</td>
+								<td>{ a.ProductName }</td>
+								<td class="num">{ strconv.FormatInt(a.Qty, 10) }</td>
+								<td style="text-align:right"><a href={ templ.URL(stockURL(a.OutletID, a.ProductID)) }>Buka</a></td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		}
+		<div class="card">
+			<form method="get" action="/backoffice/stock" class="grid">
+				<label>
+					<span>Outlet</span>
+					<select name="outlet">
+						for _, o := range v.Outlets {
+							<option value={ o.Value } selected?={ o.Value == v.OutletID }>{ o.Label }</option>
+						}
+					</select>
+				</label>
+				<label>
+					<span>Cari produk</span>
+					<input type="search" name="q" value={ v.Query } maxlength="120"/>
+				</label>
+				<div class="actions"><button type="submit">Tampilkan</button></div>
+			</form>
+		</div>
+		<div class="card">
+			<table>
+				<thead><tr><th>Produk</th><th class="num">Stok</th><th>Status</th><th></th></tr></thead>
+				<tbody>
+					for _, l := range v.Levels {
+						<tr>
+							<td>{ l.ProductName }</td>
+							<td class="num">{ qtyLabel(l.Qty) }</td>
+							<td>
+								@StockLevelBadge(l.Qty)
+							</td>
+							<td style="text-align:right"><a href={ templ.URL(stockURL(v.OutletID, l.ProductID)) }>Kelola</a></td>
+						</tr>
+					}
+					if len(v.Levels) == 0 {
+						<tr><td colspan="4" class="sub">Tidak ada produk.</td></tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}
+
+templ StockProductPage(s Session, v StockDetailView) {
+	@Shell("Stok · "+v.Detail.ProductName, s) {
+		<p><a href={ templ.URL("/backoffice/stock?outlet=" + v.Detail.OutletID) }>← Stok</a></p>
+		<h1>{ v.Detail.ProductName }</h1>
+		<p class="sub">
+			{ v.Detail.OutletName } · stok saat ini <strong>{ qtyLabel(v.Detail.Qty) }</strong>
+			@StockLevelBadge(v.Detail.Qty)
+		</p>
+		<div class="card">
+			<h2>Penyesuaian</h2>
+			<p class="hint">Barang masuk, barang rusak, atau koreksi. Setiap till di outlet ini menerimanya pada sinkron berikutnya.</p>
+			@StockAdjustForm(v.Detail, v.Adjust)
+		</div>
+		<div class="card">
+			<h2>Stok opname</h2>
+			<p class="hint">Masukkan jumlah fisik yang dihitung. Server mencatat selisihnya terhadap angka terkininya saat disimpan.</p>
+			@StockCountForm(v.Detail, v.Count)
+		</div>
+		if len(v.Targets) > 0 {
+			<div class="card">
+				<h2>Transfer ke outlet lain</h2>
+				<p class="hint">Mengurangi stok di outlet ini dan menambahkannya di outlet tujuan dalam satu langkah.</p>
+				@StockTransferForm(v.Detail, v.Targets, v.Transfer)
+			</div>
+		}
+		<div class="card">
+			<h2>Buku besar</h2>
+			<table>
+				<thead><tr><th>Waktu</th><th>Alasan</th><th class="num">Perubahan</th><th class="num">Saldo</th><th>Oleh</th><th>Catatan</th></tr></thead>
+				<tbody>
+					for _, e := range v.Detail.Ledger {
+						<tr>
+							<td>{ stockTime(e.OccurredAt) }</td>
+							<td>
+								{ stockReasonLabel(e.Reason) }
+								if e.Counted != nil {
+									<span class="hint">(dihitung { strconv.FormatInt(*e.Counted, 10) })</span>
+								}
+							</td>
+							<td class="num">{ signedQty(e.Delta) }</td>
+							<td class="num">{ strconv.FormatInt(e.BalanceAfter, 10) }</td>
+							<td>{ e.EmployeeName } <span class="hint">· { stockSource(e.Source) }</span></td>
+							<td>
+								if e.Note != nil {
+									{ *e.Note }
+								}
+							</td>
+						</tr>
+					}
+					if len(v.Detail.Ledger) == 0 {
+						<tr><td colspan="6" class="sub">Belum ada pergerakan di outlet ini.</td></tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}
+
+templ StockAdjustForm(d stock.Detail, f Form) {
+	<form class="grid" hx-post={ stockURL(d.OutletID, d.ProductID) + "/adjust" } hx-swap="outerHTML">
+		@Select(f, "Jenis", "kind", StockAdjustOptions)
+		@Field(f, "Jumlah", "quantity", "number", templ.Attributes{"required": true, "min": "1", "step": "1"})
+		@Field(f, "Catatan", "note", "text", templ.Attributes{"maxlength": "200"})
+		<div class="actions wide"><button type="submit" class="primary">Simpan penyesuaian</button></div>
+	</form>
+}
+
+templ StockCountForm(d stock.Detail, f Form) {
+	<form class="grid" hx-post={ stockURL(d.OutletID, d.ProductID) + "/count" } hx-swap="outerHTML">
+		@Field(f, "Jumlah dihitung", "counted", "number", templ.Attributes{"required": true, "min": "0", "step": "1"})
+		@Field(f, "Catatan", "note", "text", templ.Attributes{"maxlength": "200"})
+		<div class="actions wide"><button type="submit" class="primary">Simpan hitungan</button></div>
+	</form>
+}
+
+templ StockTransferForm(d stock.Detail, targets []Option, f Form) {
+	<form class="grid" hx-post={ stockURL(d.OutletID, d.ProductID) + "/transfer" } hx-swap="outerHTML">
+		@Select(f, "Outlet tujuan", "to_outlet", targets)
+		@Field(f, "Jumlah", "quantity", "number", templ.Attributes{"required": true, "min": "1", "step": "1"})
+		@Field(f, "Catatan", "note", "text", templ.Attributes{"maxlength": "200"})
+		<div class="actions wide"><button type="submit" class="primary">Transfer</button></div>
+	</form>
+}

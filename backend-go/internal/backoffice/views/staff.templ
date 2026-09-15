@@ -1,0 +1,163 @@
+package views
+
+import "github.com/daniryckidinata/nti_pos/backend-go/internal/domain/staff"
+
+templ StaffPage(s Session, list []staff.Profile) {
+	@Shell("Karyawan", s) {
+		<div class="head">
+			<div>
+				<h1>Karyawan</h1>
+				<p class="sub">Siapa yang bisa masuk ke till dengan PIN, dan ke Backoffice dengan email.</p>
+			</div>
+			<a class="button primary" href="/backoffice/staff/new">Tambah karyawan</a>
+		</div>
+		<div class="card">
+			<table>
+				<thead><tr><th>Nama</th><th>Peran</th><th>Email</th><th>PIN</th><th>Status</th><th></th></tr></thead>
+				<tbody>
+					for _, p := range list {
+						<tr>
+							<td>{ p.Name }</td>
+							<td>{ RoleLabel(string(p.Role)) }</td>
+							<td>
+								if p.Email != nil {
+									{ *p.Email }
+								}
+							</td>
+							<td>
+								if p.HasPIN {
+									<span class="badge">••••</span>
+								} else {
+									<span class="badge off">belum ada</span>
+								}
+							</td>
+							<td>
+								@ActiveBadge(p.Active)
+							</td>
+							<td style="text-align:right"><a href={ templ.URL("/backoffice/staff/" + p.ID) }>Ubah</a></td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}
+
+templ StaffNewPage(s Session, f Form) {
+	@Shell("Tambah karyawan", s) {
+		<p><a href="/backoffice/staff">← Karyawan</a></p>
+		<h1>Tambah karyawan</h1>
+		<p class="sub">PIN 4 angka dipakai untuk masuk ke till, dan harus berbeda dari PIN karyawan aktif lain.</p>
+		<div class="card">
+			<form class="grid" hx-post="/backoffice/staff" hx-swap="outerHTML">
+				@profileFields(f)
+				@Field(f, "PIN (4 angka)", "pin", "password", templ.Attributes{
+					"required": true, "inputmode": "numeric", "pattern": "[0-9]{4}", "maxlength": "4", "autocomplete": "off"})
+				<div class="actions wide"><button type="submit" class="primary">Tambah</button></div>
+			</form>
+		</div>
+	}
+}
+
+templ profileFields(f Form) {
+	@Field(f, "Nama", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+	@Select(f, "Peran", "role", RoleOptions)
+	<div>
+		@Field(f, "Email", "email", "email", templ.Attributes{"maxlength": "254", "autocomplete": "off"})
+		<span class="hint">Untuk masuk ke Backoffice. Kasir tidak memerlukannya.</span>
+	</div>
+	@Field(f, "Urutan", "sort_order", "number", templ.Attributes{"step": "1"})
+}
+
+templ StaffMemberPage(s Session, p staff.Profile, self bool, f Form) {
+	@Shell("Ubah karyawan", s) {
+		<p><a href="/backoffice/staff">← Karyawan</a></p>
+		<h1>{ p.Name }</h1>
+		<p class="sub">
+			{ RoleLabel(string(p.Role)) } ·
+			@ActiveBadge(p.Active)
+		</p>
+		<div class="card">
+			<h2>Profil</h2>
+			@ProfileForm(p.ID, f)
+		</div>
+		<div class="card">
+			<h2>PIN till</h2>
+			@PINForm(p.ID, NewForm(), p.HasPIN)
+		</div>
+		if p.Role.UsesBackoffice() {
+			<div class="card">
+				<h2>Kata sandi Backoffice</h2>
+				@PasswordForm(p.ID, NewForm(), p.HasPassword)
+			</div>
+		}
+		<div class="card">
+			@StaffActiveCard(p, self, NewForm())
+		</div>
+	}
+}
+
+templ ProfileForm(id string, f Form) {
+	<form class="grid" hx-post={ "/backoffice/staff/" + id } hx-swap="outerHTML">
+		@profileFields(f)
+		<div class="actions wide"><button type="submit" class="primary">Simpan</button></div>
+	</form>
+}
+
+// PINForm never shows the current PIN. The server holds only a hash of it, and
+// anyone able to read it off this screen could sign in as that cashier.
+templ PINForm(id string, f Form, hasPIN bool) {
+	<form class="inline" hx-post={ "/backoffice/staff/" + id + "/pin" } hx-swap="outerHTML">
+		@Field(f, "PIN baru (4 angka)", "pin", "password", templ.Attributes{
+			"required": true, "inputmode": "numeric", "pattern": "[0-9]{4}", "maxlength": "4", "autocomplete": "off"})
+		<button type="submit" class="primary">
+			if hasPIN {
+				Ganti PIN
+			} else {
+				Atur PIN
+			}
+		</button>
+	</form>
+}
+
+templ PasswordForm(id string, f Form, hasPassword bool) {
+	<form class="inline" hx-post={ "/backoffice/staff/" + id + "/password" } hx-swap="outerHTML">
+		@Field(f, "Kata sandi baru", "password", "password", templ.Attributes{
+			"required": true, "minlength": "12", "autocomplete": "new-password"})
+		<button type="submit" class="primary">
+			if hasPassword {
+				Ganti kata sandi
+			} else {
+				Atur kata sandi
+			}
+		</button>
+	</form>
+}
+
+templ StaffActiveCard(p staff.Profile, self bool, f Form) {
+	<div id="staff-active">
+		<h2>Status</h2>
+		if self {
+			<p class="sub">Anda tidak bisa menonaktifkan akun sendiri.</p>
+		} else if p.Active {
+			<p class="sub">Karyawan nonaktif tidak bisa masuk ke till setelah sinkron berikutnya, dan langsung keluar dari Backoffice.</p>
+			<button
+				class="danger"
+				hx-post={ "/backoffice/staff/" + p.ID + "/active" }
+				hx-vals={ activeVals(false) }
+				hx-target="#staff-active"
+				hx-swap="outerHTML"
+				hx-confirm="Nonaktifkan karyawan ini?"
+			>Nonaktifkan</button>
+		} else {
+			<button
+				class="primary"
+				hx-post={ "/backoffice/staff/" + p.ID + "/active" }
+				hx-vals={ activeVals(true) }
+				hx-target="#staff-active"
+				hx-swap="outerHTML"
+			>Aktifkan kembali</button>
+		}
+		@FormError(f, "active")
+	</div>
+}

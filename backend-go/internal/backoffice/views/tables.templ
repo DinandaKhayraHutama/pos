@@ -1,0 +1,165 @@
+package views
+
+import (
+	"strconv"
+	"time"
+
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/outlets"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/tables"
+)
+
+func optionalInt(v *int) string {
+	if v == nil {
+		return ""
+	}
+	return strconv.Itoa(*v)
+}
+
+func tableForm(t tables.Table, failed string, f Form) Form {
+	if failed == t.ID {
+		return f
+	}
+	out := NewForm()
+	out.Values["name"] = t.Name
+	out.Values["area"] = t.Area
+	out.Values["capacity"] = strconv.Itoa(t.Capacity)
+	out.Values["pos_x"] = optionalInt(t.PosX)
+	out.Values["pos_y"] = optionalInt(t.PosY)
+	out.Values["sort_order"] = strconv.Itoa(t.SortOrder)
+	return out
+}
+
+func newTableForm(failed string, f Form) Form {
+	if failed == "new" {
+		return f
+	}
+	out := NewForm()
+	out.Values["capacity"] = "2"
+	return out
+}
+
+func tableStatusBy(t tables.Table) string {
+	if t.StatusAtMs == 0 {
+		return "belum pernah diubah"
+	}
+	at := time.UnixMilli(t.StatusAtMs).Local().Format("02 Jan 15:04")
+	if t.StatusBy == "" {
+		return at
+	}
+	return at + " oleh " + t.StatusBy
+}
+
+func tableURL(outletID, tableID string) string {
+	return "/backoffice/outlets/" + outletID + "/tables/" + tableID
+}
+
+templ TablesPage(s Session, o outlets.Outlet, list []tables.Table) {
+	@Shell("Meja", s) {
+		<p><a href={ templ.URL("/backoffice/outlets/" + o.ID) }>← { o.Name }</a></p>
+		<h1>Meja di { o.Name }</h1>
+		<p class="sub">Denah meja dikirim ke setiap till di outlet ini. Status meja diubah kasir dari till; di sini hanya ditampilkan dan diperbarui otomatis.</p>
+		@TableBoard(o.ID, list)
+		@TablesCard(o.ID, list, "", NewForm())
+	}
+}
+
+templ TableStatusBadge(t tables.Table) {
+	switch t.Status {
+		case tables.StatusOccupied:
+			<span class="badge off">terisi</span>
+		case tables.StatusReserved:
+			<span class="badge">dipesan</span>
+		default:
+			<span class="badge on">kosong</span>
+	}
+	if t.Contested {
+		<span class="badge off" title="Dua till mengubah meja ini hampir bersamaan. Periksa langsung di lokasi.">diperebutkan</span>
+	}
+}
+
+// TableBoard is the live view. It polls itself; an inactive table stays on it
+// only while it is still in use, exactly as on the till.
+templ TableBoard(outletID string, list []tables.Table) {
+	<div
+		id="table-board"
+		class="card"
+		hx-get={ "/backoffice/outlets/" + outletID + "/tables/board" }
+		hx-trigger="every 15s"
+		hx-swap="outerHTML"
+	>
+		<h2>Status live</h2>
+		<table>
+			<thead><tr><th>Area</th><th>Meja</th><th class="num">Kursi</th><th>Status</th><th>Terakhir diubah</th></tr></thead>
+			<tbody>
+				for _, t := range list {
+					if t.Active || t.Status != tables.StatusAvailable {
+						<tr>
+							<td>{ t.Area }</td>
+							<td>{ t.Name }</td>
+							<td class="num">{ strconv.Itoa(t.Capacity) }</td>
+							<td>
+								@TableStatusBadge(t)
+							</td>
+							<td class="sub">{ tableStatusBy(t) }</td>
+						</tr>
+					}
+				}
+				if len(list) == 0 {
+					<tr><td colspan="5" class="sub">Belum ada meja.</td></tr>
+				}
+			</tbody>
+		</table>
+	</div>
+}
+
+templ TablesCard(outletID string, list []tables.Table, failed string, f Form) {
+	<div id="tables" class="card">
+		<h2>Denah</h2>
+		<p class="sub">Nama meja unik per outlet. Meja nonaktif tidak bisa dipilih untuk pesanan baru. Struk lama tetap menyimpan nama mejanya walau meja dihapus.</p>
+		for _, t := range list {
+			<form class="row" hx-post={ tableURL(outletID, t.ID) } hx-target="#tables" hx-swap="outerHTML">
+				@tableFields(tableForm(t, failed, f))
+				@ActiveBadge(t.Active)
+				<button type="submit">Simpan</button>
+				if t.Active {
+					<button
+						type="button"
+						hx-post={ tableURL(outletID, t.ID) + "/active" }
+						hx-vals={ activeVals(false) }
+						hx-target="#tables"
+						hx-swap="outerHTML"
+					>Nonaktifkan</button>
+				} else {
+					<button
+						type="button"
+						hx-post={ tableURL(outletID, t.ID) + "/active" }
+						hx-vals={ activeVals(true) }
+						hx-target="#tables"
+						hx-swap="outerHTML"
+					>Aktifkan</button>
+				}
+				<button
+					type="button"
+					class="danger"
+					hx-post={ tableURL(outletID, t.ID) + "/delete" }
+					hx-target="#tables"
+					hx-swap="outerHTML"
+					hx-confirm="Hapus meja ini dari denah? Struk lama tetap menyimpan nama mejanya."
+				>Hapus</button>
+			</form>
+		}
+		<form class="row" hx-post={ "/backoffice/outlets/" + outletID + "/tables" } hx-target="#tables" hx-swap="outerHTML">
+			@tableFields(newTableForm(failed, f))
+			<button type="submit" class="primary">Tambah meja</button>
+		</form>
+	</div>
+}
+
+templ tableFields(f Form) {
+	@Field(f, "Nama meja", "name", "text", templ.Attributes{"required": true, "maxlength": "60"})
+	@Field(f, "Area", "area", "text", templ.Attributes{"maxlength": "60"})
+	@Field(f, "Kursi", "capacity", "number", templ.Attributes{"required": true, "min": "1", "max": "100", "step": "1"})
+	@Field(f, "Posisi X", "pos_x", "number", templ.Attributes{"min": "0", "max": "10000", "step": "1"})
+	@Field(f, "Posisi Y", "pos_y", "number", templ.Attributes{"min": "0", "max": "10000", "step": "1"})
+	@Field(f, "Urutan", "sort_order", "number", templ.Attributes{"step": "1"})
+}

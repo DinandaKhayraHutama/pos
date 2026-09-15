@@ -1,0 +1,369 @@
+package views
+
+import (
+	"strconv"
+
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/catalogue"
+)
+
+type ProductFilter struct {
+	Query      string
+	CategoryID string
+	Page       int
+}
+
+func (f ProductFilter) URL(page int) string {
+	return "/backoffice/catalogue/products?q=" + urlQuery(f.Query) +
+		"&category=" + urlQuery(f.CategoryID) + "&page=" + strconv.Itoa(page)
+}
+
+templ ProductsPage(s Session, categories []Option, filter ProductFilter, page catalogue.ProductPage) {
+	@Shell("Produk", s) {
+		<div class="head">
+			<div>
+				<h1>Produk</h1>
+				<p class="sub">Menu yang ditarik setiap till. Harga dalam rupiah bulat.</p>
+			</div>
+			<div class="actions">
+				<a class="button" href="/backoffice/catalogue/products/import">Impor harga</a>
+				<a class="button primary" href="/backoffice/catalogue/products/new">Tambah produk</a>
+			</div>
+		</div>
+		<div class="card">
+			<!--
+				The triggers sit on the inputs, not the form. "changed" compares the
+				value of the element the trigger is on, and a form has none — on the
+				form it would never fire. Each input includes the whole form, so the
+				search and the category always travel together, and the page resets
+				to 1 because it is not part of the form at all.
+			-->
+			<form class="inline" action="/backoffice/catalogue/products" method="get">
+				<label>
+					Cari nama atau SKU
+					<input
+						type="search"
+						name="q"
+						value={ filter.Query }
+						hx-get="/backoffice/catalogue/products"
+						hx-trigger="input changed delay:300ms, search"
+						hx-include="closest form"
+						hx-target="#product-list"
+						hx-swap="outerHTML"
+						hx-push-url="true"
+					/>
+				</label>
+				<label>
+					Kategori
+					<select
+						name="category"
+						hx-get="/backoffice/catalogue/products"
+						hx-trigger="change"
+						hx-include="closest form"
+						hx-target="#product-list"
+						hx-swap="outerHTML"
+						hx-push-url="true"
+					>
+						<option value="">Semua kategori</option>
+						for _, c := range categories {
+							<option value={ c.Value } selected?={ filter.CategoryID == c.Value }>{ c.Label }</option>
+						}
+					</select>
+				</label>
+				<noscript><button type="submit">Cari</button></noscript>
+			</form>
+		</div>
+		@ProductList(filter, page)
+	}
+}
+
+templ ProductList(filter ProductFilter, page catalogue.ProductPage) {
+	<div id="product-list" class="card">
+		<table>
+			<thead>
+				<tr><th>Nama</th><th>Kategori</th><th>SKU</th><th class="num">Harga</th><th class="num">Varian</th><th>Tersedia</th><th></th></tr>
+			</thead>
+			<tbody>
+				for _, p := range page.Rows {
+					@ProductRow(p)
+				}
+				if len(page.Rows) == 0 {
+					<tr><td colspan="7" class="sub">Tidak ada produk yang cocok.</td></tr>
+				}
+			</tbody>
+		</table>
+		if page.Page > 1 || page.HasMore {
+			<div class="pager">
+				if page.Page > 1 {
+					<a href={ templ.URL(filter.URL(page.Page - 1)) } hx-get={ filter.URL(page.Page - 1) } hx-target="#product-list" hx-swap="outerHTML" hx-push-url="true">← Sebelumnya</a>
+				}
+				<span class="hint">Halaman { strconv.Itoa(page.Page) }</span>
+				if page.HasMore {
+					<a href={ templ.URL(filter.URL(page.Page + 1)) } hx-get={ filter.URL(page.Page + 1) } hx-target="#product-list" hx-swap="outerHTML" hx-push-url="true">Berikutnya →</a>
+				}
+			</div>
+		}
+	</div>
+}
+
+// ProductRow carries the sold-out switch, the one catalogue change made in the
+// middle of a service — so it swaps just this row rather than the whole list.
+templ ProductRow(p catalogue.ProductRow) {
+	<tr id={ "product-" + p.ID }>
+		<td>{ p.Name }</td>
+		<td>{ p.CategoryName }</td>
+		<td>
+			if p.SKU != nil {
+				{ *p.SKU }
+			}
+		</td>
+		<td class="num">{ Rupiah(p.Price) }</td>
+		<td class="num">{ strconv.Itoa(p.VariantCount) }</td>
+		<td>
+			<button
+				hx-post={ "/backoffice/catalogue/products/" + p.ID + "/availability" }
+				hx-vals={ availabilityVals(!p.Available) }
+				hx-target={ "#product-" + p.ID }
+				hx-swap="outerHTML"
+			>
+				if p.Available {
+					<span class="badge on">tersedia</span>
+				} else {
+					<span class="badge off">habis</span>
+				}
+			</button>
+		</td>
+		<td style="text-align:right"><a href={ templ.URL("/backoffice/catalogue/products/" + p.ID) }>Ubah</a></td>
+	</tr>
+}
+
+templ ProductNewPage(s Session, categories []Option, f Form) {
+	@Shell("Tambah produk", s) {
+		<p><a href="/backoffice/catalogue/products">← Produk</a></p>
+		<h1>Tambah produk</h1>
+		<p class="sub">Gambar, varian, dan modifier bisa diatur setelah produk tersimpan.</p>
+		<div class="card">
+			@ProductForm("/backoffice/catalogue/products", categories, f)
+		</div>
+	}
+}
+
+templ ProductPage(s Session, id string, categories []Option, f Form, imageURL *string, variants []catalogue.Variant, groups []catalogue.ModifierGroup, modifiers Form) {
+	@Shell("Ubah produk", s) {
+		<p><a href="/backoffice/catalogue/products">← Produk</a></p>
+		<h1>{ f.V("name") }</h1>
+		<p class="sub">Perubahan sampai ke setiap till pada sinkron berikutnya.</p>
+		<div class="card">
+			@ProductForm("/backoffice/catalogue/products/"+id, categories, f)
+		</div>
+		@ProductImageCard(id, imageURL, "")
+		@VariantsCard(id, variants, "", NewForm())
+		@ProductModifiersCard(id, groups, modifiers)
+		<div class="card">
+			<h2>Hapus</h2>
+			<p class="sub">Menghapus produk juga menghapus varian dan pengaturan modifiernya dari semua till.</p>
+			<button
+				class="danger"
+				hx-post={ "/backoffice/catalogue/products/" + id + "/delete" }
+				hx-confirm="Hapus produk ini dari semua till?"
+			>Hapus produk</button>
+		</div>
+	}
+}
+
+templ ProductForm(action string, categories []Option, f Form) {
+	<form class="grid" hx-post={ action } hx-swap="outerHTML">
+		@Field(f, "Nama", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+		@Select(f, "Kategori", "category_id", categories)
+		@Field(f, "Harga (Rp)", "price", "number", templ.Attributes{"required": true, "min": "0", "step": "1"})
+		@Field(f, "Modal (Rp)", "cost", "number", templ.Attributes{"min": "0", "step": "1"})
+		@Field(f, "SKU", "sku", "text", templ.Attributes{"maxlength": "64"})
+		<div>
+			@Field(f, "Tarif pajak (%)", "tax_rate", "number", templ.Attributes{"min": "0", "max": "100", "step": "0.01"})
+			<span class="hint">Kosongkan untuk memakai tarif PB1 toko. Isi 0 untuk barang bebas pajak.</span>
+		</div>
+		@Field(f, "Kunci ikon", "icon_key", "text", templ.Attributes{"maxlength": "64"})
+		@Field(f, "Urutan", "sort_order", "number", templ.Attributes{"step": "1"})
+		@TextArea(f, "Deskripsi", "description", templ.Attributes{"maxlength": "500"})
+		<div class="actions wide">
+			@Check(f, "Tersedia", "available")
+			@Check(f, "Populer", "is_popular")
+		</div>
+		<div class="actions wide"><button type="submit" class="primary">Simpan</button></div>
+	</form>
+}
+
+// ProductImageCard shows the stored photo and takes a new one. Replaced whole
+// after every upload or removal, so it always shows what the till will receive.
+templ ProductImageCard(productID string, imageURL *string, problem string) {
+	<div id="product-image" class="card">
+		<h2>Gambar</h2>
+		<p class="sub">JPG, PNG, atau WebP hingga 10 MB. Diperkecil ke 1024 px dan data lokasi foto dihapus sebelum dikirim ke till.</p>
+		if imageURL != nil {
+			<img class="product-image" src={ *imageURL } alt="Gambar produk"/>
+		} else {
+			<p class="hint">Belum ada gambar — till menampilkan ikon produk.</p>
+		}
+		<form
+			class="inline"
+			hx-post={ "/backoffice/catalogue/products/" + productID + "/image" }
+			hx-encoding="multipart/form-data"
+			hx-target="#product-image"
+			hx-swap="outerHTML"
+		>
+			<label class={ templ.KV("invalid", problem != "") }>
+				Pilih gambar
+				<input type="file" name="image" accept="image/jpeg,image/png,image/webp" required/>
+				if problem != "" {
+					<span class="error">{ problem }</span>
+				}
+			</label>
+			<button type="submit" class="primary">
+				if imageURL != nil {
+					Ganti gambar
+				} else {
+					Unggah gambar
+				}
+			</button>
+			if imageURL != nil {
+				<button
+					type="button"
+					class="danger"
+					hx-post={ "/backoffice/catalogue/products/" + productID + "/image/delete" }
+					hx-target="#product-image"
+					hx-swap="outerHTML"
+					hx-confirm="Hapus gambar produk ini dari semua till?"
+				>Hapus gambar</button>
+			}
+		</form>
+	</div>
+}
+
+// VariantsCard is re-rendered whole after any variant change. failed names the
+// row whose submission was refused ("new" for the add row), and f carries what
+// was typed into it, so the message lands beside the right inputs.
+templ VariantsCard(productID string, variants []catalogue.Variant, failed string, f Form) {
+	<div id="variants" class="card">
+		<h2>Varian</h2>
+		<p class="sub">Selisih dari harga dasar; ukuran lebih kecil boleh bernilai negatif.</p>
+		for _, v := range variants {
+			<form class="row" hx-post={ "/backoffice/catalogue/products/" + productID + "/variants/" + v.ID } hx-target="#variants" hx-swap="outerHTML">
+				@variantFields(variantForm(v, failed, f))
+				<button type="submit">Simpan</button>
+				<button
+					type="button"
+					class="danger"
+					hx-post={ "/backoffice/catalogue/products/" + productID + "/variants/" + v.ID + "/delete" }
+					hx-target="#variants"
+					hx-swap="outerHTML"
+					hx-confirm="Hapus varian ini?"
+				>Hapus</button>
+			</form>
+		}
+		<form class="row" hx-post={ "/backoffice/catalogue/products/" + productID + "/variants" } hx-target="#variants" hx-swap="outerHTML">
+			@variantFields(newVariantForm(failed, f))
+			<button type="submit" class="primary">Tambah varian</button>
+		</form>
+	</div>
+}
+
+templ variantFields(f Form) {
+	@Field(f, "Nama", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+	@Field(f, "Selisih harga (Rp)", "price_delta", "number", templ.Attributes{"step": "1"})
+	@Field(f, "Urutan", "sort_order", "number", templ.Attributes{"step": "1"})
+}
+
+// ProductModifiersCard edits the whole configuration at once, as the till's own
+// form does: which groups the product offers, which of each group's options,
+// and which are pre-selected.
+templ ProductModifiersCard(productID string, groups []catalogue.ModifierGroup, f Form) {
+	<div id="product-modifiers" class="card">
+		<h2>Modifier</h2>
+		<p class="sub">Centang grup yang ditawarkan, lalu opsi mana yang muncul di till untuk produk ini. Grup tanpa opsi tercentang tampil kosong di till.</p>
+		if len(groups) == 0 {
+			<p class="sub">Belum ada grup modifier. <a href="/backoffice/catalogue/modifiers">Buat grup</a> dulu.</p>
+		} else {
+			<form hx-post={ "/backoffice/catalogue/products/" + productID + "/modifiers" } hx-target="#product-modifiers" hx-swap="outerHTML">
+				for _, g := range groups {
+					<div class="group">
+						<label class="check">
+							<input type="checkbox" name="group" value={ g.ID } checked?={ f.Has("group", g.ID) }/>
+							<strong>{ g.Name }</strong>
+							<span class="hint">{ groupRule(g) }</span>
+							if !g.Active {
+								<span class="badge off">nonaktif</span>
+							}
+						</label>
+						<div class="options">
+							for _, o := range g.Options {
+								<span>
+									<label class="check">
+										<input type="checkbox" name="option" value={ o.ID } checked?={ f.Has("option", o.ID) }/>
+										{ o.Name }
+										if o.PriceDelta > 0 {
+											<span class="hint">{ SignedRupiah(o.PriceDelta) }</span>
+										}
+										if !o.Active {
+											<span class="badge off">nonaktif</span>
+										}
+									</label>
+									<label class="check hint">
+										<input type="checkbox" name="default" value={ o.ID } checked?={ f.Has("default", o.ID) }/>
+										default
+									</label>
+								</span>
+							}
+						</div>
+					</div>
+				}
+				@FormError(f, "modifiers")
+				<button type="submit" class="primary">Simpan modifier</button>
+			</form>
+		}
+	</div>
+}
+
+templ ImportPage(s Session) {
+	@Shell("Impor harga", s) {
+		<p><a href="/backoffice/catalogue/products">← Produk</a></p>
+		<h1>Impor harga</h1>
+		<p class="sub">Unggah CSV dengan kolom <code>sku</code> dan <code>harga</code>. Semua baris diperiksa dulu; satu baris salah membatalkan seluruh berkas.</p>
+		<div class="card">
+			<form hx-post="/backoffice/catalogue/products/import" hx-encoding="multipart/form-data" hx-target="#import-result" class="inline">
+				<label>
+					Berkas CSV
+					<input type="file" name="file" accept=".csv,text/csv" required/>
+				</label>
+				<button type="submit" class="primary">Periksa dan terapkan</button>
+			</form>
+		</div>
+		<div id="import-result"></div>
+	}
+}
+
+templ ImportResult(changed, unchanged int, problems []catalogue.ImportError) {
+	<div class="card">
+		if len(problems) > 0 {
+			<h2>Berkas ditolak, tidak ada harga yang diubah</h2>
+			<table>
+				<thead><tr><th class="num">Baris</th><th>Masalah</th></tr></thead>
+				<tbody>
+					for _, p := range problems {
+						<tr>
+							<td class="num">
+								if p.Line > 0 {
+									{ strconv.Itoa(p.Line) }
+								} else {
+									—
+								}
+							</td>
+							<td>{ p.Message }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		} else {
+			<h2>Harga diterapkan</h2>
+			<p>{ strconv.Itoa(changed) } harga berubah, { strconv.Itoa(unchanged) } sudah sama.</p>
+		}
+	</div>
+}

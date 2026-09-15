@@ -1,54 +1,25 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
-.DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
+# Root-level ignores for the monorepo.
+# Flutter/Dart-specific ignores live in mobile/.gitignore, scoped to that project.
 
-# IntelliJ related
+# OS
+.DS_Store
+Thumbs.db
+
+# IntelliJ / Android Studio
 *.iml
 *.ipr
 *.iws
 .idea/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# Claude Code machine-local settings (permissions are per-machine, not per-repo)
+.claude/settings.local.json
+.claude/worktrees/
 
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
-.dart_tool/
-.flutter-plugins-dependencies
-.pub-cache/
-.pub/
+# Build artifacts must never be committable from the repo root. These only
+# appear here if a Flutter/Dart command is run from the wrong directory (the
+# project root is mobile/, not this one), or as leftovers from the pre-monorepo
+# layout — either way they are regenerable and must stay out of git.
+/.dart_tool/
+/.flutter-plugins-dependencies
 /build/
-/coverage/
-
-# Symbolication related
-app.*.symbols
-
-# Obfuscation related
-app.*.map.json
-
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
-
-# Superpowers SDD scratch (briefs, reports, review packages, progress ledger)
-.superpowers/
-
-# Screenshot evidence (regenerable via integration_test/screenshots_test.dart)
-docs/superpowers/screenshots/
-
-# Playwright MCP scratch output (screenshots, console logs)
-.playwright-mcp/
+/flutter_*.log
