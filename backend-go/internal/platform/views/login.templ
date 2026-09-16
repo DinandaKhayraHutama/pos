@@ -1,0 +1,104 @@
+package views
+
+import bo "github.com/daniryckidinata/nti_pos/backend-go/internal/backoffice/views"
+
+templ LoginPage(csrfToken, email, message string) {
+	@bo.Bare("Masuk platform") {
+		<div class="card">
+			<h1>Panel platform JustClick</h1>
+			<p class="sub">Khusus tim JustClick. Masuk memerlukan kata sandi dan kode autentikator.</p>
+			<form class="stack" method="post" action="/platform/login">
+				<input type="hidden" name="gorilla.csrf.Token" value={ csrfToken }/>
+				<label>
+					Email
+					<input type="email" name="email" value={ email } required autofocus autocomplete="username"/>
+				</label>
+				<label>
+					Kata sandi
+					<input type="password" name="password" required autocomplete="current-password"/>
+				</label>
+				if message != "" {
+					<p class="error">{ message }</p>
+				}
+				<button type="submit" class="primary">Lanjut</button>
+			</form>
+		</div>
+	}
+}
+
+templ VerifyPage(csrfToken, message string) {
+	@bo.Bare("Kode autentikator") {
+		<div class="card">
+			<h1>Kode autentikator</h1>
+			<p class="sub">Ketik 6 digit dari aplikasi autentikator. Satu kode hanya bisa dipakai sekali.</p>
+			<form class="stack" method="post" action="/platform/login/verify">
+				<input type="hidden" name="gorilla.csrf.Token" value={ csrfToken }/>
+				<label>
+					Kode
+					<input type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autofocus autocomplete="one-time-code"/>
+				</label>
+				if message != "" {
+					<p class="error">{ message }</p>
+				}
+				<button type="submit" class="primary">Masuk</button>
+			</form>
+			<details style="margin-top:16px">
+				<summary>Ponsel hilang? Pakai kode pemulihan</summary>
+				<form class="stack" method="post" action="/platform/login/verify" style="margin-top:12px">
+					<input type="hidden" name="gorilla.csrf.Token" value={ csrfToken }/>
+					<label>
+						Kode pemulihan
+						<input type="text" name="recovery_code" placeholder="XXXXX-XXXXX" autocomplete="off"/>
+					</label>
+					<button type="submit">Masuk dengan kode pemulihan</button>
+				</form>
+			</details>
+		</div>
+	}
+}
+
+// EnrollPage shows the secret as text: there is no QR code, because drawing
+// one would take a dependency, and every authenticator app accepts a typed key.
+templ EnrollPage(csrfToken string, e Enrollment, message string) {
+	@bo.Bare("Aktifkan autentikator") {
+		<div class="card">
+			<h1>Aktifkan autentikasi dua langkah</h1>
+			<p class="sub">Wajib sebelum membuka panel. Di aplikasi autentikator (Google Authenticator, 1Password, Aegis…), pilih <em>masukkan kunci</em>, lalu ketik:</p>
+			<p><code id="totp-secret" class="secret">{ e.Secret }</code></p>
+			<p class="hint">Akun: { e.Email } · Tipe: berbasis waktu · 6 digit · 30 detik</p>
+			<details>
+				<summary>URI otpauth</summary>
+				<p class="mono">{ e.URI }</p>
+			</details>
+			<form class="stack" method="post" action="/platform/enroll" style="margin-top:16px">
+				<input type="hidden" name="gorilla.csrf.Token" value={ csrfToken }/>
+				<label>
+					Kode dari aplikasi
+					<input type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autofocus autocomplete="one-time-code"/>
+				</label>
+				if message != "" {
+					<p class="error">{ message }</p>
+				}
+				<button type="submit" class="primary">Aktifkan</button>
+			</form>
+		</div>
+	}
+}
+
+templ RecoveryCodesPage(codes []string) {
+	@bo.Bare("Kode pemulihan") {
+		<div class="card">
+			<h1>Simpan kode pemulihan</h1>
+			<p class="notice">
+				Ditampilkan <strong>sekali ini saja</strong> dan tidak disimpan dalam bentuk yang bisa dibaca.
+				Masing-masing hanya bisa dipakai sekali, untuk masuk bila ponsel hilang.
+			</p>
+			<ul class="codes">
+				for _, c := range codes {
+					<li class="recovery-code">{ c }</li>
+				}
+			</ul>
+			<a class="button primary" href="/platform/tenants">Sudah disimpan, lanjut ke panel</a>
+		</div>
+	}
+}

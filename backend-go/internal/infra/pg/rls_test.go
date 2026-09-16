@@ -197,6 +197,12 @@ func TestEveryTenantScopedTableEnforcesRowLevelSecurity(t *testing.T) {
 	require.NoError(t, err)
 	defer rows.Close()
 
+	// Platform tables that name a merchant but belong to the platform. They are
+	// outside the merchant credential altogether rather than filtered by a
+	// policy, which is a stronger boundary — so the assertion is inverted: the
+	// merchant credential must hold no privilege on them at all.
+	platformOnly := map[string]bool{"platform_audit_log": false, "password_setup_tokens": false}
+
 	checked := 0
 	for rows.Next() {
 		var (
@@ -207,6 +213,12 @@ func TestEveryTenantScopedTableEnforcesRowLevelSecurity(t *testing.T) {
 		)
 		require.NoError(t, rows.Scan(&table, &enabled, &forced, &policies, &appCanUse))
 
+		if _, ok := platformOnly[table]; ok {
+			require.False(t, appCanUse, "%s is a platform table but %s can reach it", table, pg.AppRole)
+			platformOnly[table] = true
+			continue
+		}
+
 		require.True(t, enabled, "%s carries tenant_id but has no row-level security", table)
 		require.True(t, forced, "%s does not FORCE row-level security, so its owner bypasses every policy", table)
 		require.Positive(t, policies, "%s has row-level security enabled but no policy, so it returns nothing", table)
@@ -215,6 +227,10 @@ func TestEveryTenantScopedTableEnforcesRowLevelSecurity(t *testing.T) {
 		checked++
 	}
 	require.NoError(t, rows.Err())
+
+	for table, seen := range platformOnly {
+		require.True(t, seen, "platform table %s was not found, so its exclusion proves nothing", table)
+	}
 
 	// Guards against the query itself breaking and passing vacuously.
 	require.GreaterOrEqual(t, checked, 12, "far fewer tenant-scoped tables than expected")

@@ -1,0 +1,74 @@
+package views
+
+import (
+	bo "github.com/daniryckidinata/nti_pos/backend-go/internal/backoffice/views"
+	domain "github.com/daniryckidinata/nti_pos/backend-go/internal/domain/platform"
+)
+
+templ AuditPage(s Session, v AuditView) {
+	@Shell("Log audit", s) {
+		<h1>Log audit platform</h1>
+		<p class="sub">Tidak bisa diubah atau dihapus, termasuk oleh panel ini. Setiap aksi dicatat dalam transaksi yang sama dengan aksinya.</p>
+		<div class="card">
+			<form method="get" action="/platform/audit" class="inline">
+				@bo.Field(auditFilterForm(v), "ID perusahaan", "tenant", "text", templ.Attributes{})
+				@bo.Field(auditFilterForm(v), "Awalan aksi (mis. tenant. atau impersonation.)", "action", "text", templ.Attributes{})
+				<button type="submit">Saring</button>
+			</form>
+		</div>
+		<div class="card">
+			@auditTable(v.Rows, true)
+			if v.Next != "" {
+				<div class="pager"><a class="button" href={ templ.URL(auditNextURL(v)) }>Lebih lama →</a></div>
+			}
+		</div>
+	}
+}
+
+templ auditTable(rows []domain.AuditRow, withTenant bool) {
+	<table>
+		<thead>
+			<tr>
+				<th>Waktu</th><th>Admin</th><th>Aksi</th>
+				if withTenant {
+					<th>Perusahaan</th>
+				}
+				<th>Detail</th>
+			</tr>
+		</thead>
+		<tbody>
+			for _, row := range rows {
+				<tr class="audit-row" data-action={ row.Action }>
+					<td>{ whenT(row.At) }</td>
+					<td>
+						if row.AdminName != "" {
+							{ row.AdminName }
+						} else {
+							<span class="hint">CLI / sistem</span>
+						}
+					</td>
+					<td><code>{ row.Action }</code></td>
+					if withTenant {
+						<td>
+							if row.TenantID != "" {
+								<a href={ templ.URL("/platform/tenants/" + row.TenantID) }>{ row.TenantName }</a>
+							}
+						</td>
+					}
+					<td class="mono">
+						if row.ImpersonationID != "" {
+							impersonasi { row.ImpersonationID } ·
+						}
+						{ detailText(row.Detail) }
+						if row.IP != "" {
+							· { row.IP }
+						}
+					</td>
+				</tr>
+			}
+			if len(rows) == 0 {
+				<tr><td colspan="5" class="sub">Belum ada catatan.</td></tr>
+			}
+		</tbody>
+	</table>
+}

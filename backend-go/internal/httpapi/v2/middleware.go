@@ -28,6 +28,13 @@ var (
 	devicePerMinute     = redisx.Limit{Burst: 120, Window: time.Minute}
 )
 
+// seenRecorder is the cached authenticator's last-seen write. Asked for by type
+// rather than added to DeviceService, so a test double that only authenticates
+// still satisfies the handler.
+type seenRecorder interface {
+	Touch(ctx context.Context, b devices.Binding)
+}
+
 func bindingFrom(ctx context.Context) devices.Binding {
 	b, _ := ctx.Value(bindingKey).(devices.Binding)
 	return b
@@ -79,6 +86,11 @@ func (h *Handler) authenticate(next http.Handler) http.Handler {
 		if ok, retry := redisx.Allow(r.Context(), h.rdb, "dev:"+binding.Device.ID, devicePerMinute); !ok {
 			h.tooManyRequests(w, retry)
 			return
+		}
+
+		// After the limiter, so a tablet hammering the API is not also a writer.
+		if seen, ok := h.devices.(seenRecorder); ok {
+			seen.Touch(r.Context(), binding)
 		}
 
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), bindingKey, binding)))

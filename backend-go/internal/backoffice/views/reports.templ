@@ -263,24 +263,32 @@ templ ReportsPage(s Session, v ReportView) {
 				@Field(v.Form, "Sampai", "to", "date", templ.Attributes{"required": true})
 				@Select(v.Form, "Outlet", "outlet", WithAllOutlets(v.Outlets))
 				<button type="submit" class="primary">Tampilkan</button>
-				<a href="/backoffice/reports/schedules">Jadwal kirim</a>
+				if s.CanExports {
+					<a href="/backoffice/reports/schedules">Jadwal kirim</a>
+				}
 			</form>
 		</div>
 		if v.HasReport {
 			@ReportFreshness(v)
 			@ReportBody(v.Report)
-			<div class="card">
-				<h2>Ekspor</h2>
-				<form class="inline" hx-post="/backoffice/reports/exports" hx-target="#exports" hx-swap="outerHTML">
-					<input type="hidden" name="from" value={ DateValue(v.Filter.From) }/>
-					<input type="hidden" name="to" value={ DateValue(v.Filter.To) }/>
-					<input type="hidden" name="outlet" value={ v.Filter.OutletID }/>
-					@Select(NewForm(), "Format", "format", ReportFormatOptions)
-					<button type="submit" class="primary">Buat ekspor</button>
-				</form>
-			</div>
+			if s.CanExports {
+				<div class="card">
+					<h2>Ekspor</h2>
+					<form class="inline" hx-post="/backoffice/reports/exports" hx-target="#exports" hx-swap="outerHTML">
+						<input type="hidden" name="from" value={ DateValue(v.Filter.From) }/>
+						<input type="hidden" name="to" value={ DateValue(v.Filter.To) }/>
+						<input type="hidden" name="outlet" value={ v.Filter.OutletID }/>
+						@Select(NewForm(), "Format", "format", ReportFormatOptions)
+						<button type="submit" class="primary">Buat ekspor</button>
+					</form>
+				</div>
+			}
 		}
-		@ExportsCard(v.Exports, v.Location)
+		// The export list polls its own route; with the module off that route is
+		// a 404, and polling it would raise an error toast every five seconds.
+		if s.CanExports {
+			@ExportsCard(v.Exports, v.Location)
+		}
 	}
 }
 

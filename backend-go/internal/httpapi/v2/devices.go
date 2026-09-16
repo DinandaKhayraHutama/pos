@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/devices"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/entitlements"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/httpapi/render"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/httpapi/wire"
 )
@@ -66,6 +67,12 @@ func (h *Handler) activate(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, devices.ErrBoundToAnother):
 		render.Error(w, h.logger, http.StatusUnprocessableEntity, "bound_to_another_register",
 			"This installation is already bound to another register.")
+		return
+	case errors.Is(err, entitlements.ErrLimitReached):
+		// 422 like the other refusals: the till already reads 422 as "this code
+		// did not activate, get another", and the code itself stays unconsumed.
+		render.Error(w, h.logger, http.StatusUnprocessableEntity, "device_limit_reached",
+			"This business has reached its active device limit.")
 		return
 	case err != nil:
 		h.logger.Error("activate device", slog.Any("error", err))

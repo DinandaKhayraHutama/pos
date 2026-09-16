@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/entitlements"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/syncfeed"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/validation"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/pg"
@@ -195,6 +196,9 @@ func (s *Service) SaveOutlet(ctx context.Context, tenantID string, in Outlet) (s
 				return err
 			}
 		}
+		if err := s.enforceSwitchOn(ctx, w.Tx, "outlets", tenantID, in.ID, in.Active); err != nil {
+			return asField(err)
+		}
 
 		seq, err := w.Seq(ctx, "outlets")
 		if err != nil {
@@ -283,6 +287,9 @@ func (s *Service) SaveRegister(ctx context.Context, tenantID string, in Register
 		if !live {
 			return ErrNotFound
 		}
+		if err := s.enforceSwitchOn(ctx, w.Tx, "pos_registers", tenantID, in.ID, in.Active); err != nil {
+			return asField(err)
+		}
 
 		seq, err := w.Seq(ctx, "pos_registers")
 		if err != nil {
@@ -355,6 +362,11 @@ func (s *Service) setActive(ctx context.Context, tenantID, table, id string, act
 		if err != nil || current == active {
 			return err
 		}
+		if active {
+			if err := entitlements.Enforce(ctx, w.Tx, tenantID, limitFor[table]); err != nil {
+				return err
+			}
+		}
 
 		seq, err := w.Seq(ctx, table)
 		if err != nil {
@@ -366,6 +378,45 @@ func (s *Service) setActive(ctx context.Context, tenantID, table, id string, act
 			WHERE tenant_id = $1 AND id = $2`, tenantID, id, active, seq)
 		return err
 	})
+}
+
+var limitFor = map[string]entitlements.Limit{
+	"outlets":       entitlements.Outlets,
+	"pos_registers": entitlements.Registers,
+}
+
+// enforceSwitchOn applies the merchant's limit to a save that would leave a row
+// active which is not active now: a new row created active, or an existing one
+// switched back on. Saving a row that is already on, or leaving it off, counts
+// nothing. The caller has already claimed the row, which is the lock order the
+// limit expects.
+func (s *Service) enforceSwitchOn(ctx context.Context, tx pgx.Tx, table, tenantID, id string, active bool) error {
+	if !active {
+		return nil
+	}
+	if id != "" {
+		var current bool
+		// table is one of two constants from this file, never request input.
+		err := tx.QueryRow(ctx, `SELECT active FROM `+table+`
+			WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`, tenantID, id).Scan(&current)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil || current {
+			return err
+		}
+	}
+	return entitlements.Enforce(ctx, tx, tenantID, limitFor[table])
+}
+
+// asField reports a reached limit beside the name input, the way the form
+// reports every other refusal a person can act on.
+func asField(err error) error {
+	var limit *entitlements.LimitError
+	if errors.As(err, &limit) {
+		return validation.Errors{"name": limit.Message()}
+	}
+	return err
 }
 
 func isUnique(err error, constraint string) bool {

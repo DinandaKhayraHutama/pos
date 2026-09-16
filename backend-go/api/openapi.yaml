@@ -1,14 +1,19 @@
 openapi: 3.0.3
 info:
   title: JustClick Device API
-  version: 2.2.0
+  version: 2.3.0
   description: |
     Frozen baseline for Flutter v2, extended additively in 2.1.0 with the stock
     ledger (Fase 5): the outlet-scoped feeds outlet_stock and stock_movements,
-    pushable stock_movements, and stock_seq/balance_after on push results; and
-    in 2.2.0 with the floor plan (Fase 6): the outlet-scoped feeds tables and
+    pushable stock_movements, and stock_seq/balance_after on push results; in
+    2.2.0 with the floor plan (Fase 6): the outlet-scoped feeds tables and
     table_status, pushable table_status_events, and status_seq/outcome on push
-    results.
+    results; and in 2.3.0 with plan limits (Fase 8): POST /devices/activate may
+    answer 422 device_limit_reached when the business already runs as many
+    active devices as its plan allows. Like invalid_code it does not activate
+    and does not consume the code; the same code works once a device is revoked.
+    A suspended business answers 401 unauthenticated on every authenticated
+    route, exactly as a revoked device does.
     Outlet-scoped feeds page and count per bound outlet only.
     All successful responses are JSON objects.
     Timestamps are epoch milliseconds, money is integer rupiah. Identity comes

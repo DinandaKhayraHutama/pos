@@ -14,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/entitlements"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/pg"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/store/unscoped"
 )
@@ -121,6 +122,14 @@ func (s *Service) Issue(ctx context.Context, tenantID, registerID string, issued
 			return err
 		}
 
+		// Checked here too, not only at activation, so an owner at the limit is
+		// told why in the panel instead of reading a tablet's "invalid code".
+		// Activation stays the authority: a code issued before the limit was
+		// lowered is still refused there.
+		if err := entitlements.EnforceDevices(ctx, tx, tenantID, ""); err != nil {
+			return err
+		}
+
 		if _, err := tx.Exec(ctx, `
 			UPDATE activation_codes SET cancelled_at = now()
 			WHERE pos_register_id = $1 AND consumed_at IS NULL AND cancelled_at IS NULL`, registerID); err != nil {
@@ -210,6 +219,15 @@ func (s *Service) Activate(ctx context.Context, in ActivateInput) (Activation, e
 			return ErrInvalidCode
 		}
 		if err != nil {
+			return err
+		}
+
+		// The authority on the device limit. Refusing returns an error, so this
+		// transaction rolls back and the code claimed above stays unconsumed —
+		// the owner can revoke a tablet and have this one try again. The
+		// installation itself is not counted, so a reinstall at the limit still
+		// re-binds.
+		if err := entitlements.EnforceDevices(ctx, tx, out.Tenant.ID, deviceUUID); err != nil {
 			return err
 		}
 

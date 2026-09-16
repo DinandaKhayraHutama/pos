@@ -678,11 +678,11 @@ type TableRow struct {
 // superseded by occurred_at_ms (the event id breaks a tie) and marks the
 // table contested; the next uncontested change clears the mark. An exact
 // retry, including one at a newer revision, is accepted with the
-//
-//	originally recorded result.
-//	client_seq orders this device's events even across clock corrections
-//	or reordered delivery. An older number is recorded as superseded.
-//	A basis_seq ahead of the current table projection is refused.
+// originally recorded result. client_seq orders this device's events even
+// across clock corrections or reordered delivery; an older number is
+// recorded as superseded. Tills number events max(previous + 1, wall-clock
+// milliseconds), so a store reinstalled under the same device never reuses
+// a number. A basis_seq ahead of the current table projection is refused.
 type TableStatusEvent struct {
 	BasisSeq int64 `json:"basis_seq"`
 

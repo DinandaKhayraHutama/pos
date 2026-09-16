@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/pg"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/store/unscoped"
 	"github.com/jackc/pgx/v5"
 	"github.com/redis/go-redis/v9"
@@ -94,6 +95,42 @@ func (c *CachedAuthenticator) Revoke(ctx context.Context, tenantID, deviceID str
 	c.Bump(ctx, "register", revoked.RegisterID)
 
 	return nil
+}
+
+// seenInterval bounds how often one tablet's last_seen_at is written: at most
+// once per interval, so 15,000 tills polling cost about fifty small writes a
+// second rather than one write per request.
+const seenInterval = 5 * time.Minute
+
+// Touch records that an authenticated tablet was seen, for the platform's
+// "seen in the last five minutes". Advisory, so it never fails the request.
+//
+// Redis decides whether this request is the one that writes: SET NX with the
+// interval as its TTL. When Redis is unreachable nothing is written, rather
+// than writing on every request — a cache outage must not turn into a write
+// storm. Only last_seen_at is touched, never updated_at: updated_at feeds the
+// device revision, and moving it would send every till to /devices/me every
+// five minutes. The device_auth_version trigger ignores this column too, so the
+// auth cache is not invalidated either.
+func (c *CachedAuthenticator) Touch(ctx context.Context, b Binding) {
+	key := "seen:" + b.Device.ID
+	first, err := c.rdb.SetNX(ctx, key, 1, seenInterval).Result()
+	if err != nil || !first {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 500*time.Millisecond)
+	defer cancel()
+	err = pg.InTenantTx(ctx, c.svc.pools.Tenant, b.Tenant.ID, func(ctx context.Context, tx pgx.Tx) error {
+		_, err := tx.Exec(ctx,
+			`UPDATE devices SET last_seen_at = now() WHERE tenant_id = $1 AND id = $2`, b.Tenant.ID, b.Device.ID)
+		return err
+	})
+	if err != nil {
+		// The next interval tries again; clearing the key here would retry on
+		// every request while the database is struggling.
+		c.logger.Warn("record device last seen", slog.String("device_id", b.Device.ID), slog.Any("error", err))
+	}
 }
 
 // Bump invalidates every cached binding derived from one tenant, outlet or

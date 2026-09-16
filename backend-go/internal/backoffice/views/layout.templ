@@ -19,6 +19,9 @@ templ Shell(title string, s Session) {
 			@styles()
 		</head>
 		<body hx-headers={ csrfHeaders(s.CSRFToken) }>
+			if s.Impersonation != nil {
+				@impersonationBanner(*s.Impersonation, s.CSRFToken)
+			}
 			<header class="topbar">
 				<div class="brand">JustClick POS</div>
 				<nav>
@@ -165,5 +168,29 @@ templ styles() {
 		.toast { position:fixed; right:20px; bottom:20px; background:var(--ink); color:#fff; padding:10px 14px; border-radius:8px; font-size:14px; max-width:380px; }
 		.toast.bad { background:var(--danger); }
 		.product-image { display:block; max-width:240px; max-height:240px; border:1px solid var(--line); border-radius:8px; margin-bottom:14px; background:var(--bg); }
+		.impersonation { position:sticky; top:0; z-index:20; display:flex; gap:16px; align-items:center; flex-wrap:wrap; background:var(--danger); color:#fff; padding:10px 24px; font-size:14px; }
+		.impersonation strong { font-weight:650; }
+		.impersonation form { margin-left:auto; }
+		.impersonation button { background:#fff; color:var(--danger); border-color:#fff; font-weight:600; }
 	</style>
+}
+
+// Styles is the panel's stylesheet, for the platform panel's own pages.
+templ Styles() {
+	@styles()
+}
+
+// impersonationBanner cannot be closed or scrolled away. Support inside a
+// merchant's Backoffice must never look like the owner working normally — to
+// the support engineer, or to anyone looking over their shoulder.
+templ impersonationBanner(b ImpersonationBanner, csrfToken string) {
+	<div class="impersonation" role="alert">
+		<span><strong>MODE SUPPORT</strong> · { b.AdminName } masuk sebagai { b.EmployeeName }</span>
+		<span>Alasan: { b.Reason }</span>
+		<span>Berakhir { b.EndsAt }</span>
+		<form method="post" action="/backoffice/impersonation/end">
+			<input type="hidden" name="gorilla.csrf.Token" value={ csrfToken }/>
+			<button type="submit">Akhiri impersonasi</button>
+		</form>
+	</div>
 }

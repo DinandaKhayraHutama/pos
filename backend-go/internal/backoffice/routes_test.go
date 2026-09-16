@@ -42,3 +42,29 @@ func TestTheReportSectionsAreMountedWhenReportsAreWired(t *testing.T) {
 	require.False(t, without["GET /reports/"])
 	require.False(t, without["GET /report-links/{id}"])
 }
+
+// The platform's two ways in exist only when the platform is wired in. The
+// module-gated sections stay mounted either way: a module is switched per
+// merchant, so it is checked per request rather than when the router is built.
+func TestThePlatformEntrancesAreMountedWhenThePlatformIsWired(t *testing.T) {
+	platformRoutes := []string{
+		"POST /impersonate", "POST /impersonation/end",
+		"GET /welcome/{id}", "POST /welcome/{id}",
+	}
+
+	with := routesOf(t, backoffice.Deps{
+		Impersonations: struct{ backoffice.Impersonations }{},
+		Setup:          struct{ backoffice.AccountSetup }{},
+	})
+	for _, route := range platformRoutes {
+		require.True(t, with[route], "%s is not mounted", route)
+	}
+
+	without := routesOf(t, backoffice.Deps{})
+	for _, route := range platformRoutes {
+		require.False(t, without[route], "%s is mounted with no platform behind it", route)
+	}
+	for _, route := range []string{"GET /stock/", "GET /promos/", "GET /outlets/{id}/tables"} {
+		require.True(t, without[route], "%s must stay mounted; its module is checked per request", route)
+	}
+}

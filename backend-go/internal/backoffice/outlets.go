@@ -1,11 +1,13 @@
 package backoffice
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/backoffice/views"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/entitlements"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/outlets"
 )
 
@@ -16,6 +18,17 @@ func outletForm(o outlets.Outlet) views.Form {
 	f.Values["phone"] = optionalString(o.Phone)
 	f.Values["sort_order"] = itoa(o.SortOrder)
 	return f
+}
+
+// limitOf picks a reached plan limit out of a writer's error. It is something
+// the owner can act on — close another branch, or buy a bigger plan — so it is
+// told in a toast beside the switch that did not move, never as a server error.
+func limitOf(err error) *entitlements.LimitError {
+	var limit *entitlements.LimitError
+	if errors.As(err, &limit) {
+		return limit
+	}
+	return nil
 }
 
 func (h *Handler) outletsPage(w http.ResponseWriter, r *http.Request) {
@@ -110,18 +123,23 @@ func (h *Handler) setOutletActive(w http.ResponseWriter, r *http.Request) {
 	tenantID, id := tenantOf(r), chi.URLParam(r, "id")
 
 	err := h.outlets.SetOutletActive(r.Context(), tenantID, id, f.Checked("active"))
-	if h.failed(w, r, err, outlets.ErrNotFound) {
+	limited := limitOf(err)
+	if limited == nil && h.failed(w, r, err, outlets.ErrNotFound) {
 		return
 	}
 
+	// Rendered from what is stored, so a switch the limit refused shows off.
 	o, err := h.outlets.Get(r.Context(), tenantID, id)
 	if h.failed(w, r, err, outlets.ErrNotFound) {
 		return
 	}
 
-	if o.Active {
+	switch {
+	case limited != nil:
+		toastError(w, limited.Message())
+	case o.Active:
 		toast(w, "Outlet diaktifkan.")
-	} else {
+	default:
 		toast(w, "Outlet dinonaktifkan. Till di dalamnya berhenti.")
 	}
 	h.render(w, r, views.OutletActiveCard(o))
@@ -178,13 +196,17 @@ func (h *Handler) setRegisterActive(w http.ResponseWriter, r *http.Request) {
 	outletID := chi.URLParam(r, "id")
 
 	err := h.outlets.SetRegisterActive(r.Context(), tenantOf(r), chi.URLParam(r, "registerID"), f.Checked("active"))
-	if h.failed(w, r, err, outlets.ErrNotFound) {
+	limited := limitOf(err)
+	if limited == nil && h.failed(w, r, err, outlets.ErrNotFound) {
 		return
 	}
 
-	if f.Checked("active") {
+	switch {
+	case limited != nil:
+		toastError(w, limited.Message())
+	case f.Checked("active"):
 		toast(w, "Till diaktifkan.")
-	} else {
+	default:
 		toast(w, "Till dinonaktifkan. Tablet yang terikat berhenti.")
 	}
 	h.renderRegisters(w, r, outletID, "", views.NewForm())

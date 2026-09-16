@@ -1,0 +1,29 @@
+package views
+
+// WelcomePage is where a first sign-in link lands. The owner sets their own
+// password here, so nobody — the platform admin who created the merchant
+// included — ever knows it.
+templ WelcomePage(csrfToken, action string, a SetupAccount, f Form) {
+	@Bare("Setel kata sandi") {
+		<div class="card">
+			<h1>Selamat datang di JustClick POS</h1>
+			<p class="sub">Setel kata sandi Owner untuk <strong>{ a.BusinessName }</strong>.</p>
+			<form class="stack" method="post" action={ templ.SafeURL(action) }>
+				<input type="hidden" name="gorilla.csrf.Token" value={ csrfToken }/>
+				<label>
+					Email
+					<input type="email" value={ a.Email } readonly autocomplete="username"/>
+				</label>
+				<label class={ templ.KV("invalid", f.E("password") != "") }>
+					Kata sandi baru
+					<input type="password" name="password" required minlength="12" maxlength="72" autofocus autocomplete="new-password"/>
+					if f.E("password") != "" {
+						<span class="error">{ f.E("password") }</span>
+					}
+				</label>
+				<p class="hint">Minimal 12 karakter. Tautan ini hanya bisa dipakai sekali.</p>
+				<button type="submit" class="primary">Simpan dan masuk</button>
+			</form>
+		</div>
+	}
+}

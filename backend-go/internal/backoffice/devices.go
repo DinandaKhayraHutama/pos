@@ -14,6 +14,7 @@ import (
 
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/backoffice/views"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/devices"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/entitlements"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/pg"
 )
 
@@ -50,6 +51,11 @@ func (h *Handler) issueActivationCode(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, devices.ErrRegisterInactive) {
 		h.renderStatus(w, r, http.StatusUnprocessableEntity,
 			views.ErrorCard("Till atau outletnya tidak aktif."))
+		return
+	}
+	var limit *entitlements.LimitError
+	if errors.As(err, &limit) {
+		h.renderStatus(w, r, http.StatusUnprocessableEntity, views.ErrorCard(limit.Message()))
 		return
 	}
 	if err != nil {

@@ -33,6 +33,27 @@ type Session struct {
 	CanStock     bool
 	CanDashboard bool
 	CanReports   bool
+	// CanTables and CanExports are modules the platform can switch off per
+	// merchant; the sections above that are sold as modules fold the switch in.
+	CanTables  bool
+	CanExports bool
+	// Impersonation is set while a platform admin is signed in as this owner.
+	// Every page shows it, and nothing about it can be dismissed.
+	Impersonation *ImpersonationBanner
+}
+
+type ImpersonationBanner struct {
+	AdminName    string
+	EmployeeName string
+	Reason       string
+	EndsAt       string
+}
+
+// SetupAccount names whose password a first sign-in link sets.
+type SetupAccount struct {
+	BusinessName string
+	OwnerName    string
+	Email        string
 }
 
 type Register struct {

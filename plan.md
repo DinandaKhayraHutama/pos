@@ -12,6 +12,16 @@
 > (46.755 order), p95 19,7 ms di domain dan 18,8 ms di halaman. PDF via gotenberg
 > dan email SMTP belum diuji live (registry image tidak terjangkau). Lihat
 > [PHASE_7_VERIFICATION.md](backend-go/docs/PHASE_7_VERIFICATION.md).
+>
+> Fase 8 (admin platform) selesai: panel `/platform` dengan login password +
+> TOTP, onboarding perusahaan + Owner (tautan setel kata sandi sekali pakai),
+> suspend/reaktivasi yang langsung menghentikan till, batas outlet/till/perangkat
+> dan saklar modul yang ditegakkan di server, impersonasi yang bisa menulis
+> dengan audit fail-closed, log audit append-only, halaman ops. Suite Go penuh
+> dan sembilan verifier live lulus via HTTPS. Belum: QR enrolment, manajemen
+> admin di panel (CLI saja), pembatasan IP `/platform`, seed tarif default, email
+> tautan lewat SMTP sungguhan. Lihat
+> [PHASE_8_VERIFICATION.md](backend-go/docs/PHASE_8_VERIFICATION.md).
 
 ## Context
 

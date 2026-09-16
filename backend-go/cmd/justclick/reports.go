@@ -19,10 +19,7 @@ func newReports(cfg config.Config, pools pg.Pools, logger *slog.Logger) (*report
 	if err != nil {
 		return nil, err
 	}
-	mail, err := mailer.New(mailer.Config{
-		Host: cfg.SMTPHost, Port: cfg.SMTPPort,
-		Username: cfg.SMTPUsername, Password: cfg.SMTPPassword, From: cfg.MailFrom,
-	})
+	mail, err := newMailer(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -39,4 +36,14 @@ func newReports(cfg config.Config, pools pg.Pools, logger *slog.Logger) (*report
 		opts.PDF = pdf
 	}
 	return reporting.NewService(pools, logger, opts)
+}
+
+// newMailer is the one SMTP configuration: scheduled reports and an owner's
+// first sign-in link leave the same way. An unset SMTP_HOST still returns a
+// mailer, whose Send reports that it is not configured.
+func newMailer(cfg config.Config) (*mailer.SMTP, error) {
+	return mailer.New(mailer.Config{
+		Host: cfg.SMTPHost, Port: cfg.SMTPPort,
+		Username: cfg.SMTPUsername, Password: cfg.SMTPPassword, From: cfg.MailFrom,
+	})
 }

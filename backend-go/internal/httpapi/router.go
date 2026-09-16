@@ -17,6 +17,7 @@ import (
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/devices"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/ingest"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/outlets"
+	domainplatform "github.com/daniryckidinata/nti_pos/backend-go/internal/domain/platform"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/promos"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/staff"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/stock"
@@ -27,6 +28,7 @@ import (
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/httpapi/wire"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/media"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/pg"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/platform"
 )
 
 type Deps struct {
@@ -47,6 +49,15 @@ type Deps struct {
 	// Reports serves the Backoffice sales report, dashboard and exports; nil
 	// leaves those sections out.
 	Reports backoffice.ReportService
+	// PlatformSessionDB stores platform panel sessions. It must be on the
+	// UNSCOPED credential — platform_sessions is not granted to the merchant
+	// one — and nil leaves /platform unmounted.
+	PlatformSessionDB *sql.DB
+	// Mail sends an owner's first sign-in link; nil shows the link on the
+	// platform panel instead.
+	Mail domainplatform.Mailer
+	// LinkBaseURL is the origin e-mailed links start with.
+	LinkBaseURL string
 }
 
 func NewRouter(d Deps) http.Handler {
@@ -94,25 +105,48 @@ func NewRouter(d Deps) http.Handler {
 		PollInterval: d.SyncPollInterval,
 	}).Routes())
 
+	// The platform invalidates through the same auth cache the API
+	// authenticates with, so suspending a merchant signs its tills out now.
+	platformSvc := domainplatform.NewService(d.Pools, domainplatform.Options{
+		Auth:        cachedAuth,
+		Mail:        d.Mail,
+		LinkBaseURL: d.LinkBaseURL,
+		Redis:       d.Redis,
+		Logger:      d.Logger,
+	})
+
 	// Every Backoffice writer publishes through the same feed service the API
 	// reads from, and the outlet writer invalidates through the same cache the
 	// API authenticates with — one of each, so the two surfaces cannot disagree.
 	r.Mount("/backoffice", backoffice.New(backoffice.Deps{
-		Pools:         d.Pools,
-		SessionDB:     d.SessionDB,
-		Staff:         staff.NewService(d.Pools, feed),
-		Catalogue:     catalogue.NewService(d.Pools, feed, images),
-		Promos:        promos.NewService(d.Pools, feed),
-		Outlets:       outlets.NewService(d.Pools, feed, cachedAuth),
-		Stock:         stock.NewService(d.Pools, feed),
-		Tables:        tables.NewService(d.Pools, feed),
-		Reports:       d.Reports,
-		Devices:       svc,
-		CachedAuth:    cachedAuth,
-		Logger:        d.Logger,
-		CSRFKey:       csrfKey(d.AppKey),
-		SecureCookies: d.SecureCookies,
+		Pools:          d.Pools,
+		SessionDB:      d.SessionDB,
+		Staff:          staff.NewService(d.Pools, feed),
+		Catalogue:      catalogue.NewService(d.Pools, feed, images),
+		Promos:         promos.NewService(d.Pools, feed),
+		Outlets:        outlets.NewService(d.Pools, feed, cachedAuth),
+		Stock:          stock.NewService(d.Pools, feed),
+		Tables:         tables.NewService(d.Pools, feed),
+		Reports:        d.Reports,
+		Devices:        svc,
+		CachedAuth:     cachedAuth,
+		Impersonations: platformSvc,
+		Setup:          platformSvc,
+		Logger:         d.Logger,
+		CSRFKey:        csrfKey(d.AppKey),
+		SecureCookies:  d.SecureCookies,
 	}).Routes())
+
+	if d.PlatformSessionDB != nil {
+		r.Mount("/platform", platform.New(platform.Deps{
+			Service:       platformSvc,
+			SessionDB:     d.PlatformSessionDB,
+			Redis:         d.Redis,
+			Logger:        d.Logger,
+			AppKey:        d.AppKey,
+			SecureCookies: d.SecureCookies,
+		}).Routes())
+	}
 
 	r.Get("/", func(w http.ResponseWriter, req *http.Request) {
 		http.Redirect(w, req, "/backoffice", http.StatusSeeOther)

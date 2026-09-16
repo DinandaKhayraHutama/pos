@@ -12,7 +12,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/alexedwards/scs/postgresstore"
@@ -24,24 +23,30 @@ import (
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/auth"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/catalogue"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/devices"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/entitlements"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/outlets"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/promos"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/staff"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/stock"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/pg"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/web"
 )
 
 //go:embed static
 var staticFS embed.FS
 
 const (
-	sessionEmployeeKey = "employee_id"
-	sessionTenantKey   = "tenant_id"
+	sessionEmployeeKey      = "employee_id"
+	sessionTenantKey        = "tenant_id"
+	sessionImpersonationKey = "impersonation_id"
 )
 
 type ctxKey int
 
-const employeeKey ctxKey = iota
+const (
+	employeeKey ctxKey = iota
+	impersonationKey
+)
 
 type Handler struct {
 	pools     pg.Pools
@@ -54,10 +59,13 @@ type Handler struct {
 	reports   ReportService
 	devices   *devices.Service
 	auth      *devices.CachedAuthenticator
-	sessions  *scs.SessionManager
-	logger    *slog.Logger
-	csrfKey   []byte
-	secure    bool
+	// impersonations and setup are the platform's two ways into this panel.
+	impersonations Impersonations
+	setup          AccountSetup
+	sessions       *scs.SessionManager
+	logger         *slog.Logger
+	csrfKey        []byte
+	secure         bool
 }
 
 type Deps struct {
@@ -74,13 +82,21 @@ type Deps struct {
 	Reports    ReportService
 	Devices    *devices.Service
 	CachedAuth *devices.CachedAuthenticator
-	Logger     *slog.Logger
-	CSRFKey    []byte
+	// Impersonations lets a platform admin in as an owner; nil leaves the
+	// handoff route unmounted.
+	Impersonations Impersonations
+	// Setup serves an owner's first sign-in link; nil leaves it unmounted.
+	Setup   AccountSetup
+	Logger  *slog.Logger
+	CSRFKey []byte
 	// SecureCookies must be true anywhere the panel is reachable over TLS,
 	// which is everywhere except a developer's own machine.
 	SecureCookies bool
 }
 
+// New must copy every Deps field. It once dropped Reports, and every report
+// route was a 404 while the rest of the panel worked; routes_test.go walks the
+// router for each optional section.
 func New(d Deps) *Handler {
 	sessions := scs.New()
 	sessions.Store = postgresstore.New(d.SessionDB)
@@ -92,20 +108,22 @@ func New(d Deps) *Handler {
 	sessions.Cookie.Secure = d.SecureCookies
 
 	return &Handler{
-		pools:     d.Pools,
-		staff:     d.Staff,
-		catalogue: d.Catalogue,
-		promos:    d.Promos,
-		outlets:   d.Outlets,
-		stock:     d.Stock,
-		tables:    d.Tables,
-		reports:   d.Reports,
-		devices:   d.Devices,
-		auth:      d.CachedAuth,
-		sessions:  sessions,
-		logger:    d.Logger,
-		csrfKey:   d.CSRFKey,
-		secure:    d.SecureCookies,
+		pools:          d.Pools,
+		staff:          d.Staff,
+		catalogue:      d.Catalogue,
+		promos:         d.Promos,
+		outlets:        d.Outlets,
+		stock:          d.Stock,
+		tables:         d.Tables,
+		reports:        d.Reports,
+		devices:        d.Devices,
+		auth:           d.CachedAuth,
+		impersonations: d.Impersonations,
+		setup:          d.Setup,
+		sessions:       sessions,
+		logger:         d.Logger,
+		csrfKey:        d.CSRFKey,
+		secure:         d.SecureCookies,
 	}
 }
 
@@ -116,162 +134,207 @@ func (h *Handler) Routes() chi.Router {
 
 	r.Group(func(r chi.Router) {
 		r.Use(h.sessions.LoadAndSave)
+		r.Use(web.DeclareRequestScheme)
 
-		r.Use(declareRequestScheme)
-		r.Use(csrf.Protect(h.csrfKey,
-			csrf.Path("/backoffice"),
-			csrf.Secure(h.secure),
-			csrf.SameSite(csrf.SameSiteLaxMode),
-		))
-
-		r.Get("/login", h.showLogin)
-		r.Post("/login", h.submitLogin)
-		r.Post("/logout", h.logout)
-
-		// An e-mailed report link: no session, the token is the credential.
-		if h.reports != nil {
-			r.Get("/report-links/{id}", h.downloadByToken)
+		// The platform panel's handoff arrives from a page of another panel,
+		// which cannot hold this panel's CSRF token. The one-time token in the
+		// body is the credential, and the handler still refuses a cross-site
+		// Origin.
+		if h.impersonations != nil {
+			r.Post("/impersonate", h.beginImpersonation)
 		}
 
 		r.Group(func(r chi.Router) {
-			r.Use(h.requireEmployee)
+			r.Use(csrf.Protect(h.csrfKey,
+				csrf.Path("/backoffice"),
+				csrf.Secure(h.secure),
+				csrf.SameSite(csrf.SameSiteLaxMode),
+			))
 
-			r.Get("/", func(w http.ResponseWriter, req *http.Request) {
-				target := "/backoffice/devices"
-				if h.reports != nil && employeeFrom(req.Context()).Can(auth.ViewDailySummary) {
-					target = "/backoffice/dashboard"
-				}
-				http.Redirect(w, req, target, http.StatusSeeOther)
-			})
-			r.Get("/devices", h.devicesPage)
+			r.Get("/login", h.showLogin)
+			r.Post("/login", h.submitLogin)
+			r.Post("/logout", h.logout)
 
+			// An e-mailed report link: no session, the token is the credential.
 			if h.reports != nil {
-				// The dashboard is the daily summary a manager already sees on the
-				// till; the full report is financial and stays with whoever holds
-				// viewFinancialReports.
-				r.With(h.require(auth.ViewDailySummary)).Get("/dashboard", h.dashboardPage)
-				r.With(h.require(auth.ViewDailySummary)).Get("/dashboard/tiles", h.dashboardTiles)
-				r.Route("/reports", func(r chi.Router) {
-					r.Use(h.require(auth.ViewFinancialReports))
-
-					r.Get("/", h.reportsPage)
-					r.Post("/recompute", h.recomputeReport)
-					r.Get("/exports", h.exportsList)
-					r.Post("/exports", h.requestExport)
-					r.Get("/exports/{id}/download", h.downloadExport)
-					r.Get("/schedules", h.schedulesPage)
-					r.Post("/schedules", h.createSchedule)
-					r.Post("/schedules/{id}/active", h.setScheduleActive)
-					r.Post("/schedules/{id}/delete", h.deleteSchedule)
-				})
+				r.Get("/report-links/{id}", h.downloadByToken)
+			}
+			// An owner's first sign-in link: likewise.
+			if h.setup != nil {
+				r.Get("/welcome/{id}", h.welcomePage)
+				r.Post("/welcome/{id}", h.completeWelcome)
 			}
 
-			// Issuing and revoking are infrastructure work, so they carry the
-			// same permission as configuring branches and tills.
-			r.With(h.require(auth.ManageOutlets)).
-				Post("/registers/{registerID}/activation-code", h.issueActivationCode)
-			r.With(h.require(auth.ManageOutlets)).
-				Post("/devices/{deviceID}/revoke", h.revokeDevice)
+			r.Group(func(r chi.Router) {
+				r.Use(h.requireEmployee)
 
-			// Each section is gated by the permission it exercises, reading
-			// included: a page someone may not act on is still a page of
-			// another role's data.
-			r.Route("/catalogue", func(r chi.Router) {
-				r.Use(h.require(auth.ManageCatalogue))
+				// Outside the audit middleware: ending an impersonation writes
+				// its own audit row, and must work even when a request row
+				// could not be written.
+				if h.impersonations != nil {
+					r.Post("/impersonation/end", h.endImpersonation)
+				}
 
-				r.Get("/categories", h.categoriesPage)
-				r.Post("/categories", h.createCategory)
-				r.Get("/categories/{id}", h.categoryPage)
-				r.Post("/categories/{id}", h.updateCategory)
-				r.Post("/categories/{id}/delete", h.deleteCategory)
-
-				r.Get("/products", h.productsPage)
-				r.Get("/products/new", h.newProductPage)
-				r.Post("/products", h.createProduct)
-				r.Get("/products/import", h.importPage)
-				r.Post("/products/import", h.importPrices)
-				r.Get("/products/{id}", h.productPage)
-				r.Post("/products/{id}", h.updateProduct)
-				r.Post("/products/{id}/availability", h.setProductAvailability)
-				r.Post("/products/{id}/delete", h.deleteProduct)
-				r.Post("/products/{id}/image", h.uploadProductImage)
-				r.Post("/products/{id}/image/delete", h.removeProductImage)
-				r.Post("/products/{id}/variants", h.saveVariant)
-				r.Post("/products/{id}/variants/{variantID}", h.saveVariant)
-				r.Post("/products/{id}/variants/{variantID}/delete", h.deleteVariant)
-				r.Post("/products/{id}/modifiers", h.saveProductModifiers)
-
-				r.Get("/modifiers", h.modifiersPage)
-				r.Post("/modifiers", h.createModifierGroup)
-				r.Get("/modifiers/{id}", h.modifierGroupPage)
-				r.Post("/modifiers/{id}", h.updateModifierGroup)
-				r.Post("/modifiers/{id}/delete", h.deleteModifierGroup)
-				r.Post("/modifiers/{id}/options", h.saveModifierOption)
-				r.Post("/modifiers/{id}/options/{optionID}", h.saveModifierOption)
-				r.Post("/modifiers/{id}/options/{optionID}/delete", h.deleteModifierOption)
-			})
-
-			r.Route("/promos", func(r chi.Router) {
-				r.Use(h.require(auth.ManagePromos))
-
-				r.Get("/", h.promosPage)
-				r.Get("/new", h.newPromoPage)
-				r.Post("/", h.createPromo)
-				r.Get("/{id}", h.promoPage)
-				r.Post("/{id}", h.updatePromo)
-				r.Post("/{id}/delete", h.deletePromo)
-			})
-
-			r.Route("/staff", func(r chi.Router) {
-				r.Use(h.require(auth.ManageEmployees))
-
-				r.Get("/", h.staffPage)
-				r.Get("/new", h.newStaffPage)
-				r.Post("/", h.createStaff)
-				r.Get("/{id}", h.staffMemberPage)
-				r.Post("/{id}", h.updateStaff)
-				r.Post("/{id}/pin", h.setStaffPIN)
-				r.Post("/{id}/password", h.setStaffPassword)
-				r.Post("/{id}/active", h.setStaffActive)
-			})
-
-			r.Route("/outlets", func(r chi.Router) {
-				r.Use(h.require(auth.ManageOutlets))
-
-				r.Get("/", h.outletsPage)
-				r.Post("/", h.createOutlet)
-				r.Get("/{id}", h.outletPage)
-				r.Post("/{id}", h.updateOutlet)
-				r.Post("/{id}/active", h.setOutletActive)
-				r.Post("/{id}/registers", h.saveRegister)
-				r.Post("/{id}/registers/{registerID}", h.saveRegister)
-				r.Post("/{id}/registers/{registerID}/active", h.setRegisterActive)
-
-				// The floor plan belongs to the branch it is in, and configuring it is the
-				// same infrastructure work as configuring its tills.
-				r.Get("/{id}/tables", h.tablesPage)
-				r.Get("/{id}/tables/board", h.tablesBoard)
-				r.Post("/{id}/tables", h.saveTable)
-				r.Post("/{id}/tables/{tableID}", h.saveTable)
-				r.Post("/{id}/tables/{tableID}/active", h.setTableActive)
-				r.Post("/{id}/tables/{tableID}/delete", h.deleteTable)
-			})
-
-			// The same permission the till uses for stock in and out, so a
-			// manager who may adjust a shelf at the counter may do it here.
-			r.Route("/stock", func(r chi.Router) {
-				r.Use(h.require(auth.AdjustStock))
-
-				r.Get("/", h.stockPage)
-				r.Get("/{outletID}/{productID}", h.stockProductPage)
-				r.Post("/{outletID}/{productID}/adjust", h.adjustStock)
-				r.Post("/{outletID}/{productID}/count", h.countStock)
-				r.Post("/{outletID}/{productID}/transfer", h.transferStock)
+				r.Group(h.panelRoutes)
 			})
 		})
 	})
 
 	return r
+}
+
+// panelRoutes is every signed-in screen.
+func (h *Handler) panelRoutes(r chi.Router) {
+	// Under impersonation every change is audited before it runs, and refused
+	// if the audit row cannot be written.
+	r.Use(h.auditImpersonatedWrites)
+
+	r.Get("/", func(w http.ResponseWriter, req *http.Request) {
+		target := "/backoffice/devices"
+		if h.reports != nil && employeeFrom(req.Context()).Can(auth.ViewDailySummary) {
+			target = "/backoffice/dashboard"
+		}
+		http.Redirect(w, req, target, http.StatusSeeOther)
+	})
+	r.Get("/devices", h.devicesPage)
+
+	if h.reports != nil {
+		// The dashboard is the daily summary a manager already sees on the
+		// till; the full report is financial and stays with whoever holds
+		// viewFinancialReports.
+		r.With(h.require(auth.ViewDailySummary)).Get("/dashboard", h.dashboardPage)
+		r.With(h.require(auth.ViewDailySummary)).Get("/dashboard/tiles", h.dashboardTiles)
+		r.Route("/reports", func(r chi.Router) {
+			r.Use(h.require(auth.ViewFinancialReports))
+
+			r.Get("/", h.reportsPage)
+			r.Post("/recompute", h.recomputeReport)
+
+			// Exports and schedules are a module the platform can switch off;
+			// the report itself is not.
+			r.Group(func(r chi.Router) {
+				r.Use(h.requireFeature(entitlements.ReportExports))
+
+				r.Get("/exports", h.exportsList)
+				r.Post("/exports", h.requestExport)
+				r.Get("/exports/{id}/download", h.downloadExport)
+				r.Get("/schedules", h.schedulesPage)
+				r.Post("/schedules", h.createSchedule)
+				r.Post("/schedules/{id}/active", h.setScheduleActive)
+				r.Post("/schedules/{id}/delete", h.deleteSchedule)
+			})
+		})
+	}
+
+	// Issuing and revoking are infrastructure work, so they carry the
+	// same permission as configuring branches and tills.
+	r.With(h.require(auth.ManageOutlets)).
+		Post("/registers/{registerID}/activation-code", h.issueActivationCode)
+	r.With(h.require(auth.ManageOutlets)).
+		Post("/devices/{deviceID}/revoke", h.revokeDevice)
+
+	// Each section is gated by the permission it exercises, reading
+	// included: a page someone may not act on is still a page of
+	// another role's data.
+	r.Route("/catalogue", func(r chi.Router) {
+		r.Use(h.require(auth.ManageCatalogue))
+
+		r.Get("/categories", h.categoriesPage)
+		r.Post("/categories", h.createCategory)
+		r.Get("/categories/{id}", h.categoryPage)
+		r.Post("/categories/{id}", h.updateCategory)
+		r.Post("/categories/{id}/delete", h.deleteCategory)
+
+		r.Get("/products", h.productsPage)
+		r.Get("/products/new", h.newProductPage)
+		r.Post("/products", h.createProduct)
+		r.Get("/products/import", h.importPage)
+		r.Post("/products/import", h.importPrices)
+		r.Get("/products/{id}", h.productPage)
+		r.Post("/products/{id}", h.updateProduct)
+		r.Post("/products/{id}/availability", h.setProductAvailability)
+		r.Post("/products/{id}/delete", h.deleteProduct)
+		r.Post("/products/{id}/image", h.uploadProductImage)
+		r.Post("/products/{id}/image/delete", h.removeProductImage)
+		r.Post("/products/{id}/variants", h.saveVariant)
+		r.Post("/products/{id}/variants/{variantID}", h.saveVariant)
+		r.Post("/products/{id}/variants/{variantID}/delete", h.deleteVariant)
+		r.Post("/products/{id}/modifiers", h.saveProductModifiers)
+
+		r.Get("/modifiers", h.modifiersPage)
+		r.Post("/modifiers", h.createModifierGroup)
+		r.Get("/modifiers/{id}", h.modifierGroupPage)
+		r.Post("/modifiers/{id}", h.updateModifierGroup)
+		r.Post("/modifiers/{id}/delete", h.deleteModifierGroup)
+		r.Post("/modifiers/{id}/options", h.saveModifierOption)
+		r.Post("/modifiers/{id}/options/{optionID}", h.saveModifierOption)
+		r.Post("/modifiers/{id}/options/{optionID}/delete", h.deleteModifierOption)
+	})
+
+	r.Route("/promos", func(r chi.Router) {
+		r.Use(h.require(auth.ManagePromos))
+		r.Use(h.requireFeature(entitlements.Promos))
+
+		r.Get("/", h.promosPage)
+		r.Get("/new", h.newPromoPage)
+		r.Post("/", h.createPromo)
+		r.Get("/{id}", h.promoPage)
+		r.Post("/{id}", h.updatePromo)
+		r.Post("/{id}/delete", h.deletePromo)
+	})
+
+	r.Route("/staff", func(r chi.Router) {
+		r.Use(h.require(auth.ManageEmployees))
+
+		r.Get("/", h.staffPage)
+		r.Get("/new", h.newStaffPage)
+		r.Post("/", h.createStaff)
+		r.Get("/{id}", h.staffMemberPage)
+		r.Post("/{id}", h.updateStaff)
+		// Support inside a merchant must not be able to take an account over.
+		r.With(h.refuseWhileImpersonating).Post("/{id}/pin", h.setStaffPIN)
+		r.With(h.refuseWhileImpersonating).Post("/{id}/password", h.setStaffPassword)
+		r.Post("/{id}/active", h.setStaffActive)
+	})
+
+	r.Route("/outlets", func(r chi.Router) {
+		r.Use(h.require(auth.ManageOutlets))
+
+		r.Get("/", h.outletsPage)
+		r.Post("/", h.createOutlet)
+		r.Get("/{id}", h.outletPage)
+		r.Post("/{id}", h.updateOutlet)
+		r.Post("/{id}/active", h.setOutletActive)
+		r.Post("/{id}/registers", h.saveRegister)
+		r.Post("/{id}/registers/{registerID}", h.saveRegister)
+		r.Post("/{id}/registers/{registerID}/active", h.setRegisterActive)
+
+		// The floor plan belongs to the branch it is in, and configuring it is the
+		// same infrastructure work as configuring its tills.
+		r.Group(func(r chi.Router) {
+			r.Use(h.requireFeature(entitlements.Tables))
+
+			r.Get("/{id}/tables", h.tablesPage)
+			r.Get("/{id}/tables/board", h.tablesBoard)
+			r.Post("/{id}/tables", h.saveTable)
+			r.Post("/{id}/tables/{tableID}", h.saveTable)
+			r.Post("/{id}/tables/{tableID}/active", h.setTableActive)
+			r.Post("/{id}/tables/{tableID}/delete", h.deleteTable)
+		})
+	})
+
+	// The same permission the till uses for stock in and out, so a
+	// manager who may adjust a shelf at the counter may do it here.
+	r.Route("/stock", func(r chi.Router) {
+		r.Use(h.require(auth.AdjustStock))
+		r.Use(h.requireFeature(entitlements.Stock))
+
+		r.Get("/", h.stockPage)
+		r.Get("/{outletID}/{productID}", h.stockProductPage)
+		r.Post("/{outletID}/{productID}/adjust", h.adjustStock)
+		r.Post("/{outletID}/{productID}/count", h.countStock)
+		r.Post("/{outletID}/{productID}/transfer", h.transferStock)
+	})
 }
 
 func tenantOf(r *http.Request) string { return employeeFrom(r.Context()).TenantID }
@@ -309,26 +372,6 @@ func (h *Handler) notFound(w http.ResponseWriter, r *http.Request) {
 	}
 	h.renderStatus(w, r, http.StatusNotFound,
 		views.MessagePage(h.sessionView(r), "Tidak ditemukan", "Data ini tidak ada, atau sudah dihapus."))
-}
-
-// declareRequestScheme tells gorilla/csrf which scheme the BROWSER used, which
-// is what decides how it validates the Origin header.
-//
-// The connection is not the authority: behind Caddy this process always sees
-// plain HTTP even when the browser used HTTPS, so X-Forwarded-Proto has to be
-// consulted. Getting it wrong in either direction rejects every POST — assume
-// HTTPS on a developer's machine and the http Origin is refused; assume HTTP
-// behind TLS and the https Origin is refused.
-//
-// Only safe because Caddy is the sole ingress and overwrites this header; an
-// app reachable directly must not trust it.
-func declareRequestScheme(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		overTLS := r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
-
-		ctx := context.WithValue(r.Context(), csrf.PlaintextHTTPContextKey, !overTLS)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
 }
 
 func employeeFrom(ctx context.Context) staff.Employee {

@@ -1,0 +1,67 @@
+package views
+
+import bo "github.com/daniryckidinata/nti_pos/backend-go/internal/backoffice/views"
+
+// Shell is visibly not the merchant Backoffice: a dark bar and a red PLATFORM
+// tag, so nobody mistakes a panel that reaches every merchant for one that
+// reaches their own.
+templ Shell(title string, s Session) {
+	<!DOCTYPE html>
+	<html lang="id">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ title } · Platform JustClick</title>
+			<link rel="icon" href="data:,"/>
+			@bo.Styles()
+			@platformStyles()
+		</head>
+		<body>
+			<header class="topbar platform">
+				<div class="brand">JustClick <span class="env-tag">PLATFORM</span></div>
+				<nav>
+					<a href="/platform/tenants">Perusahaan</a>
+					<a href="/platform/audit">Log audit</a>
+					<a href="/platform/ops">Ops</a>
+				</nav>
+				<div class="who">
+					<span>{ s.AdminName }</span>
+					<form method="post" action="/platform/logout">
+						<input type="hidden" name="gorilla.csrf.Token" value={ s.CSRFToken }/>
+						<button type="submit" class="link">Keluar</button>
+					</form>
+				</div>
+			</header>
+			<main>
+				{ children... }
+			</main>
+		</body>
+	</html>
+}
+
+templ MessagePage(s Session, title, message string) {
+	@Shell(title, s) {
+		<h1>{ title }</h1>
+		<div class="card"><p>{ message }</p></div>
+	}
+}
+
+templ platformStyles() {
+	<style>
+		.topbar.platform { background:#101828; border-bottom:0; }
+		.topbar.platform .brand, .topbar.platform nav a, .topbar.platform .who, .topbar.platform button.link { color:#fff; }
+		.topbar.platform nav a:hover { background:#1d2939; }
+		.env-tag { font-size:11px; letter-spacing:.08em; background:var(--danger); color:#fff; padding:2px 8px; border-radius:999px; vertical-align:middle; }
+		.secret { font:600 20px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace; letter-spacing:.06em; }
+		.mono { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; word-break:break-all; }
+		.tiles { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:12px; }
+		.tile { border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
+		.tile .label { font-size:12px; color:var(--muted); }
+		.tile .value { font-size:20px; font-weight:650; }
+		.flash { background:#ecfdf3; border:1px solid #abefc6; border-radius:8px; padding:10px 14px; margin-bottom:16px; }
+		.bad { color:var(--danger); }
+		ul.codes { columns:2; font:600 16px/1.9 ui-monospace,SFMono-Regular,Consolas,monospace; padding-left:20px; }
+		input.link-field { width:100%; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:13px; }
+		form.stack.wide { width:auto; max-width:560px; }
+	</style>
+}

@@ -68,11 +68,13 @@ templ OutletPage(s Session, o outlets.Outlet, f Form) {
 			@OutletActiveCard(o)
 		</div>
 		@RegistersCard(o, "", NewForm())
-		<div class="card">
-			<h2>Meja</h2>
-			<p class="sub">Denah meja dikirim ke setiap till di outlet ini, dan status mejanya bisa dipantau langsung.</p>
-			<a href={ templ.URL("/backoffice/outlets/" + o.ID + "/tables") }>Kelola meja</a>
-		</div>
+		if s.CanTables {
+			<div class="card">
+				<h2>Meja</h2>
+				<p class="sub">Denah meja dikirim ke setiap till di outlet ini, dan status mejanya bisa dipantau langsung.</p>
+				<a href={ templ.URL("/backoffice/outlets/" + o.ID + "/tables") }>Kelola meja</a>
+			</div>
+		}
 	}
 }
 

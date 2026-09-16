@@ -11,6 +11,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/auth"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/entitlements"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/syncfeed"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/pg"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/store/unscoped"
@@ -36,9 +37,15 @@ type Employee struct {
 	// BusinessName is the merchant this account belongs to, loaded with the
 	// account so every Backoffice page can name it without a second query.
 	BusinessName string
+	// Features are the modules the merchant has been sold, loaded with the
+	// account (ByID only) so a switched-off module closes on the next click.
+	Features entitlements.Set
 }
 
 func (e Employee) Can(p auth.Permission) bool { return e.Role.Grants(p) }
+
+// Has reports whether the merchant this account belongs to has a module.
+func (e Employee) Has(f entitlements.Flag) bool { return e.Features.Has(f) }
 
 type Service struct {
 	pools pg.Pools
@@ -115,13 +122,19 @@ func (s *Service) ByID(ctx context.Context, tenantID, employeeID string) (Employ
 	)
 
 	err := pg.InTenantTx(ctx, s.pools.Tenant, tenantID, func(ctx context.Context, tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `
+		if err := tx.QueryRow(ctx, `
 			SELECT e.id, e.tenant_id, e.name, COALESCE(e.email, ''), e.role, e.active, t.name
 			FROM employees e
 			JOIN tenants t ON t.id = e.tenant_id
 			WHERE e.id = $1 AND e.deleted_at IS NULL AND t.status = 'active'`,
 			employeeID,
-		).Scan(&emp.ID, &emp.TenantID, &emp.Name, &emp.Email, &role, &emp.Active, &emp.BusinessName)
+		).Scan(&emp.ID, &emp.TenantID, &emp.Name, &emp.Email, &role, &emp.Active, &emp.BusinessName); err != nil {
+			return err
+		}
+
+		var err error
+		emp.Features, err = entitlements.Load(ctx, tx, tenantID)
+		return err
 	})
 	if err != nil {
 		return Employee{}, err

@@ -251,6 +251,11 @@ func (s *Service) RunDueSchedules(ctx context.Context, now time.Time) (int, erro
 			FROM report_schedules rs
 			JOIN tenants t ON t.id = rs.tenant_id AND t.status = 'active'
 			WHERE rs.active AND rs.next_run_at <= $1
+			  -- A merchant whose exports were switched off by the platform is
+			  -- not mailed. Its schedules stay due and resume if the module
+			  -- comes back, rather than being silently moved on.
+			  AND NOT EXISTS (SELECT 1 FROM tenant_feature_flags f
+			                  WHERE f.tenant_id = rs.tenant_id AND f.flag = 'report_exports' AND NOT f.enabled)
 			ORDER BY rs.next_run_at
 			LIMIT 500`, now)
 		if err != nil {

@@ -39,7 +39,12 @@ const usage = `usage:
   justclick migrate status        show migration state
   justclick tenant create [flags] onboard a merchant and its first Owner
   justclick roles set-password    set credentials for the two login roles,
-                                  from APP_DB_PASSWORD and UNSCOPED_DB_PASSWORD`
+                                  from APP_DB_PASSWORD and UNSCOPED_DB_PASSWORD
+  justclick platform admin create --name N --email E
+                                  create a super admin; prints its password once
+  justclick platform admin reset-totp --email E
+                                  clear two-factor sign-in after a lost phone
+  justclick platform admin deactivate|activate --email E`
 
 func main() {
 	if err := run(); err != nil {
@@ -74,6 +79,11 @@ func run() error {
 			return errors.New(usage)
 		}
 		return createTenant(cfg, os.Args[3:])
+	case "platform":
+		if len(os.Args) < 4 || os.Args[2] != "admin" {
+			return errors.New(usage)
+		}
+		return platformAdmin(cfg, logger, os.Args[3], os.Args[4:])
 	case "roles":
 		if len(os.Args) < 3 || os.Args[2] != "set-password" {
 			return errors.New(usage)
@@ -272,6 +282,23 @@ func serve(cfg config.Config, logger *slog.Logger) error {
 	}
 	defer sessionDB.Close()
 
+	// Platform sessions are keys to every merchant, so their table is not
+	// granted to the merchant credential; they are stored through the unscoped one.
+	platformSessionDB, err := sql.Open("pgx", cfg.UnscopedDatabaseURL)
+	if err != nil {
+		return fmt.Errorf("open platform session store: %w", err)
+	}
+	defer platformSessionDB.Close()
+
+	linkBase, err := cfg.LinkBaseURL()
+	if err != nil {
+		return err
+	}
+	mail, err := newMailer(cfg)
+	if err != nil {
+		return err
+	}
+
 	srv := &http.Server{
 		Addr: cfg.HTTPAddr,
 		Handler: httpapi.NewRouter(httpapi.Deps{
@@ -287,6 +314,10 @@ func serve(cfg config.Config, logger *slog.Logger) error {
 			SyncPollInterval: cfg.SyncPollInterval,
 			Media:            store,
 			Reports:          reports,
+			// The platform panel, and the owner sign-in links it sends.
+			PlatformSessionDB: platformSessionDB,
+			Mail:              mail,
+			LinkBaseURL:       linkBase,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

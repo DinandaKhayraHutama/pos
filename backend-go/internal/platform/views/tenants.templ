@@ -1,0 +1,285 @@
+package views
+
+import (
+	bo "github.com/daniryckidinata/nti_pos/backend-go/internal/backoffice/views"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/entitlements"
+	domain "github.com/daniryckidinata/nti_pos/backend-go/internal/domain/platform"
+)
+
+templ csrfField(s Session) {
+	<input type="hidden" name="gorilla.csrf.Token" value={ s.CSRFToken }/>
+}
+
+templ statusBadge(status string) {
+	if status == domain.StatusSuspended {
+		<span class="badge off">disuspend</span>
+	} else {
+		<span class="badge on">aktif</span>
+	}
+}
+
+templ TenantsPage(s Session, v TenantsView) {
+	@Shell("Perusahaan", s) {
+		<div class="head">
+			<div>
+				<h1>Perusahaan</h1>
+				<p class="sub">Pemakaian dibaca dari perangkat dan rollup penjualan harian, tidak pernah dari tabel order.</p>
+			</div>
+			<a class="button primary" href="/platform/tenants/new">Tambah perusahaan</a>
+		</div>
+		<div class="card">
+			<form method="get" action="/platform/tenants" class="inline">
+				@bo.Field(searchForm(v), "Cari nama atau slug", "q", "search", templ.Attributes{})
+				@bo.Select(searchForm(v), "Status", "status", StatusOptions)
+				<button type="submit">Tampilkan</button>
+			</form>
+		</div>
+		<div class="card">
+			<table>
+				<thead>
+					<tr>
+						<th>Perusahaan</th><th>Status</th><th class="num">Outlet</th><th class="num">Perangkat aktif</th>
+						<th class="num">Terlihat 5 mnt</th><th class="num">Order hari ini</th><th>Terakhir terlihat</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, t := range v.Tenants {
+						<tr>
+							<td><a href={ templ.URL("/platform/tenants/" + t.ID) }>{ t.Name }</a><br/><span class="hint">{ t.Slug }</span></td>
+							<td>@statusBadge(t.Status)</td>
+							<td class="num">{ itoa(t.Usage.ActiveOutlets) }</td>
+							<td class="num">{ itoa(t.Usage.ActiveDevices) }</td>
+							<td class="num">{ itoa(t.Usage.DevicesSeen5m) }</td>
+							<td class="num">{ i64toa(t.Usage.OrdersToday) }</td>
+							<td>{ when(t.Usage.LastSeenAt) }</td>
+						</tr>
+					}
+					if len(v.Tenants) == 0 {
+						<tr><td colspan="7" class="sub">Tidak ada perusahaan yang cocok.</td></tr>
+					}
+				</tbody>
+			</table>
+			<div class="pager">
+				if v.Page > 1 {
+					<a class="button" href={ templ.URL(tenantsURL(v, v.Page-1)) }>← Sebelumnya</a>
+				}
+				if v.More {
+					<a class="button" href={ templ.URL(tenantsURL(v, v.Page+1)) }>Berikutnya →</a>
+				}
+			</div>
+		</div>
+	}
+}
+
+templ NewTenantPage(s Session, f bo.Form) {
+	@Shell("Tambah perusahaan", s) {
+		<p><a href="/platform/tenants">← Perusahaan</a></p>
+		<h1>Tambah perusahaan</h1>
+		<p class="sub">
+			Membuat perusahaan, Owner pertama, kategori awal (Makanan, Minuman, Lainnya) dan batas paketnya dalam satu langkah.
+			Owner menyetel kata sandinya sendiri lewat tautan sekali pakai; tidak ada yang tahu kata sandinya.
+		</p>
+		<div class="card">
+			<form class="grid" method="post" action="/platform/tenants">
+				@csrfField(s)
+				@bo.Field(f, "Nama usaha", "business_name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+				@bo.Field(f, "Slug", "slug", "text", templ.Attributes{"required": true, "maxlength": "50", "pattern": "[a-z0-9][a-z0-9-]{1,48}[a-z0-9]"})
+				@bo.Field(f, "Nama Owner", "owner_name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+				@bo.Field(f, "Email Owner", "owner_email", "email", templ.Attributes{"required": true, "maxlength": "254"})
+				@bo.Field(f, "Zona waktu", "timezone", "text", templ.Attributes{"required": true})
+				@bo.Field(f, "Maks. outlet aktif", "max_outlets", "number", templ.Attributes{"min": "0", "placeholder": "tanpa batas"})
+				@bo.Field(f, "Maks. till aktif", "max_registers", "number", templ.Attributes{"min": "0", "placeholder": "tanpa batas"})
+				@bo.Field(f, "Maks. perangkat aktif", "max_active_devices", "number", templ.Attributes{"min": "0", "placeholder": "tanpa batas"})
+				<p class="hint wide">Zona waktu menentukan jam di laporan. Mengubahnya nanti berarti menghitung ulang riwayat, jadi pilih yang benar sekarang.</p>
+				<div class="actions wide"><button type="submit" class="primary">Buat perusahaan</button></div>
+			</form>
+		</div>
+	}
+}
+
+templ setupLinkCard(link domain.SetupLink) {
+	if link.Mailed {
+		<p class="notice">Tautan setel kata sandi sudah dikirim ke email Owner. Tautan tidak ditampilkan di sini.</p>
+	} else {
+		<p class="notice">
+			Email tidak terkirim ({ link.MailError }). Tautan di bawah ditampilkan <strong>sekali ini saja</strong>:
+			kirimkan ke Owner lewat kanal yang aman. Sekali pakai, berlaku 72 jam.
+		</p>
+		<label>
+			Tautan setel kata sandi
+			<input id="setup-link" class="link-field" type="text" readonly value={ link.Link }/>
+		</label>
+	}
+}
+
+templ OnboardedPage(s Session, name string, out domain.Onboarded) {
+	@Shell("Perusahaan dibuat", s) {
+		<h1>{ name } dibuat</h1>
+		<div class="card">
+			@setupLinkCard(out.SetupLink)
+			<p style="margin-top:16px"><a class="button primary" href={ templ.URL("/platform/tenants/" + out.TenantID) }>Buka halaman perusahaan</a></p>
+		</div>
+	}
+}
+
+templ SetupLinkPage(s Session, tenantID string, link domain.SetupLink) {
+	@Shell("Tautan setel kata sandi", s) {
+		<h1>Tautan setel kata sandi diterbitkan</h1>
+		<div class="card">
+			<p class="sub">Tautan lama yang belum dipakai sudah dibatalkan. Kata sandi Owner saat ini tetap berlaku sampai tautan ini dipakai.</p>
+			@setupLinkCard(link)
+			<p style="margin-top:16px"><a href={ templ.URL("/platform/tenants/" + tenantID) }>← Kembali ke perusahaan</a></p>
+		</div>
+	}
+}
+
+templ TenantPage(s Session, d domain.TenantDetail, forms TenantForms) {
+	@Shell(d.Name, s) {
+		<p><a href="/platform/tenants">← Perusahaan</a></p>
+		<h1>{ d.Name }</h1>
+		<p class="sub">{ d.Slug } · @statusBadge(d.Status) · { d.Timezone } · dibuat { whenT(d.CreatedAt) }</p>
+		if forms.Flash != "" {
+			<div class="flash" role="status">{ forms.Flash }</div>
+		}
+		if d.Status == domain.StatusSuspended {
+			<p class="notice">Disuspend { when(d.SuspendedAt) }: { d.SuspendedReason }</p>
+		}
+		<div class="card">
+			<h2>Pemakaian</h2>
+			<div class="tiles">
+				@tile("Outlet aktif", usageAgainst(d.Usage.ActiveOutlets, d.Limits.MaxOutlets))
+				@tile("Till aktif", usageAgainst(d.Usage.ActiveRegisters, d.Limits.MaxRegisters))
+				@tile("Perangkat aktif", usageAgainst(d.Usage.ActiveDevices, d.Limits.MaxActiveDevices))
+				@tile("Terlihat 5 menit", itoa(d.Usage.DevicesSeen5m))
+				@tile("Terlihat 24 jam", itoa(d.Usage.DevicesSeen24h))
+				@tile("Order hari ini", i64toa(d.Usage.OrdersToday))
+				@tile("Rata-rata order/hari (7 hari)", perDay(d.Usage.OrdersLast7Days))
+				@tile("Terakhir terlihat", when(d.Usage.LastSeenAt))
+			</div>
+			<p class="hint">Order dari rollup, data per { when(d.Usage.RollupAsOf) }.</p>
+		</div>
+		<div class="card">
+			<h2>Owner</h2>
+			<table>
+				<thead><tr><th>Nama</th><th>Email</th><th>Status</th><th>Kata sandi</th><th></th></tr></thead>
+				<tbody>
+					for _, o := range d.Owners {
+						<tr>
+							<td>{ o.Name }</td>
+							<td>{ o.Email }</td>
+							<td>@bo.ActiveBadge(o.Active)</td>
+							<td>
+								if o.PendingSetup {
+									<span class="badge">tautan tertunda</span>
+								} else if o.HasPassword {
+									<span class="badge on">sudah disetel</span>
+								} else {
+									<span class="badge off">belum</span>
+								}
+							</td>
+							<td style="text-align:right">
+								if o.Active {
+									<form method="post" action={ templ.SafeURL("/platform/tenants/" + d.ID + "/owners/" + o.ID + "/setup-link") }>
+										@csrfField(s)
+										<button type="submit">Terbitkan tautan setel kata sandi</button>
+									</form>
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+		<div class="card">
+			<h2>Impersonasi</h2>
+			if d.Status == domain.StatusSuspended {
+				<p class="sub">Perusahaan yang disuspend tidak bisa dibuka.</p>
+			} else if len(activeOwners(d.Owners)) == 0 {
+				<p class="sub">Tidak ada Owner aktif untuk dimasuki.</p>
+			} else {
+				<p class="sub">
+					Membuka Backoffice sebagai Owner selama maksimal 60 menit, dengan banner merah di setiap halaman.
+					Setiap perubahan dicatat di log audit; kata sandi dan PIN tidak bisa diubah.
+				</p>
+				<form class="stack wide" method="post" action={ templ.SafeURL("/platform/tenants/" + d.ID + "/impersonate") }>
+					@csrfField(s)
+					@bo.Select(forms.Impersonate, "Masuk sebagai", "employee_id", activeOwners(d.Owners))
+					@bo.TextArea(forms.Impersonate, "Alasan (misalnya nomor tiket)", "reason", templ.Attributes{"required": true, "minlength": "10", "maxlength": "500"})
+					<button type="submit" class="primary">Buka Backoffice sebagai Owner</button>
+				</form>
+			}
+		</div>
+		<div class="card">
+			<h2>Batas paket</h2>
+			<p class="sub">Kosong berarti tanpa batas. Menurunkan batas tidak mematikan yang sudah berjalan; hanya penambahan berikutnya yang ditolak.</p>
+			<form class="grid" method="post" action={ templ.SafeURL("/platform/tenants/" + d.ID + "/limits") }>
+				@csrfField(s)
+				@bo.Field(forms.Limits, "Maks. outlet aktif", "max_outlets", "number", templ.Attributes{"min": "0", "placeholder": "tanpa batas"})
+				@bo.Field(forms.Limits, "Maks. till aktif", "max_registers", "number", templ.Attributes{"min": "0", "placeholder": "tanpa batas"})
+				@bo.Field(forms.Limits, "Maks. perangkat aktif", "max_active_devices", "number", templ.Attributes{"min": "0", "placeholder": "tanpa batas"})
+				<div class="actions wide"><button type="submit" class="primary">Simpan batas</button></div>
+			</form>
+		</div>
+		<div class="card">
+			<h2>Modul</h2>
+			<p class="sub">Mematikan modul menutup menunya di Backoffice. Data yang sudah ada di till — promo aktif, denah meja, stok — tidak diubah.</p>
+			<form class="stack" method="post" action={ templ.SafeURL("/platform/tenants/" + d.ID + "/flags") }>
+				@csrfField(s)
+				for _, flag := range entitlements.AllFlags {
+					@bo.Check(flagForm(d.Flags), flag.Label(), "flag_"+string(flag))
+				}
+				<button type="submit" class="primary">Simpan modul</button>
+			</form>
+		</div>
+		<div class="card">
+			<h2>Status</h2>
+			if d.Status == domain.StatusSuspended {
+				<form method="post" action={ templ.SafeURL("/platform/tenants/" + d.ID + "/reactivate") }>
+					@csrfField(s)
+					<button type="submit" class="primary">Aktifkan kembali</button>
+				</form>
+			} else {
+				<p class="sub bad">
+					Suspend langsung menutup Backoffice dan menghentikan <strong>semua till</strong> perusahaan ini, termasuk yang sedang melayani pelanggan.
+					Penjualan yang belum terkirim tetap aman di tablet dan terkirim setelah diaktifkan kembali.
+				</p>
+				<form class="stack wide" method="post" action={ templ.SafeURL("/platform/tenants/" + d.ID + "/suspend") }>
+					@csrfField(s)
+					@bo.TextArea(forms.Suspend, "Alasan", "reason", templ.Attributes{"required": true, "minlength": "10", "maxlength": "500"})
+					@bo.Field(forms.Suspend, "Ketik slug untuk konfirmasi: "+d.Slug, "confirm_slug", "text", templ.Attributes{"required": true, "autocomplete": "off"})
+					<button type="submit" class="danger">Suspend perusahaan</button>
+				</form>
+			}
+		</div>
+		<div class="card">
+			<div class="head">
+				<h2>Aktivitas platform terakhir</h2>
+				<a href={ templ.URL("/platform/audit?tenant=" + d.ID) }>Semua</a>
+			</div>
+			@auditTable(d.Activity, false)
+		</div>
+	}
+}
+
+templ tile(label, value string) {
+	<div class="tile">
+		<div class="label">{ label }</div>
+		<div class="value">{ value }</div>
+	</div>
+}
+
+// HandoffPage carries the one-time token to the Backoffice in a form body and
+// submits itself. It is its own page so the token is never in a URL.
+templ HandoffPage(token string) {
+	@bo.Bare("Membuka Backoffice") {
+		<div class="card">
+			<h1>Membuka Backoffice sebagai Owner…</h1>
+			<form id="handoff" method="post" action="/backoffice/impersonate">
+				<input type="hidden" name="token" value={ token }/>
+				<button type="submit" class="primary">Lanjutkan</button>
+			</form>
+			<p class="hint">Tautan ini berlaku satu menit dan hanya sekali.</p>
+		</div>
+		<script>document.getElementById("handoff").submit();</script>
+	}
+}

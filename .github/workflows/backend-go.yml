@@ -126,6 +126,7 @@ jobs:
           go run ./scripts/verify-stock
           go run ./scripts/verify-tables
           go run ./scripts/verify-reports
+          go run ./scripts/verify-platform
 
   lint:
     runs-on: ubuntu-latest

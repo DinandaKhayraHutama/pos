@@ -24,6 +24,11 @@ func (w *maintenanceWorker) Work(ctx context.Context, _ *river.Job[Maintenance])
 	return Maintain(ctx, w.pool, w.logger)
 }
 
+// DefaultPartitions catch rows whose date has no partition of its own. Anything
+// in one is a sale or an audit row filed where no report or retention job looks,
+// so it needs an operator. The platform ops page checks the same list.
+var DefaultPartitions = []string{"orders_default", "order_items_default", "order_item_modifiers_default", "ingest_log_default"}
+
 // Maintain uses a credential without DDL ownership. Only the two constrained
 // SECURITY DEFINER maintenance functions grant it partition DDL authority.
 func Maintain(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) error {
@@ -44,7 +49,7 @@ func Maintain(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) erro
 		if removed > 0 {
 			logger.Info("expired ingest audit partitions removed", "partitions", removed, "retention_days", 90)
 		}
-		for _, table := range []string{"orders_default", "order_items_default", "order_item_modifiers_default", "ingest_log_default"} {
+		for _, table := range DefaultPartitions {
 			var occupied bool
 			if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM "+pgx.Identifier{table}.Sanitize()+" LIMIT 1)").Scan(&occupied); err != nil {
 				return err

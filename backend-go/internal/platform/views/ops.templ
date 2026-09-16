@@ -1,0 +1,104 @@
+package views
+
+import (
+	"fmt"
+
+	domain "github.com/daniryckidinata/nti_pos/backend-go/internal/domain/platform"
+)
+
+func versions(vs []int64) string {
+	out := ""
+	for i, v := range vs {
+		if i > 0 {
+			out += ", "
+		}
+		out += fmt.Sprint(v)
+	}
+	return out
+}
+
+templ OpsPage(s Session, r domain.OpsReport) {
+	@Shell("Ops", s) {
+		<h1>Ops</h1>
+		<p class="sub">Diperiksa { whenT(r.CheckedAt) }. Hanya baca.</p>
+		<div class="card">
+			<h2>Layanan</h2>
+			<div class="tiles">
+				@tile("PostgreSQL", r.Database)
+				@tile("Redis", r.Redis)
+				@tile("Slice laporan tertunda", i64toa(r.DirtySlices))
+				@tile("Slice tertua sejak", when(r.OldestDirtySlice))
+			</div>
+		</div>
+		<div class="card" id="migrations">
+			<h2>Migrasi</h2>
+			<p>Terpasang { itoa(r.Migrations.Applied) }, terbaru <code>{ fmt.Sprint(r.Migrations.Latest) }</code>.</p>
+			if len(r.Migrations.Pending) == 0 {
+				<p class="badge on" id="migrations-current">semua migrasi di binary ini sudah terpasang</p>
+			} else {
+				<p class="bad">Belum terpasang: { versions(r.Migrations.Pending) }. Jalankan <code>justclick migrate up</code>.</p>
+			}
+			if len(r.Migrations.Unknown) > 0 {
+				<p class="hint">Terpasang tetapi tidak dikenal binary ini (binary lebih lama dari skema): { versions(r.Migrations.Unknown) }</p>
+			}
+		</div>
+		<div class="card">
+			<h2>Partisi DEFAULT</h2>
+			if len(r.OccupiedDefaultPartitions) == 0 {
+				<p class="badge on">kosong</p>
+			} else {
+				<p class="bad">Berisi baris yang butuh tindakan operator:</p>
+				<ul>
+					for _, t := range r.OccupiedDefaultPartitions {
+						<li><code>{ t }</code></li>
+					}
+				</ul>
+			}
+		</div>
+		<div class="card">
+			<h2>Antrean job (River)</h2>
+			<table>
+				<thead><tr><th>State</th><th>Queue</th><th class="num">Jumlah</th></tr></thead>
+				<tbody>
+					for _, j := range r.Jobs {
+						<tr>
+							<td>
+								if j.State == "discarded" {
+									<span class="badge off">{ j.State }</span>
+								} else {
+									{ j.State }
+								}
+							</td>
+							<td>{ j.Queue }</td>
+							<td class="num">{ i64toa(j.Count) }</td>
+						</tr>
+					}
+					if len(r.Jobs) == 0 {
+						<tr><td colspan="3" class="sub">Tidak ada job.</td></tr>
+					}
+				</tbody>
+			</table>
+		</div>
+		<div class="card">
+			<h2>Job dibuang terakhir</h2>
+			<table>
+				<thead><tr><th>ID</th><th>Jenis</th><th>Queue</th><th class="num">Percobaan</th><th>Selesai</th><th>Galat terakhir</th></tr></thead>
+				<tbody>
+					for _, j := range r.Discarded {
+						<tr>
+							<td>{ i64toa(j.ID) }</td>
+							<td>{ j.Kind }</td>
+							<td>{ j.Queue }</td>
+							<td class="num">{ itoa(j.Attempt) }</td>
+							<td>{ when(j.FinalizedAt) }</td>
+							<td class="mono">{ j.Error }</td>
+						</tr>
+					}
+					if len(r.Discarded) == 0 {
+						<tr><td colspan="6" class="sub">Tidak ada. Target produksi: nol.</td></tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}

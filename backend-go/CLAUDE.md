@@ -6,13 +6,14 @@ one and stays only as a reference until the pilot gate.
 
 ## What this is
 
-**Current work (2026-09-15): Fase 0–5 regression-checked; Fase 6 floor-plan,
-table-status sync, modifiers and outlet-scoped promos implemented on both sides.**
-See `docs/PHASE_0_2_VERIFICATION.md`, `docs/PHASE_3_VERIFICATION.md`,
-`../mobile/docs/PHASE_4_VERIFICATION.md`, `docs/PHASE_5_VERIFICATION.md` and
-`docs/PHASE_6_VERIFICATION.md` for
-evidence and production-readiness limits. The pilot gate still needs hardware
-UAT and the scaled load test.
+**Current work (2026-09-15): Fase 0–7 done; Fase 8 platform admin implemented** —
+super admins with TOTP, onboarding, suspension, plan limits and module switches,
+audited impersonation, audit log and ops page. See
+`docs/PHASE_0_2_VERIFICATION.md`, `docs/PHASE_3_VERIFICATION.md`,
+`../mobile/docs/PHASE_4_VERIFICATION.md`, `docs/PHASE_5_VERIFICATION.md`,
+`docs/PHASE_6_VERIFICATION.md`, `docs/PHASE_7_VERIFICATION.md` and
+`docs/PHASE_8_VERIFICATION.md` for evidence and production-readiness limits. The
+pilot gate still needs hardware UAT and the scaled load test.
 
 **JustClick POS backend**, second edition — one Go binary serving:
 
@@ -20,7 +21,7 @@ UAT and the scaled load test.
 |---|---|---|---|
 | Device API | `/api/v2` | device bearer token | the Flutter till |
 | Web Backoffice | `/backoffice` | session cookie, `justclick_backoffice` | Owner, Manager |
-| Platform admin | not built yet | separate guard, separate cookie | super admins |
+| Platform admin | `/platform` | password + TOTP, session cookie `justclick_platform` | super admins |
 
 Stack: Go 1.27 · chi · pgx/v5 · goose · templ + HTMX 2 · scs (Postgres store) ·
 gorilla/csrf · go-redis v9 · PostgreSQL 18 · Redis 8 · Caddy.
@@ -41,7 +42,10 @@ docker compose up -d caddy                 # local HTTPS on :8443
 go run ./cmd/justclick migrate up          # goose, on MIGRATE_DATABASE_URL
 go run ./cmd/justclick roles set-password  # credentials for the two login roles
 go run ./cmd/justclick tenant create --name … --slug … --owner-name … --owner-email …
-go run ./cmd/justclick serve               # API + Backoffice on :9000
+go run ./cmd/justclick platform admin create --name … --email …   # prints the password once; TOTP enrols at first sign-in
+go run ./cmd/justclick platform admin reset-totp --email …        # lost phone and spent recovery codes
+go run ./cmd/justclick platform admin deactivate --email …        # also ends that admin's impersonations
+go run ./cmd/justclick serve               # API + Backoffice + /platform on :9000
 templ generate                             # after editing any .templ
 go test ./... -count=1                     # needs real Postgres AND Redis
 go run ./scripts/verify-activation         # against a running server
@@ -51,6 +55,7 @@ go run ./scripts/verify-sync               # against a running server
 go run ./scripts/verify-push               # 200 receipts x3 through HTTP; isolated disposable tenant
 go run ./cmd/justclick worker              # River: partitions, stock reconcile, report rollups/exports/schedules
 go run ./scripts/verify-reports            # Fase 7 gate: 30-day seed, rollup == raw, < 200 ms, exports
+go run ./scripts/verify-platform           # Fase 8: TOTP, onboarding, limits, modules, impersonation, suspension
 go generate ./api ./internal/store         # pinned OpenAPI + SQL generators
 go run ./scripts/verify-sync-load          # disposable 2000-device k6 fleet against Compose
 ```
@@ -95,9 +100,12 @@ nothing.
 
 **`internal/store/unscoped` is the greppable escape hatch.** Importing it is the
 audit trail for "what can read across merchants", the role
-`TenantContext::runUnscoped()` played in the Laravel original. Its callers are
-expected to stay countable on one hand: device token resolution, backoffice
-login by email, and tenant provisioning.
+`TenantContext::runUnscoped()` played in the Laravel original. Its importers are
+held to an allow-list by `TestUnscopedImportersAreCountable`: device token
+resolution, Backoffice login by email, tenant provisioning, the scheduled-report
+scan, the worker's merchant listing and partition maintenance, and the platform
+panel (Fase 8), which is cross-merchant by definition. Adding a package to that
+list is a security review, not a test fix.
 
 **Roles are declared in a migration; passwords are not.** A password in a
 migration is a password in version control. `justclick roles set-password` reads
@@ -521,8 +529,11 @@ because their Redis-reset checks share the verification environment.
 
 ## Not built yet
 
-Platform admin (Fase 8) remains a future phase; reporting is Fase 7 and the
-stock ledger Fase 5, both below. `POST /sync/push`, partitioned order/details, UUID reservations, durable
+Platform admin (Fase 8), reporting (Fase 7) and the stock ledger (Fase 5) are
+built; each has its section below. Not built for the platform panel: QR codes at
+TOTP enrolment (the secret is typed), admin management in the panel (CLI only),
+an IP allow-list for `/platform` at Caddy, a default-tariff seed at onboarding
+(no settings table exists yet), and module switches that reach the till's feeds. `POST /sync/push`, partitioned order/details, UUID reservations, durable
 ingest audit and River maintenance are implemented, and the Flutter v2 client
 (Fase 4) consumes them: batched push with per-row results, a local dead-letter
 table, the `/sync/changes` fast path and `X-Schema-Version` on every sync call.
@@ -557,6 +568,108 @@ till in a very large company holds and scans a long staff list), not a
 correctness one; outlet-scoped staff remains an option, not a requirement.
 
 Table status (Fase 6) and stock (below) are both outlet-scoped feeds.
+
+## Platform admin (Fase 8) — what must stay true
+
+`internal/domain/platform` owns super admins, onboarding, suspension, limits,
+module switches, impersonation, the audit trail and the ops report;
+`internal/platform` is its panel at `/platform`; `internal/domain/entitlements`
+is the leaf package every merchant-side writer consults. See
+`docs/PHASE_8_VERIFICATION.md` for what was checked.
+
+**The boundary is the GRANT.** Migration 001's default privileges hand every new
+table to `justclick_app`, so migration 018 revokes `super_admins`, recovery
+codes, `platform_sessions`, `platform_audit_log` and `password_setup_tokens`
+from it outright, and grants them to `justclick_unscoped` only.
+`tenant_limits`, `tenant_feature_flags` and `impersonation_sessions` are
+readable by their own merchant (RLS `FOR SELECT`) and writable only by the
+platform. `platform_audit_log` is `SELECT, INSERT` — not even the platform
+credential can edit it. `TestTheMerchantCredentialCannotReachPlatformTables`
+and `TestThePlatformAuditLogIsAppendOnly` guard this; `rls_test.go` inverts its
+check for the two platform tables that carry `tenant_id`. Platform sessions use
+their own table through the unscoped credential and their own cookie
+(`justclick_platform`, `Path=/platform`, `SameSite=Strict`, 30 min idle).
+
+**Every platform action writes its audit row in the same transaction**
+(`platform.Record` takes a `pgx.Tx`, never a pool). A function that closes
+something and then reports an error must return nil from the transaction and
+report after it: returning the error inside rolls the close back.
+`ActiveImpersonation` shipped with exactly that bug for one test run.
+
+**Sign-in is password, then TOTP or a recovery code.** A password alone moves
+the session to `verify` or `enroll`; only a code moves it to `in`, and
+`requireAdmin` reloads the admin every request. TOTP is RFC 6238 on the
+standard library (SHA-1, 6 digits, 30 s, ±1 step), tested against the RFC
+vectors. **A code is accepted only for a step later than the last accepted** —
+one `UPDATE … WHERE totp_last_step < $step`, so two requests with one observed
+code cannot both get in (`TestTheSameCodeSignsInExactlyOnceUnderConcurrency`);
+the enrolment code counts as used. Recovery codes are SHA-256, claimed by CAS.
+The first admin, a reset after a lost phone, and deactivation are CLI only.
+The TOTP secret is stored readable — it must be, to verify — and is not
+encrypted with `APP_KEY`, which must never key anything durable.
+
+**Onboarding is one transaction**: `tenancy.ProvisionTx` + three numbered
+starter categories + limits + a setup token + the audit row. The owner has no
+password until they use the link (72 h, SHA-256, single use by CAS), so nobody
+— the admin included — ever knows it; with no SMTP the link is shown once on the
+panel. Reissuing cancels older links and leaves the current password working
+until the new link is used, which is how support recovers a locked-out owner.
+
+**Suspension stops tills, not just the panel** (product decision, 2026-09-15).
+The predicates already existed (`t.status = 'active'` in device auth,
+activation, sign-in, `ByID`, the worker); what makes it immediate is
+`Bump("tenant", id)` **after** the commit. The till answers 401 by returning to
+its activation screen and keeps its outbox; reactivation restores the same
+token. The status UPDATE takes `FOR NO KEY UPDATE` on the tenant row, which does
+not conflict with the `FOR KEY SHARE` of order foreign keys — never read the
+tenant row with `FOR UPDATE` to "check first". Suspending ends open
+impersonations. `tenants.status` has a CHECK: an unknown status would pass every
+`= 'active'` predicate as locked out with no screen that says why.
+
+**Impersonation is write-capable and audited, by design.** A handoff token
+(32 bytes, SHA-256, one minute, CAS) is posted — never put in a URL — from the
+platform page to `POST /backoffice/impersonate`, which sits outside the CSRF
+group (it cannot hold the Backoffice token) but refuses a cross-site `Origin`.
+The session carries `impersonation_id`; `requireEmployee` re-checks it every
+request (expired, ended, admin deactivated, merchant suspended → signed out).
+`auditImpersonatedWrites` writes the audit row **before** a non-GET runs and
+answers 503 without running it when the row cannot be written. Password and PIN
+routes refuse under impersonation. The banner is rendered in `Shell` and cannot
+be dismissed. Rows changed under impersonation are attributed to the owner; the
+audit trail is what ties them to the admin.
+
+**Limits are count-then-insert under a transaction advisory lock**, taken only
+by a bounded merchant and only for the rare writes that add a counted row
+(outlet or till switched on or created, code issued, device activated). An
+unlimited merchant reads one row and takes no lock
+(`TestOnlyABoundedMerchantTakesTheLimitLock`). Order: after the row claim,
+before any sync counter. Activation is the authority: a refusal rolls the claim
+back so the code stays usable, the installation being re-activated is not
+counted, and the API answers **422 `device_limit_reached`** (OpenAPI 2.3.0,
+additive; the till reads any 422 as "get another code"). Issuing a code
+pre-checks so the owner sees why in the panel. Lowering a limit switches
+nothing off.
+
+**Module switches close Backoffice sections, never till data.** A missing row
+means the default in code (all on), so a new flag reaches existing merchants
+without a backfill; setting a switch back to its default deletes the row.
+`requireFeature` answers 404 and `sessionView` folds the same switch into the
+nav. Export polling is hidden with the module, or it would toast a 404 every
+five seconds. Scheduled reports of a merchant with exports off are skipped and
+stay due.
+
+**Last seen is advisory and must not move the device revision.**
+`CachedAuthenticator.Touch` writes `devices.last_seen_at` at most once per
+device per five minutes (Redis `SET NX`; no Redis, no write) and never touches
+`updated_at` — that feeds `RevisionMs`, and moving it would send every till to
+`/devices/me` on each touch. `TestTouchingLastSeenMovesNeitherTheRevisionNorTheAuthGeneration`.
+
+**Usage reads devices and `daily_sales_rollup`, never `orders`.** The ops page
+reads `goose_db_version` (granted to the unscoped role), River's job table,
+`report_dirty_slices` and `jobs.DefaultPartitions`.
+
+`TestUnscopedImportersAreCountable` holds the list of packages that import
+`internal/store/unscoped`; adding one is a security review.
 
 ## Sales reports and exports (Fase 7) — what must stay true
 
