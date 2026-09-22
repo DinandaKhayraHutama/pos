@@ -10,6 +10,7 @@ import '../../features/orders/order_detail_page.dart';
 import '../../features/orders/orders_page.dart';
 import '../../features/pos/pos_page.dart';
 import '../../features/reports/report_page.dart';
+import '../../features/recovery/recovery_center_page.dart';
 import '../../features/shift/shift_page.dart';
 import '../../features/employees/employee_management_page.dart';
 import '../../features/outlets/outlet_management_page.dart';
@@ -38,10 +39,7 @@ import '../auth/permissions.dart';
 /// so it does NOT touch `routerProvider`'s stability — `pageBuilder` is a
 /// static closure that doesn't `ref.watch` anything; `router_stability_test`
 /// stays green.
-Page<T> _iosSlidePage<T>({
-  required LocalKey key,
-  required Widget child,
-}) {
+Page<T> _iosSlidePage<T>({required LocalKey key, required Widget child}) {
   return CustomTransitionPage<T>(
     key: key,
     child: child,
@@ -150,8 +148,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Connected master data has one writer: Backoffice. Keep demo editors,
       // but a typed URL must not bypass their hidden navigation links.
       if (TillBinding.current != null &&
-          (path == '/products' || path.startsWith('/products/') ||
-           path == '/promos' || path == '/floorplan')) {
+          (path == '/products' ||
+              path.startsWith('/products/') ||
+              path == '/promos' ||
+              path == '/floorplan')) {
         return '/settings';
       }
 
@@ -177,8 +177,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
-      GoRoute(path: '/splash', builder: (_, __) => const SplashPage()),
-      GoRoute(path: '/login', builder: (_, __) => const LoginPage()),
+      GoRoute(path: '/splash', builder: (_, _) => const SplashPage()),
+      GoRoute(path: '/login', builder: (_, _) => const LoginPage()),
       ShellRoute(
         builder: (context, state, child) => MainShell(child: child),
         routes: [
@@ -190,26 +190,20 @@ final routerProvider = Provider<GoRouter>((ref) {
             // which inherits the platform pageTransitionsTheme (zoom/fade on
             // Android, slide on iOS) — the old page visibly animates under
             // the new one on every tab switch. Tab switches must be instant.
-            pageBuilder: (_, state) => NoTransitionPage(
-              key: state.pageKey,
-              child: const PosPage(),
-            ),
+            pageBuilder: (_, state) =>
+                NoTransitionPage(key: state.pageKey, child: const PosPage()),
           ),
           GoRoute(
             path: '/orders',
             name: 'orders',
-            pageBuilder: (_, state) => NoTransitionPage(
-              key: state.pageKey,
-              child: const OrdersPage(),
-            ),
+            pageBuilder: (_, state) =>
+                NoTransitionPage(key: state.pageKey, child: const OrdersPage()),
           ),
           GoRoute(
             path: '/tables',
             name: 'tables',
-            pageBuilder: (_, state) => NoTransitionPage(
-              key: state.pageKey,
-              child: const TablesPage(),
-            ),
+            pageBuilder: (_, state) =>
+                NoTransitionPage(key: state.pageKey, child: const TablesPage()),
           ),
           GoRoute(
             path: '/dashboard',
@@ -240,20 +234,24 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
-        path: '/report',
-        name: 'report',
+        path: '/recovery',
+        name: 'recovery',
         pageBuilder: (context, state) => _iosSlidePage(
           key: state.pageKey,
-          child: const ReportPage(),
+          child: const RecoveryCenterPage(),
         ),
+      ),
+      GoRoute(
+        path: '/report',
+        name: 'report',
+        pageBuilder: (context, state) =>
+            _iosSlidePage(key: state.pageKey, child: const ReportPage()),
       ),
       GoRoute(
         path: '/shift',
         name: 'shift',
-        pageBuilder: (context, state) => _iosSlidePage(
-          key: state.pageKey,
-          child: const ShiftPage(),
-        ),
+        pageBuilder: (context, state) =>
+            _iosSlidePage(key: state.pageKey, child: const ShiftPage()),
       ),
       GoRoute(
         path: '/employees',
@@ -310,10 +308,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/inventory',
         name: 'inventory',
-        pageBuilder: (context, state) => _iosSlidePage(
-          key: state.pageKey,
-          child: const InventoryPage(),
-        ),
+        pageBuilder: (context, state) =>
+            _iosSlidePage(key: state.pageKey, child: const InventoryPage()),
       ),
       GoRoute(
         path: '/promos',
@@ -330,7 +326,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 /// Bridges Riverpod settings into a [Listenable] for go_router refresh.
 class _SettingsListenable extends ChangeNotifier {
   _SettingsListenable(Ref ref) {
-    ref.listen<AsyncValue<SettingsState>>(settingsProvider, (_, __) {
+    ref.listen<AsyncValue<SettingsState>>(settingsProvider, (_, _) {
       notifyListeners();
     });
   }

@@ -1,4 +1,6 @@
 import 'package:bcrypt/bcrypt.dart';
+import '../device/till_coordinator.dart';
+import '../sync/sync_client.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../database/app_database.dart';
@@ -67,7 +69,18 @@ class EmployeeRepository {
     if (rows.isEmpty) return null;
 
     final employee = Employee.fromMap(rows.first);
-    return _matches(employee, pin) ? employee : null;
+    if (!_matches(employee, pin)) return null;
+    final coordinator = TillCoordinator.current;
+    if (coordinator != null) {
+      try {
+        await coordinator.authenticate(id, pin);
+      } on SyncException catch (e) {
+        // Offline PIN login can resume an already confirmed local assignment.
+        // An online denial must never be treated as an offline allowance.
+        if (e.failure != SyncFailure.network) return null;
+      }
+    }
+    return employee;
   }
 
   /// True when [pin] is already taken by someone other than [exceptId].

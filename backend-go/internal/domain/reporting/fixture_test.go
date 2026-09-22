@@ -51,6 +51,14 @@ type fixture struct {
 	cashierSiti             string
 	// day is today on the merchant's clock, so it always has a partition.
 	day time.Time
+
+	// The second branch, its own till and its own cashier. Reconciliation is
+	// only worth asserting across more than one of each: a single outlet
+	// cannot show a per-outlet total disagreeing with the chain's.
+	tillB        devices.Binding
+	sessionB     string
+	cashierRina  string
+	secondRegist string
 }
 
 func setup(t *testing.T, edit ...func(*reporting.Options)) *fixture {
@@ -90,16 +98,39 @@ func setup(t *testing.T, edit ...func(*reporting.Options)) *fixture {
 	scan(&f.till.Device.ID, `INSERT INTO devices (tenant_id, outlet_id, pos_register_id, device_uuid) VALUES ($1, $2, $3, 'tablet') RETURNING id::text`,
 		f.tenantID, f.outletA, f.till.Register.ID)
 
+	// A second till in the SAME branch, so "one outlet" is never accidentally
+	// "one register" in a scoping assertion.
+	scan(&f.secondRegist, `INSERT INTO pos_registers (tenant_id, outlet_id, name) VALUES ($1, $2, 'Kasir 2') RETURNING id::text`,
+		f.tenantID, f.outletA)
+
+	f.tillB.Tenant.ID, f.tillB.Outlet.ID = f.tenantID, f.outletB
+	scan(&f.tillB.Register.ID, `INSERT INTO pos_registers (tenant_id, outlet_id, name) VALUES ($1, $2, 'Bintaro 1') RETURNING id::text`,
+		f.tenantID, f.outletB)
+	scan(&f.tillB.Device.ID, `INSERT INTO devices (tenant_id, outlet_id, pos_register_id, device_uuid) VALUES ($1, $2, $3, 'tablet-b') RETURNING id::text`,
+		f.tenantID, f.outletB, f.tillB.Register.ID)
+	f.cashierRina = uuid()
+
 	f.day = reporting.Date(time.Now(), jakarta)
-	f.sessionID = uuid()
+	f.sessionID, f.sessionB = uuid(), uuid()
 	f.accepted(f.push("pos_sessions", wire.Session{
 		Id: f.sessionID, Revision: 1, EmployeeName: "Siti",
 		OpenedAtMs: time.Now().Add(-8 * time.Hour).UnixMilli(), OpeningCash: 100000,
+	}))
+	f.accepted(f.pushAs(f.tillB, "pos_sessions", wire.Session{
+		Id: f.sessionB, Revision: 1, EmployeeName: "Rina",
+		OpenedAtMs: time.Now().Add(-8 * time.Hour).UnixMilli(), OpeningCash: 50000,
 	}))
 	return f
 }
 
 func (f *fixture) push(entity string, values ...any) []wire.PushResult {
+	f.t.Helper()
+	return f.pushAs(f.till, entity, values...)
+}
+
+// pushAs is the same upload from a named till, so a fixture can ring up two
+// branches without the second one borrowing the first one's identity.
+func (f *fixture) pushAs(from devices.Binding, entity string, values ...any) []wire.PushResult {
 	f.t.Helper()
 	rows := make([]json.RawMessage, len(values))
 	for i, v := range values {
@@ -107,7 +138,7 @@ func (f *fixture) push(entity string, values ...any) []wire.PushResult {
 		require.NoError(f.t, err)
 		rows[i] = b
 	}
-	return f.ingest.Push(context.Background(), f.till, wire.PushRequest{Batches: []wire.PushBatch{{Entity: entity, Rows: rows}}}).Results
+	return f.ingest.Push(context.Background(), from, wire.PushRequest{Batches: []wire.PushBatch{{Entity: entity, Rows: rows}}}).Results
 }
 
 func (f *fixture) accepted(results []wire.PushResult) {
@@ -186,6 +217,37 @@ func (f *fixture) seedDay() {
 			func(o *wire.Order) {
 				o.AuthorizedBy, o.VoidReason, o.RefundedAmount = ptr("Owner"), ptr("Komplain"), ptr(int64(12000))
 			}),
+	))
+}
+
+// seedBintaro rings up the second branch on the same business day:
+//
+//   - 10:00, Rina, card: 2 × Kopi Susu (cost 5000) + Air Mineral, subtotal
+//     35000, no discount, PB1 3500 → 38500;
+//   - 12:00, refunded IN FULL by "Owner": Kopi Susu at 15000, PB1 1500 →
+//     16500, refunded_amount 16500.
+//
+// The full refund is the case the partial one at Kemang does not cover: the
+// money handed back equals the receipt, so "refunded amount" and "sales
+// return" are two different numbers on the same order — 16500 against 15000,
+// because tax came back with the money but was never a sale.
+func (f *fixture) seedBintaro() {
+	f.t.Helper()
+	cost := int64(5000)
+	coffee := func(qty int) saleLine {
+		return saleLine{productID: ptr(f.coffee), categoryID: ptr(f.drinks), name: "Kopi Susu", categoryName: "Minuman", price: 15000, cost: &cost, qty: qty}
+	}
+	water := saleLine{name: "Air Mineral", price: 5000, qty: 1}
+
+	full := f.order("refunded", f.at(12, 0), ptr(f.cashierRina), "Rina", "cash", 0, 1500, 0, []saleLine{coffee(1)},
+		func(o *wire.Order) {
+			o.PosSessionId = f.sessionB
+			o.AuthorizedBy, o.VoidReason, o.RefundedAmount = ptr("Owner"), ptr("Gelas pecah"), ptr(int64(16500))
+		})
+	f.accepted(f.pushAs(f.tillB, "orders",
+		f.order("paid", f.at(10, 0), ptr(f.cashierRina), "Rina", "card", 0, 3500, 0, []saleLine{coffee(2), water},
+			func(o *wire.Order) { o.PosSessionId = f.sessionB }),
+		full,
 	))
 }
 

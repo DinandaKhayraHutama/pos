@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 
 import 'wire_values.dart';
+import '../device/till_coordinator.dart';
 
 /// A cash session as `POST /api/v2/sync/push` receives it.
 ///
@@ -35,6 +36,9 @@ class SessionPush {
     final row = rows.first;
 
     return {
+      if (TillCoordinator.current != null && row['closed_at'] != null)
+        'order_count': Sqflite.firstIntValue(await txn.rawQuery(
+          'SELECT COUNT(*) FROM orders WHERE pos_session_id = ?', [shiftId])) ?? 0,
       'id': row['id'],
       'employee_id': uuidOrNull(row['employee_id']),
       'employee_name': row['employee_name'],

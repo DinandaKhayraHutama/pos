@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -37,13 +38,41 @@ type cacheEntry struct {
 // Every Redis failure falls through to PostgreSQL. It never fails open: a cache
 // outage must cost latency, not authentication.
 type CachedAuthenticator struct {
-	svc    *Service
-	rdb    *redis.Client
-	logger *slog.Logger
+	svc      *Service
+	rdb      *redis.Client
+	logger   *slog.Logger
+	observer CacheObserver
 }
 
-func NewCachedAuthenticator(svc *Service, rdb *redis.Client, logger *slog.Logger) *CachedAuthenticator {
-	return &CachedAuthenticator{svc: svc, rdb: rdb, logger: logger}
+// CacheObserver counts where each binding came from: "hit", "miss" (nothing
+// cached), "stale" (cached, but a generation had moved) or "error" (Redis
+// answered neither). The interface is declared here rather than taking the
+// metrics package, so the domain keeps no opinion about Prometheus.
+type CacheObserver interface {
+	AuthCache(result string)
+}
+
+type CacheOption func(*CachedAuthenticator)
+
+// WithCacheObserver is how the serving process attaches metrics. It is an
+// option rather than a parameter because every test and script constructs this
+// wrapper and none of them measure anything.
+func WithCacheObserver(o CacheObserver) CacheOption {
+	return func(c *CachedAuthenticator) { c.observer = o }
+}
+
+func NewCachedAuthenticator(svc *Service, rdb *redis.Client, logger *slog.Logger, opts ...CacheOption) *CachedAuthenticator {
+	c := &CachedAuthenticator{svc: svc, rdb: rdb, logger: logger}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
+}
+
+func (c *CachedAuthenticator) observe(result string) {
+	if c.observer != nil {
+		c.observer.AuthCache(result)
+	}
 }
 
 func (c *CachedAuthenticator) Authenticate(ctx context.Context, plainToken string) (Binding, error) {
@@ -95,6 +124,15 @@ func (c *CachedAuthenticator) Revoke(ctx context.Context, tenantID, deviceID str
 	c.Bump(ctx, "register", revoked.RegisterID)
 
 	return nil
+}
+
+// InvalidateRevoked publishes a revocation already committed by another
+// domain transaction, such as controlled till takeover.
+func (c *CachedAuthenticator) InvalidateRevoked(ctx context.Context, tokenHash []byte, registerID string) {
+	if len(tokenHash) > 0 {
+		c.forget(ctx, "dev:"+hex.EncodeToString(tokenHash))
+	}
+	c.Bump(ctx, "register", registerID)
 }
 
 // seenInterval bounds how often one tablet's last_seen_at is written: at most
@@ -161,23 +199,35 @@ func (c *CachedAuthenticator) Bump(ctx context.Context, kind, id string) {
 func (c *CachedAuthenticator) cached(ctx context.Context, key string) (Binding, bool) {
 	raw, err := c.rdb.Get(ctx, key).Bytes()
 	if err != nil {
+		// A key that is simply absent is the ordinary cold path; anything else
+		// means Redis itself is answering badly, and the two want different
+		// reactions from whoever is reading the dashboard.
+		if errors.Is(err, redis.Nil) {
+			c.observe("miss")
+		} else {
+			c.observe("error")
+		}
 		return Binding{}, false
 	}
 
 	var entry cacheEntry
 	if err := json.Unmarshal(raw, &entry); err != nil || entry.Binding.ExpiresAtMs <= time.Now().UnixMilli() {
+		c.observe("stale")
 		return Binding{}, false
 	}
 
 	gens, err := c.generations(ctx, entry.Binding)
 	if err != nil {
+		c.observe("error")
 		return Binding{}, false
 	}
 
 	if gens[0] != entry.TenantGen || gens[1] != entry.OutletGen || gens[2] != entry.RegisterGen {
+		c.observe("stale")
 		return Binding{}, false
 	}
 
+	c.observe("hit")
 	return entry.Binding, true
 }
 

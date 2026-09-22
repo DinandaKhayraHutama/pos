@@ -82,6 +82,8 @@ class SyncClient {
 
   void close() => _client.close();
 
+  Map<String, String> extraHeaders = const {};
+
   Future<Map<String, dynamic>> get(String path, [Map<String, String>? query]) {
     var uri = Uri.parse('$baseUrl$path');
     if (query != null) uri = uri.replace(queryParameters: query);
@@ -110,6 +112,7 @@ class SyncClient {
     }
 
     request.headers.addAll({
+      ...extraHeaders,
       'Authorization': 'Bearer $_token',
       'Accept': 'application/json',
       'X-Schema-Version': '$kClientSchemaVersion',
@@ -163,7 +166,7 @@ class SyncClient {
       if (wait != null) gate.arm(wait);
       throw SyncException(
         SyncFailure.server,
-        'HTTP $status',
+        _errorCode(response.body) ?? 'HTTP $status',
         wait == null ? null : _longer(wait, gate.remaining),
       );
     }

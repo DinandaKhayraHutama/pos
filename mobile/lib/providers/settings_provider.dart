@@ -6,6 +6,7 @@ import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
 import '../data/database/app_database.dart';
 import '../data/device/till_binding.dart';
+import '../data/device/till_coordinator.dart';
 import '../data/models/employee.dart';
 import '../data/models/outlet.dart';
 import '../data/preferences/app_preferences.dart';
@@ -334,6 +335,20 @@ class SettingsNotifier extends AsyncNotifier<SettingsState> {
       );
     }
 
+    // An open row in `shifts` is not permission to sell into it. On a
+    // coordinated till the server decides, and `holdsPermit` is the single
+    // definition the picker asks too — see its doc comment for why having two
+    // copies of this query made Resume a dead button.
+    final db = await AppDatabase.instance.db;
+    if (!await TillCoordinator.holdsPermit(db, session.id, employeeId)) {
+      return (
+        sessionId: '',
+        registerId: '',
+        registerName: '',
+        tableService: await _outletRunsTableService(),
+      );
+    }
+
     if (session.id != saved) await _prefs.setPosSessionId(session.id);
 
     // A session opened before registers existed names no till. It stays
@@ -523,6 +538,16 @@ class SettingsNotifier extends AsyncNotifier<SettingsState> {
   /// login screen re-resolves instead, so the new person lands on their own
   /// session or on the picker — never silently inside somebody else's drawer.
   Future<void> signIn(Employee employee, {bool keepPosSession = false}) async {
+    final coordinator = TillCoordinator.current;
+    if (coordinator != null) {
+      final session = state.valueOrNull?.posSessionId ?? '';
+      if (keepPosSession && session.isNotEmpty) {
+        await coordinator.handover(employee.id, session);
+      } else {
+        try { await coordinator.recover(employee.id); }
+        on TillOperationException { /* Cached confirmed sessions remain available offline. */ }
+      }
+    }
     state = state.whenData(
       (s) => s.copyWith(
         loggedIn: true,

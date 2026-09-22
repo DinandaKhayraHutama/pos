@@ -399,6 +399,7 @@ class OrderDetailPage extends ConsumerWidget {
     // advance, and offering to void it again is how stock gets credited twice.
     if (order.status.returnsStock) return const SizedBox.shrink();
 
+    if (order.readOnly) return Text(context.l10n.remoteReceiptReadOnly);
     final next = _nextStatus(order.status);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

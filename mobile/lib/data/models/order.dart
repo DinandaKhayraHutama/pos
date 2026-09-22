@@ -2,6 +2,7 @@ import 'enums.dart';
 import 'order_item.dart';
 
 class Order {
+  final bool readOnly;
   final String id;
   final String number; // human-friendly, e.g. K1-0023
 
@@ -92,6 +93,7 @@ class Order {
   final int? itemCount;
 
   const Order({
+    this.readOnly = false,
     required this.id,
     required this.number,
     this.numberSeq,
@@ -154,6 +156,7 @@ class Order {
     int? refundedAmount,
     List<OrderItem>? items,
   }) => Order(
+    readOnly: readOnly,
     id: id,
     number: number,
     numberSeq: numberSeq,
@@ -189,6 +192,7 @@ class Order {
 
   factory Order.fromMapRow(Map<String, dynamic> m, {List<OrderItem>? items}) {
     return Order(
+      readOnly: m['read_only'] == true,
       id: m['id'] as String,
       number: m['number'] as String,
       numberSeq: (m['number_seq'] as num?)?.toInt(),

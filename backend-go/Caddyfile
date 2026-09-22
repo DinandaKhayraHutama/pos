@@ -44,3 +44,29 @@ localhost {
 		}
 	}
 }
+
+# ---- Dev only: the till app, on one origin with the device API -------------
+#
+# A Flutter web build is a browser page, so calling the API on another port
+# would be a cross-origin request — and this API has no CORS, deliberately.
+# Serving both from one origin removes the question instead of answering it,
+# and `localhost` over http is the one plain-HTTP host the till's own guard
+# accepts (device_activation_repository.dart), so no certificate has to be
+# trusted to click through the whole flow.
+#
+# Not a production pattern: production serves the app from a store or an MDM,
+# not from the API's edge. This block exists so the connected flow can be
+# walked end to end on one machine.
+:8090 {
+	handle /api/v2/* {
+		reverse_proxy api:9000 {
+			header_up X-Justclick-Client-IP {remote_host}
+		}
+	}
+
+	handle {
+		root * /srv/till
+		try_files {path} /index.html
+		file_server
+	}
+}

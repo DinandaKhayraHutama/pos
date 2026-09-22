@@ -23,6 +23,8 @@ dependencies:
 
   # Local database (swappable with REST API later)
   sqflite: ^2.3.3+1
+  # Production SQLite implementation for Windows/Linux desktop.
+  sqflite_common_ffi: ^2.4.0+3
   path: ^1.9.0
   path_provider: ^2.1.4
 
@@ -51,7 +53,6 @@ dev_dependencies:
     sdk: flutter
   integration_test:
     sdk: flutter
-  sqflite_common_ffi: ^2.4.0+3
 
 flutter:
   uses-material-design: true

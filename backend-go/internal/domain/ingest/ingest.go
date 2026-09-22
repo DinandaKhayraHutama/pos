@@ -69,11 +69,20 @@ func NewService(pools pg.Pools, feed *syncfeed.Service, logger *slog.Logger) (*S
 type rejection struct {
 	code, message string
 	retry         bool
+	recoveryID    string
 }
 
 func (r *rejection) Error() string      { return r.message }
 func reject(code, message string) error { return &rejection{code: code, message: message} }
 func retry(code, message string) error  { return &rejection{code: code, message: message, retry: true} }
+func recoverRequired(id string) error {
+	return &rejection{code: "recovery_required", message: "This sale belongs to a force-closed session and requires manager review.", recoveryID: id}
+}
+
+type ingestAudit struct {
+	Date time.Time
+	ID   string
+}
 
 func (s *Service) Push(ctx context.Context, binding devices.Binding, req wire.PushRequest) wire.PushResponse {
 	out := wire.PushResponse{Results: []wire.PushResult{}, ServerTimeMs: time.Now().UnixMilli()}
@@ -94,10 +103,10 @@ func (s *Service) Push(ctx context.Context, binding devices.Binding, req wire.Pu
 					result.Revision = &identity.Revision
 				}
 			}
+			var audit ingestAudit
 			err := pg.InTenantTx(ctx, s.pools.Tenant, binding.Tenant.ID, func(ctx context.Context, tx pgx.Tx) error {
-				return store.New(tx).AppendIngestLog(ctx, store.AppendIngestLogParams{
-					TenantID: binding.Tenant.ID, DeviceID: binding.Device.ID, Entity: batch.Entity, Payload: raw,
-				})
+				return tx.QueryRow(ctx, `INSERT INTO ingest_log(tenant_id,device_id,entity,payload)
+					VALUES($1,$2,$3,$4) RETURNING received_date,id::text`, binding.Tenant.ID, binding.Device.ID, batch.Entity, raw).Scan(&audit.Date, &audit.ID)
 			})
 			if err != nil {
 				s.logger.Error("ingest audit unavailable", "tenant_id", binding.Tenant.ID, "device_id", binding.Device.ID, "error", err)
@@ -109,6 +118,10 @@ func (s *Service) Push(ctx context.Context, binding devices.Binding, req wire.Pu
 			if err == nil {
 				result.Status = "accepted"
 			} else {
+				if qerr := s.quarantineLate(ctx, binding, batch.Entity, raw, audit, err, &result); qerr != nil {
+					s.logger.Error("quarantine late sale", "tenant_id", binding.Tenant.ID, "device_id", binding.Device.ID, "error", qerr)
+					err = retry("server_unavailable", "The late sale was logged but could not be quarantined; keep it and retry.")
+				}
 				s.failure(ctx, binding, err, &result)
 			}
 			out.Results = append(out.Results, result)
@@ -129,7 +142,7 @@ func (s *Service) domain(ctx context.Context, b devices.Binding, entity string, 
 		return err
 	}
 
-	if entity == stock.Entity || entity == tables.EventEntity {
+	if entity == stock.Entity || entity == tables.EventEntity || entity == "orders" {
 		// Numbered inside this transaction, announced after it commits.
 		return s.feed.Write(ctx, b.Tenant.ID, func(ctx context.Context, w *syncfeed.Writer) error {
 			if err := guard(ctx, w.Tx); err != nil {
@@ -137,6 +150,9 @@ func (s *Service) domain(ctx context.Context, b devices.Binding, entity string, 
 			}
 			if entity == tables.EventEntity {
 				return s.ingestTableStatus(ctx, w, b, raw, result)
+			}
+			if entity == "orders" {
+				return s.ingestSale(ctx, w, b, raw, result)
 			}
 			return s.ingestStock(ctx, w, b, raw, result)
 		})
@@ -205,6 +221,13 @@ func (s *Service) ingestStock(ctx context.Context, w *syncfeed.Writer, b devices
 	var in stock.DeviceMovement
 	if json.Unmarshal(raw, &in) != nil {
 		return reject("schema_rejected", "Invalid stock movement values.")
+	}
+	var coordinated bool
+	if err := w.Tx.QueryRow(ctx, "SELECT coordinated_sessions FROM pos_registers WHERE id=$1", b.Register.ID).Scan(&coordinated); err != nil {
+		return err
+	}
+	if coordinated && (in.Reason == stock.ReasonSale || in.Reason == stock.ReasonVoidReturn) {
+		return reject("schema_rejected", "Sale movements must be committed with their receipt. Legacy movements require recovery.")
 	}
 	applied, err := s.stock.RecordFromDevice(ctx, w, b, in)
 	var refused *stock.Rejection
@@ -279,6 +302,10 @@ func (s *Service) failure(ctx context.Context, b devices.Binding, err error, res
 	}
 	code := wire.PushResultCode(reason.code)
 	result.Code, result.Message = &code, &reason.message
+	if reason.recoveryID != "" {
+		id := wire.UUID(reason.recoveryID)
+		result.RecoveryId = &id
+	}
 	// Rolled back or commit outcome unknown: nothing about the write is echoed.
 	result.Inserted, result.StockSeq, result.BalanceAfter = nil, nil, nil
 	result.StatusSeq, result.Outcome = nil, nil

@@ -13,28 +13,39 @@ templ Shell(title string, s Session) {
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>{ title } · Platform JustClick</title>
 			<link rel="icon" href="data:,"/>
+			@bo.RailPreference()
 			@bo.Styles()
 			@platformStyles()
 		</head>
-		<body>
-			<header class="topbar platform">
-				<div class="brand">JustClick <span class="env-tag">PLATFORM</span></div>
-				<nav>
-					<a href="/platform/tenants">Perusahaan</a>
-					<a href="/platform/audit">Log audit</a>
-					<a href="/platform/ops">Ops</a>
-				</nav>
-				<div class="who">
-					<span>{ s.AdminName }</span>
-					<form method="post" action="/platform/logout">
-						<input type="hidden" name="gorilla.csrf.Token" value={ s.CSRFToken }/>
-						<button type="submit" class="link">Keluar</button>
-					</form>
+		<body class="app">
+			<div class="layout">
+				@bo.Sidebar("JustClick", "/platform/tenants", true, navFor(s))
+				<div class="pane">
+					<header class="topbar">
+						<button
+							type="button"
+							class="rail-toggle"
+							aria-label="Buka atau tutup menu"
+							aria-expanded="true"
+							onclick="toggleRail()"
+						>
+							@bo.NavIcon("menu")
+						</button>
+						<div class="crumb">Administrasi platform</div>
+						<div class="who">
+							<span>{ s.AdminName }</span>
+							<form method="post" action="/platform/logout">
+								<input type="hidden" name="gorilla.csrf.Token" value={ s.CSRFToken }/>
+								<button type="submit" class="link">Keluar</button>
+							</form>
+						</div>
+					</header>
+					<main>
+						{ children... }
+					</main>
 				</div>
-			</header>
-			<main>
-				{ children... }
-			</main>
+			</div>
+			@bo.RailScript()
 		</body>
 	</html>
 }
@@ -48,9 +59,14 @@ templ MessagePage(s Session, title, message string) {
 
 templ platformStyles() {
 	<style>
-		.topbar.platform { background:#101828; border-bottom:0; }
-		.topbar.platform .brand, .topbar.platform nav a, .topbar.platform .who, .topbar.platform button.link { color:#fff; }
-		.topbar.platform nav a:hover { background:#1d2939; }
+		/* The platform sidebar is dark and tagged, so nobody mistakes a panel
+		   that reaches every merchant for one that reaches only their own. */
+		.side.platform { background:#101828; border-right-color:#1d2939; }
+		.side.platform .side-head { border-bottom-color:#1d2939; }
+		.side.platform .brand, .side.platform .nav-link, .side.platform .nav-group > summary { color:#fff; }
+		.side.platform .nav-group > summary { color:#98a2b3; }
+		.side.platform .nav-link:hover, .side.platform .nav-group > summary:hover { background:#1d2939; }
+		.side.platform .nav-link.is-active { background:#1d2939; color:#fff; }
 		.env-tag { font-size:11px; letter-spacing:.08em; background:var(--danger); color:#fff; padding:2px 8px; border-radius:999px; vertical-align:middle; }
 		.secret { font:600 20px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace; letter-spacing:.06em; }
 		.mono { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; word-break:break-all; }
@@ -64,4 +80,24 @@ templ platformStyles() {
 		input.link-field { width:100%; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:13px; }
 		form.stack.wide { width:auto; max-width:560px; }
 	</style>
+}
+
+// navFor is the platform panel's own menu, rendered by the Backoffice's
+// sidebar so support staff move between the two panels without relearning
+// where anything is. Grouped even though each group holds one destination:
+// the shape is what makes the two panels recognisably the same product, and
+// the platform panel is the one that will grow more sections.
+func navFor(s Session) bo.NavView {
+	groups := []bo.NavGroup{
+		{Label: "Merchant", Icon: "building", Items: []bo.NavItem{
+			{Label: "Perusahaan", Href: "/platform/tenants"},
+		}},
+		{Label: "Jejak", Icon: "log", Items: []bo.NavItem{
+			{Label: "Log audit", Href: "/platform/audit"},
+		}},
+		{Label: "Operasi", Icon: "pulse", Items: []bo.NavItem{
+			{Label: "Ops", Href: "/platform/ops"},
+		}},
+	}
+	return bo.NavView{Groups: groups, Active: bo.ActiveHref(groups, s.Path)}
 }

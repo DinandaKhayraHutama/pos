@@ -1,0 +1,45 @@
+# Scrape targets are reached by service name on the Compose network. None of
+# these ports is published to the host: /metrics names every internal queue.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    deployment: justclick
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  # The request path: latency by route, push outcomes per code, auth cache,
+  # and pgxpool saturation.
+  - job_name: api
+    static_configs:
+      - targets: ["api:9090"]
+
+  # The fleet-wide gauges: River queues and dead jobs, rollup staleness,
+  # devices seen in five minutes, DEFAULT partition occupancy.
+  - job_name: worker
+    static_configs:
+      - targets: ["worker:9090"]
+
+  # Half as often as the rest: even with the per-table collectors off, this is
+  # the scrape that costs the database real work, and nothing it reports moves
+  # meaningfully inside thirty seconds.
+  - job_name: postgres
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["postgres_exporter:9187"]
+
+  - job_name: redis
+    static_configs:
+      - targets: ["redis_exporter:9121"]
+
+  # Disk, memory and CPU of the box. On Docker Desktop this is the Linux VM,
+  # not Windows — accurate on a VPS, indicative locally.
+  - job_name: node
+    static_configs:
+      - targets: ["node_exporter:9100"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

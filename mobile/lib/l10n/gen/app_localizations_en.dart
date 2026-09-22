@@ -9,6 +9,34 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
+  String get remoteReceiptReadOnly =>
+      'Server receipt — read only on this device.';
+
+  @override
+  String get tillOnlineRequired =>
+      'Connect to the server to open or transfer a session. Try again with the same cashier.';
+
+  @override
+  String get tillRegisterBusy =>
+      'This till already has an open session. Finish and sync it on the original device first.';
+
+  @override
+  String get tillCashierBusy =>
+      'This cashier is already assigned to another till. End or hand over that assignment first.';
+
+  @override
+  String get tillSyncRequired =>
+      'Sync pending transactions and resolve rejected entries before handing over this till.';
+
+  @override
+  String get tillLoginRequired =>
+      'Verify your PIN again while online to continue.';
+
+  @override
+  String get tillSessionUnconfirmed =>
+      'This session is not confirmed for this cashier and device. Open a confirmed session before selling.';
+
+  @override
   String get connectedMasterDataNotice =>
       'Menu, modifiers, promotions and floor plans are managed in Backoffice. This till receives updates automatically.';
 
@@ -23,7 +51,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appTitle => 'JustClick POS';
 
   @override
-  String get appTagline => 'Restaurant Point of Sale';
+  String get appTagline => 'Restaurant Point of Sale & Management System';
 
   @override
   String get navPos => 'New Sale';
@@ -1528,6 +1556,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sessionResume => 'Resume';
 
   @override
+  String get sessionNeedsRecovery => 'Cannot be resumed — needs a manager';
+
+  @override
+  String get sessionNeedsRecoveryHint =>
+      'This drawer is open but the server holds no claim for it, so it cannot be resumed or closed here. Ask a manager to close it from Backoffice → Devices.';
+
+  @override
+  String get sessionReconciled =>
+      'The drawer now matches the server and can be resumed.';
+
+  @override
+  String get sessionClosedForRecovery =>
+      'The old drawer was closed from the server. Review any held transactions in the Recovery centre.';
+
+  @override
   String sessionInUse(String name) {
     return 'In use by $name';
   }
@@ -1725,4 +1768,245 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get inventoryCountedQuantity => 'Counted quantity';
+
+  @override
+  String get recoveryTitle => 'Recovery centre';
+
+  @override
+  String get recoveryIntro =>
+      'No evidence is ever removed automatically. Selling stays blocked on a drawer that needs recovery.';
+
+  @override
+  String recoveryLocalStatus(String status) {
+    return 'This device: $status';
+  }
+
+  @override
+  String get recoveryStatusHealthy => 'nothing outstanding';
+
+  @override
+  String get recoveryStatusPending => 'waiting to upload';
+
+  @override
+  String get recoveryStatusConflict => 'needs investigation';
+
+  @override
+  String get recoveryStatusRecoveryRequired => 'waiting for a manager';
+
+  @override
+  String recoverySectionHeading(String label, int count) {
+    return '$label ($count)';
+  }
+
+  @override
+  String get recoverySectionQueued => 'Safe for the scheduler to retry';
+
+  @override
+  String get recoverySectionQueuedEmpty => 'The upload queue is empty.';
+
+  @override
+  String get recoverySectionManager => 'Waiting for a manager';
+
+  @override
+  String get recoverySectionManagerEmpty => 'Nothing is waiting for a manager.';
+
+  @override
+  String get recoverySectionInvestigate =>
+      'Refused, and not sendable from here';
+
+  @override
+  String get recoverySectionInvestigateEmpty =>
+      'No payload needs investigating.';
+
+  @override
+  String get recoverySectionDiagnostics => 'Diagnostic findings';
+
+  @override
+  String recoveryQueuedDetail(String revision, int attempts) {
+    return 'revision $revision · $attempts attempts';
+  }
+
+  @override
+  String recoveryLetterDetail(String code, int revision) {
+    return '$code · revision $revision';
+  }
+
+  @override
+  String get recoveryNoServerMessage => 'The server sent no message.';
+
+  @override
+  String recoveryCaseLine(String id) {
+    return 'Case $id';
+  }
+
+  @override
+  String recoveryCaseLineWithStatus(String id, String status) {
+    return 'Case $id · $status';
+  }
+
+  @override
+  String get recoveryRetry => 'Send again';
+
+  @override
+  String get recoveryRequeued => 'Returned to the upload queue.';
+
+  @override
+  String get recoveryNotRetryable =>
+      'Not sendable yet: its local row is gone, or a manager has not approved it.';
+
+  @override
+  String get recoveryActionWaitForScheduler =>
+      'Leave it to the scheduler, or tap Sync now.';
+
+  @override
+  String get recoveryActionWaitForManager =>
+      'Wait for the manager\'s decision in the Backoffice before sending this one again.';
+
+  @override
+  String get recoveryActionIncompatible =>
+      'The server cannot accept this payload. Keep it and investigate.';
+
+  @override
+  String get recoveryActionKeepSnapshot =>
+      'Keep the queued snapshot and inspect it by hand.';
+
+  @override
+  String get recoveryActionCheckTillMigration =>
+      'Keep the state and check the local session migration.';
+
+  @override
+  String get recoveryActionBlockedUntilDecided =>
+      'Selling stays blocked until this recovery is decided in the Backoffice.';
+
+  @override
+  String get recoveryActionMatchMovement =>
+      'Do not delete the movement; match it against its receipt payload.';
+
+  @override
+  String get recoveryActionFinishDependencies =>
+      'Finish the pending sales and refusals before the close is sent.';
+
+  @override
+  String get recoveryActionReconcileBySigningIn =>
+      'This drawer predates coordinated tills. Sign in with a PIN while online and the server will reconcile it.';
+
+  @override
+  String get historyPeriodToday => 'Today';
+
+  @override
+  String get historyPeriodYesterday => 'Yesterday';
+
+  @override
+  String get historyPeriodLast7 => '7 days';
+
+  @override
+  String get historyPeriodMonth => 'This month';
+
+  @override
+  String get historyPeriodCustom => 'Custom range';
+
+  @override
+  String get historyReceiptSearch => 'Receipt number';
+
+  @override
+  String get historyScopeRegister => 'This till';
+
+  @override
+  String get historyScopeOutlet => 'Whole outlet';
+
+  @override
+  String get historyScopeNarrowed =>
+      'The server returned this till only; your account cannot read the whole outlet.';
+
+  @override
+  String get historyLoadMore => 'Load more';
+
+  @override
+  String get historyEndOfList => 'End of the list for this filter.';
+
+  @override
+  String historyOffline(String when) {
+    return 'Offline — showing what was downloaded $when.';
+  }
+
+  @override
+  String get historyOfflineMissing =>
+      'Not downloaded yet. Connect to load this period.';
+
+  @override
+  String get historyLocalOnly => 'This device\'s own transactions only.';
+
+  @override
+  String get historyRangeIncomplete =>
+      'Only part of this period was downloaded. Refresh while online to complete it.';
+
+  @override
+  String get historyFilterApply => 'Apply';
+
+  @override
+  String get historyFilterReset => 'Reset';
+
+  @override
+  String get historyFrom => 'From';
+
+  @override
+  String get historyTo => 'To';
+
+  @override
+  String reportPeriodCompare(int days) {
+    return 'vs previous $days days';
+  }
+
+  @override
+  String get reportNoComparison => 'no comparison';
+
+  @override
+  String get reportSalesReturns => 'Sales returns';
+
+  @override
+  String get reportTotalReceipts => 'Total sales receipts';
+
+  @override
+  String get reportGrossMargin => 'Gross margin';
+
+  @override
+  String get reportWaterfall => 'Sales waterfall';
+
+  @override
+  String reportSourceServer(String when) {
+    return 'Outlet totals from the server, computed $when.';
+  }
+
+  @override
+  String reportSourceCache(String when) {
+    return 'Offline — server totals downloaded $when.';
+  }
+
+  @override
+  String get reportSourceUnavailable =>
+      'Outlet totals are not available offline yet. Connect once to download them.';
+
+  @override
+  String get reportSourceLocal => 'This device\'s own transactions.';
+
+  @override
+  String reportUnsyncedNotice(int count) {
+    return '$count transactions on this device have not reached the server and are not in the totals above.';
+  }
+
+  @override
+  String get reportIncomplete =>
+      'Some days in this period are still being recalculated; the waterfall is not final yet.';
+
+  @override
+  String get reportByWeekday => 'Day of week';
+
+  @override
+  String get reportTopItemsInCategory => 'Top items per category';
+
+  @override
+  String get reportOutletComparison => 'Outlet comparison';
+
+  @override
+  String get reportNotPermitted => 'Your account cannot open this report.';
 }

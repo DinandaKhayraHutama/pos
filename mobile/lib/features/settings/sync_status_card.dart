@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/localization/l10n.dart';
 import '../../core/theme/app_dimensions.dart';
@@ -59,6 +60,9 @@ class SyncStatusCard extends StatelessWidget {
               iconColor: design.info,
               title: l10n.syncPending,
               value: l10n.syncPendingValue(status.pending),
+              onTap: status.pending > 0
+                  ? () => context.push('/recovery')
+                  : null,
             ),
             // Only when there is something to recover. Refused rows are kept
             // on the device; this is how anyone finds out they exist.
@@ -68,7 +72,7 @@ class SyncStatusCard extends StatelessWidget {
                 iconColor: design.error,
                 title: l10n.syncRejected(status.deadLetters),
                 value: l10n.syncRejectedRetry,
-                onTap: status.running ? null : controller.retryRejected,
+                onTap: () => context.push('/recovery'),
               ),
             _SyncTile(
               icon: Icons.sync_rounded,

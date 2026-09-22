@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../core/localization/till_error.dart';
+import '../../data/device/till_coordinator.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -317,6 +319,13 @@ class _PosSessionOpenCardState extends ConsumerState<PosSessionOpenCard> {
 
   void _onSlotTapped(RegisterSlot slot, bool mine) {
     if (mine) {
+      // Their own drawer, but the server holds no confirmed claim for it. The
+      // till never decides that by itself — it ASKS, and mirrors whatever the
+      // server says. Saying nothing is what made the screen a dead end.
+      if (!slot.resumable) {
+        _reconcile();
+        return;
+      }
       _resume(slot.session!.id);
       return;
     }
@@ -324,14 +333,79 @@ class _PosSessionOpenCardState extends ConsumerState<PosSessionOpenCard> {
     setState(() => _selectedId = slot.register.id);
   }
 
+  /// Asks the server what became of a drawer this device cannot resume.
+  ///
+  /// The reconciliation itself lives in `TillCoordinator.recover`, which is
+  /// otherwise only reached by signing in. That was not enough: a cashier whose
+  /// sign-in is still remembered from a previous launch never triggers it, so
+  /// the only way out of a stranded drawer was to sign out and back in — which
+  /// nobody would guess. Tapping the tile that refuses is exactly where someone
+  /// asks "why", so it is where the question gets asked.
+  ///
+  /// A force-closed drawer comes back closed and the till frees up. Anything
+  /// else keeps every local row and repeats the explanation: a drawer the
+  /// server has never heard of is still a manager's decision, not this
+  /// device's.
+  Future<void> _reconcile() async {
+    final coordinator = TillCoordinator.current;
+    final employee = ref.read(settingsProvider).valueOrNull?.employeeId ?? '';
+    if (coordinator == null || employee.isEmpty) return;
+    setState(() => _busy = true);
+    TillOperationException? failure;
+    TillRecoveryOutcome? outcome;
+    try {
+      outcome = await coordinator.recover(employee);
+    } on TillOperationException catch (e) {
+      failure = e;
+    }
+    await ref.read(settingsProvider.notifier).refreshPosContext();
+    ref.invalidate(registerSlotsProvider);
+    ref.invalidate(currentShiftProvider);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (failure != null) {
+      showAppSnackBar(context, tillErrorMessage(context, failure), error: true);
+      return;
+    }
+    final needsManager =
+        outcome == TillRecoveryOutcome.conflict ||
+        outcome == TillRecoveryOutcome.noPendingDrawer;
+    showAppSnackBar(
+      context,
+      needsManager
+          ? context.l10n.sessionNeedsRecoveryHint
+          : outcome == TillRecoveryOutcome.recoveryRequired
+          ? context.l10n.sessionClosedForRecovery
+          : context.l10n.sessionReconciled,
+      error: needsManager,
+    );
+  }
+
   /// Signs this device back on to a session that is already open.
   ///
   /// No cash is counted: the float went in when it was opened, and asking
   /// again would invite a second, different number for one drawer.
+  ///
+  /// The outcome is CHECKED rather than assumed. `openPosSession` re-resolves
+  /// the POS context, and on a coordinated till that resolution can legitimately
+  /// refuse the session — so a resume that silently fails has to be reported
+  /// here. Without this the screen simply re-rendered unchanged, which reads as
+  /// a broken button.
   Future<void> _resume(String sessionId) async {
     setState(() => _busy = true);
     await ref.read(settingsProvider.notifier).openPosSession(sessionId);
-    if (mounted) _leaveForTill();
+    if (!mounted) return;
+    if (ref.read(settingsProvider).valueOrNull?.posSessionId != sessionId) {
+      ref.invalidate(registerSlotsProvider);
+      setState(() => _busy = false);
+      showAppSnackBar(
+        context,
+        context.l10n.sessionNeedsRecoveryHint,
+        error: true,
+      );
+      return;
+    }
+    _leaveForTill();
   }
 
   Future<void> _open() async {
@@ -360,6 +434,10 @@ class _PosSessionOpenCardState extends ConsumerState<PosSessionOpenCard> {
       );
       await ref.read(settingsProvider.notifier).openPosSession(shift.id);
       if (mounted) _leaveForTill();
+    } on TillOperationException catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      showAppSnackBar(context, tillErrorMessage(context, e), error: true);
     } on TillBindingException {
       // Not offered by the picker on an activated device; refused by the
       // repository all the same. Nothing was written.
@@ -429,13 +507,18 @@ class _RegisterSlotTile extends StatelessWidget {
     final design = context.design;
     final l10n = context.l10n;
     final taken = slot.session != null && !mine;
+    // The cashier's own drawer that the server will not confirm. Selectable,
+    // because tapping it is how they get told what to do about it — a silently
+    // disabled row is the dead end this state used to be.
+    final stranded = mine && !slot.resumable;
 
-    final (label, tone) = switch ((taken, mine)) {
-      (true, _) => (
+    final (label, tone) = switch ((taken, stranded, mine)) {
+      (true, _, _) => (
         l10n.sessionInUse(slot.session!.employeeName),
         design.error,
       ),
-      (_, true) => (l10n.sessionResume, design.success),
+      (_, true, _) => (l10n.sessionNeedsRecovery, design.error),
+      (_, _, true) => (l10n.sessionResume, design.success),
       _ => (
         slot.register.tableService
             ? l10n.settingsTableServiceOn
@@ -486,6 +569,12 @@ class _RegisterSlotTile extends StatelessWidget {
             ),
             if (taken)
               Icon(Icons.lock_rounded, size: 18, color: design.error)
+            else if (stranded)
+              Icon(
+                Icons.admin_panel_settings_outlined,
+                size: 20,
+                color: design.error,
+              )
             else if (mine)
               Icon(Icons.play_arrow_rounded, size: 20, color: design.success)
             else if (selected)

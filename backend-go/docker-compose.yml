@@ -24,6 +24,40 @@ services:
       - track_io_timing=on
       - -c
       - max_connections=200
+      # Tuning, sized for the pilot box (8 vCPU / 32 GB) and overridable in
+      # .env for a smaller development machine. The defaults below are the
+      # plan's, halved where a laptop would otherwise swap.
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-2GB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-6GB}
+      - -c
+      - work_mem=${PG_WORK_MEM:-12MB}
+      - -c
+      - maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-512MB}
+      # NVMe, not spinning rust: the planner should stop preferring sequential
+      # scans over the covering indexes every pull depends on.
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - wal_compression=zstd
+      - -c
+      - max_wal_size=${PG_MAX_WAL_SIZE:-4GB}
+      - -c
+      - checkpoint_timeout=15min
+      # This is money. A crash must not be able to lose an acknowledged sale,
+      # so synchronous_commit stays on — never loosen it for a benchmark.
+      - -c
+      - synchronous_commit=on
+      # orders is append-heavy and partitioned; the rollup tables are rewritten
+      # slice by slice. Both want autovacuum to start long before the default
+      # 20% of the table is dead.
+      - -c
+      - autovacuum_vacuum_scale_factor=0.02
+      - -c
+      - autovacuum_analyze_scale_factor=0.01
+      - -c
+      - autovacuum_max_workers=4
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-justclick} -d ${POSTGRES_DB:-justclick}"]
       interval: 5s
@@ -93,6 +127,19 @@ services:
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       MAIL_FROM: ${MAIL_FROM:-}
+      # Prometheus reaches this by service name on the internal network. It is
+      # deliberately not published and Caddy does not proxy it: /metrics names
+      # every internal queue.
+      METRICS_ADDR: ":9090"
+      # Sized against PostgreSQL's max_connections, not against the container's
+      # CPU count, which is what pgx would otherwise use.
+      PG_MAX_CONNS: ${PG_MAX_CONNS:-25}
+      PG_UNSCOPED_MAX_CONNS: ${PG_UNSCOPED_MAX_CONNS:-10}
+      PG_MIN_CONNS: ${PG_MIN_CONNS:-2}
+    # The code drains for 30s on SIGTERM; Docker's default is to SIGKILL at
+    # 10, so every deploy used to cut in-flight requests in a third of the
+    # time the process believed it had.
+    stop_grace_period: 35s
     volumes:
       - media:/var/lib/justclick/media
       - reports:/var/lib/justclick/reports
@@ -121,6 +168,12 @@ services:
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       MAIL_FROM: ${MAIL_FROM:-}
+      # The worker publishes the fleet-wide gauges: River queues and dead
+      # jobs, rollup staleness, devices seen, DEFAULT partition occupancy.
+      METRICS_ADDR: ":9090"
+      PG_MAX_CONNS: ${WORKER_PG_MAX_CONNS:-10}
+      PG_UNSCOPED_MAX_CONNS: ${WORKER_PG_UNSCOPED_MAX_CONNS:-10}
+      PG_MIN_CONNS: ${PG_MIN_CONNS:-2}
     volumes:
       - reports:/var/lib/justclick/reports
     stop_grace_period: 35s
@@ -151,17 +204,124 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8443:443"
+      # Dev only: the till web build and the device API on one origin.
+      - "127.0.0.1:8090:8090"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # Read-only: Caddy serves images, only the API writes them.
       - media:/srv/media:ro
+      # The Flutter web build, for walking the connected flow in a browser.
+      # Missing on a fresh clone until `flutter build web` has run; Caddy
+      # answers 404 until then rather than failing to start.
+      - ../mobile/build/web:/srv/till:ro
       - caddydata:/data
       - caddyconfig:/config
     depends_on:
       - api
 
+  # ---- Observability -------------------------------------------------------
+  #
+  # Opt in with `docker compose --profile observability up -d`. Nothing here is
+  # on the request path; losing it costs the dashboard, not the service.
+  #
+  # Only Grafana is published, on loopback. Prometheus and the exporters are
+  # reachable inside the network only: their endpoints name every internal
+  # queue, table and connection string fragment.
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    profiles: ["observability"]
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheusdata:/prometheus
+
+  grafana:
+    image: grafana/grafana:12.4.11
+    profiles: ["observability"]
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      # Left empty rather than required: Compose interpolates the whole file
+      # even for services outside the profile, so `${…:?}` here would stop
+      # `docker compose up api` on a machine that never runs the dashboard.
+      # Unset, Grafana falls back to admin/admin on loopback — set it in .env
+      # anywhere that is not a laptop.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-}
+      # Nobody signs up for an operations dashboard.
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./ops/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    depends_on:
+      - prometheus
+
+  # Reads pg_stat_* as justclick_metrics, a role with pg_monitor and nothing
+  # else: an exporter holding the owner credential would be a superuser
+  # connection kept open for the convenience of a graph.
+  postgres_exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.19.0
+    profiles: ["observability"]
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgres://justclick_metrics:${METRICS_DB_PASSWORD:-}@postgres:5432/${POSTGRES_DB:-justclick}?sslmode=disable
+      PG_EXPORTER_AUTO_DISCOVER_DATABASES: "false"
+    # The per-table collectors are switched off, and this is a measured
+    # decision, not a preference: their query costs ~80 ms per scrape here and
+    # grows with the number of relations — and this schema grows a handful of
+    # partitions every month. During the Fase 9 run it was the single most
+    # expensive statement in the database and it moved p99 of /sync/changes
+    # from 5.9 ms to 31.5 ms. Autovacuum and table sizes matter, but they are a
+    # question for a minute, not for every fifteen seconds; the load harness
+    # reads them straight from pg_stat_user_tables when a run needs them.
+    command:
+      - --no-collector.stat_user_tables
+      - --no-collector.statio_user_tables
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis_exporter:
+    image: oliver006/redis_exporter:v1.91.1
+    profiles: ["observability"]
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    depends_on:
+      - redis
+
+  # Disk, memory and CPU. On a VPS this is the box; on Docker Desktop it is the
+  # Linux VM, which makes the disk alert indicative rather than exact.
+  node_exporter:
+    image: prom/node-exporter:v1.12.1
+    profiles: ["observability"]
+    restart: unless-stopped
+    command:
+      - --path.rootfs=/host
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+)($$|/)
+    pid: host
+    volumes:
+      # Plain :ro, not :ro,rslave. rslave is the usual recipe and is better on
+      # a Linux VPS (it picks up filesystems mounted after the exporter
+      # starts), but Docker Desktop refuses it — "path / is mounted on / but it
+      # is not a shared or slave mount" — and the dashboard would then be
+      # missing exactly on the machine where it is being built.
+      - /:/host:ro
+
 volumes:
   pgdata:
+  prometheusdata:
+  grafanadata:
   # Uploaded product images. Not covered by pgBackRest — back it up
   # alongside the database.
   media:

@@ -264,6 +264,7 @@ class StockRepository {
     String? note,
     int? countedQty,
     int? basisSeq,
+    String? orderId,
   }) async {
     final id = _uuid.v4();
     await txn.insert('stock_movements', {
@@ -283,8 +284,9 @@ class StockRepository {
       'counted_qty': countedQty,
       'basis_seq': basisSeq,
       'origin': originDevice,
+      'order_id': orderId,
     });
-    if (_ledgerMode) {
+    if (_ledgerMode && orderId == null) {
       await OutboxStore.enqueueWithin(txn, StockMovementPush.entity, id);
     }
     return id;
@@ -304,6 +306,7 @@ class StockRepository {
     required String employeeId,
     required String employeeName,
     String? note,
+    String? orderId,
   }) async {
     for (final e in movements.entries) {
       if (e.value.delta == 0) continue;
@@ -318,6 +321,7 @@ class StockRepository {
         employeeId: employeeId,
         employeeName: employeeName,
         note: note,
+        orderId: orderId,
       );
     }
   }

@@ -1,0 +1,47 @@
+name: flutter-pos
+
+on:
+  push:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/flutter.yml"
+  pull_request:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/flutter.yml"
+
+defaults:
+  run:
+    working-directory: mobile
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.38.9"
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      # The repository already contains informational lints in the optional
+      # integration harness. They remain visible without failing this baseline.
+      - run: flutter analyze --no-fatal-infos
+      - run: flutter test
+      - run: flutter build apk --debug
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.38.9"
+          channel: stable
+          cache: true
+      - run: flutter config --enable-windows-desktop
+      - run: flutter pub get
+      - name: repository, sync, and real-file persistence tests
+        run: flutter test test/repositories test/sync
+      - run: flutter build windows --release

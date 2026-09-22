@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import '../database/app_database.dart';
 import '../device/till_binding.dart';
+import '../device/till_coordinator.dart';
 import '../models/category_sales.dart';
 import '../models/sales_report.dart';
 import '../models/enums.dart';
@@ -48,7 +49,13 @@ class OrderRepository {
     DatabaseExecutor txn, {
     required String? posId,
     required String? posName,
+    String? sessionId,
   }) async {
+    if (TillCoordinator.current != null) {
+      final allocated = await TillCoordinator.nextReceipt(txn, sessionId);
+      return (allocated == null ? TillCoordinator.uniqueReceipt()
+          : '${_registerPrefix(posName)}-${allocated.toString().padLeft(6, '0')}', allocated ?? 0);
+    }
     final rows = await txn.rawQuery(
       'SELECT COALESCE(MAX(number_seq), 0) AS n FROM orders WHERE pos_id IS ?',
       [posId],
@@ -251,6 +258,7 @@ class OrderRepository {
 
     await db.transaction((txn) async {
       if (binding != null) {
+        await TillCoordinator.assertSellable(txn, posSessionId, cashierId);
         // The drawer the sale lands in has to be one of this till's. A session
         // on another register would be refused by the server's own check.
         final session = posSessionId == null
@@ -275,6 +283,7 @@ class OrderRepository {
         txn,
         posId: posId,
         posName: posName,
+        sessionId: posSessionId,
       );
       order = buildOrder(number, numberSeq);
 
@@ -309,6 +318,7 @@ class OrderRepository {
           return quantities;
         }),
         reason: StockReason.sale,
+        orderId: TillCoordinator.current == null ? null : order.id,
         employeeId: cashierId,
         employeeName: cashierName,
         note: order.number,
@@ -347,6 +357,7 @@ class OrderRepository {
     required String employeeId,
     required String employeeName,
     String? note,
+    String? orderId,
   }) async {
     if (quantities.isEmpty) return;
     // A sale that cannot say which branch it came from must not move any
@@ -398,6 +409,7 @@ class OrderRepository {
       employeeId: employeeId,
       employeeName: employeeName,
       note: note,
+      orderId: orderId,
     );
   }
 
@@ -459,6 +471,7 @@ class OrderRepository {
       outletId: order.isEmpty ? null : order.first['outlet_id'] as String?,
       quantities: quantities,
       reason: StockReason.voidReturn,
+      orderId: TillCoordinator.current == null ? null : orderId,
       employeeId: employeeId,
       employeeName: employeeName,
       note: note,
@@ -528,6 +541,90 @@ class OrderRepository {
       [...args, limit],
     );
     return rows.map((m) => Order.fromMapRow(m)).toList();
+  }
+
+  /// One page of this device's own orders, newest first.
+  ///
+  /// Keyset rather than OFFSET: the till keeps selling while somebody scrolls,
+  /// and every sale ahead of an offset shifts the window, so page two would
+  /// repeat a row and skip another. The cursor carries `created_at` AND the id
+  /// because two checkouts can share a millisecond.
+  ///
+  /// [from] and [to] are whole local dates; [to] is widened to the end of its
+  /// day so a sale at 23:50 belongs to the day the person picked.
+  Future<List<Order>> page({
+    int limit = 100,
+    OrderStatus? status,
+    String? cashierId,
+    String? outletId,
+    DateTime? from,
+    DateTime? to,
+    String? receipt,
+    int? beforeCreatedAt,
+    String? beforeId,
+  }) async {
+    final db = await AppDatabase.instance.db;
+    final clauses = <String>[];
+    final args = <Object?>[];
+    if (status != null) {
+      clauses.add('o.status = ?');
+      args.add(status.wire);
+    }
+    if (cashierId != null) {
+      clauses.add('o.cashier_id = ?');
+      args.add(cashierId);
+    }
+    if (outletId != null) {
+      clauses.add('o.outlet_id = ?');
+      args.add(outletId);
+    }
+    if (from != null) {
+      clauses.add('o.created_at >= ?');
+      args.add(DateTime(from.year, from.month, from.day).millisecondsSinceEpoch);
+    }
+    if (to != null) {
+      clauses.add('o.created_at < ?');
+      args.add(
+        DateTime(
+          to.year,
+          to.month,
+          to.day,
+        ).add(const Duration(days: 1)).millisecondsSinceEpoch,
+      );
+    }
+    if (receipt != null && receipt.isNotEmpty) {
+      clauses.add('upper(o.number) LIKE ?');
+      args.add('${receipt.toUpperCase()}%');
+    }
+    if (beforeCreatedAt != null && beforeId != null) {
+      clauses.add('(o.created_at < ? OR (o.created_at = ? AND o.id < ?))');
+      args.addAll([beforeCreatedAt, beforeCreatedAt, beforeId]);
+    }
+    final where = clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}';
+    final rows = await db.rawQuery('''
+      SELECT o.*, COUNT(oi.id) AS item_count
+      FROM orders o
+      LEFT JOIN order_items oi ON oi.order_id = o.id
+      $where
+      GROUP BY o.id
+      ORDER BY o.created_at DESC, o.id DESC
+      LIMIT ?
+      ''', [...args, limit]);
+    return rows.map((m) => Order.fromMapRow(m)).toList();
+  }
+
+  /// Orders this device still owes the server.
+  ///
+  /// Reported BESIDE an outlet report, never added to it: the server figure is
+  /// what the outlet sold as the server knows it, and topping it up with one
+  /// device's queue would produce a number that matches neither the server nor
+  /// this device.
+  Future<int> unsyncedCount() async {
+    final db = await AppDatabase.instance.db;
+    final rows = await db.rawQuery(
+      "SELECT count(*) AS n FROM _outbox WHERE entity = 'orders'",
+    );
+    return (rows.first['n'] as num?)?.toInt() ?? 0;
   }
 
   Future<Order?> byId(String id) async {
@@ -888,6 +985,25 @@ class OrderRepository {
         .where((r) => r['k'] == status)
         .fold(0, (a, r) => a + (r['v'] as num).toInt());
 
+    // The waterfall, with the same definitions the server uses so a demo and
+    // a connected till never disagree about what "net sales" means. Gross
+    // keeps a refunded transaction IN — it was a sale — and the return line
+    // takes it out again, which is what makes the refund visible instead of
+    // the day quietly shrinking.
+    final waterfall = await db.rawQuery(
+      '''
+      SELECT
+        COALESCE(SUM(CASE WHEN status <> 'cancelled' THEN subtotal ELSE 0 END), 0) AS gross,
+        COALESCE(SUM(CASE WHEN status <> 'cancelled' THEN discount ELSE 0 END), 0) AS discounts,
+        COALESCE(SUM(CASE WHEN status = 'refunded' THEN subtotal - discount ELSE 0 END), 0) AS returns
+      FROM orders
+      WHERE created_at >= ? AND created_at < ?
+        ${_outletSql(outletId)}
+      ''',
+      [start, end, ..._outletArgs(outletId)],
+    );
+    final w = waterfall.first;
+
     Map<String, ReportBucket> bucket(List<Map<String, Object?>> rows) => {
       for (final r in rows)
         (r['k'] as String): ReportBucket(
@@ -933,6 +1049,9 @@ class OrderRepository {
       revenue: (t['revenue'] as num).toInt(),
       subtotal: (t['subtotal'] as num).toInt(),
       discount: (t['discount'] as num).toInt(),
+      grossSales: (w['gross'] as num).toInt(),
+      allDiscount: (w['discounts'] as num).toInt(),
+      salesReturns: (w['returns'] as num).toInt(),
       tax: (t['tax'] as num).toInt(),
       serviceCharge: (t['service_charge'] as num).toInt(),
       orderCount: (t['order_count'] as num).toInt(),

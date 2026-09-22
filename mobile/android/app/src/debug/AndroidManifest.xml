@@ -4,4 +4,13 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!--
+      The local Caddy development gateway is intentionally HTTP at
+      http://10.0.2.2:8090 for the Android emulator. Android 9+ blocks
+      cleartext traffic by default, so allow it in DEBUG only. This manifest
+      is not packaged in profile or release builds; deployed tills must use
+      HTTPS.
+    -->
+    <application android:usesCleartextTraffic="true" />
 </manifest>

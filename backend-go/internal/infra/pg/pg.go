@@ -3,6 +3,7 @@ package pg
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -13,6 +14,9 @@ import (
 const (
 	AppRole      = "justclick_app"
 	UnscopedRole = "justclick_unscoped"
+	// MetricsRole holds pg_monitor and no table grant at all. The application
+	// never connects as it; postgres_exporter does.
+	MetricsRole = "justclick_metrics"
 )
 
 // Pools keeps the two credentials apart on purpose.
@@ -38,10 +42,32 @@ func (p Pools) Close() {
 	}
 }
 
-func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
+// Limits sizes a pool. The zero value keeps pgx's own defaults, which is what
+// a one-shot command or a test wants; the serving process passes its config.
+//
+// pgx defaults MaxConns to max(4, NumCPU) — a property of the container's CPU
+// allowance, not of the database. On a two-vCPU box that is four connections
+// for the whole API, and the symptom is request latency with no slow query
+// anywhere to explain it.
+type Limits struct {
+	MaxConns int32
+	MinConns int32
+}
+
+func Open(ctx context.Context, url string, limits ...Limits) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		return nil, fmt.Errorf("parse database url: %w", err)
+	}
+	// A ceiling in the URL itself (pool_max_conns) is the operator being
+	// explicit about this one connection string, so it wins.
+	if len(limits) > 0 && !strings.Contains(url, "pool_max_conns") {
+		if limits[0].MaxConns > 0 {
+			cfg.MaxConns = limits[0].MaxConns
+		}
+		if limits[0].MinConns > 0 {
+			cfg.MinConns = limits[0].MinConns
+		}
 	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
@@ -60,13 +86,26 @@ func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 // OpenPools opens both credentials and refuses to return if either is wired to
 // the wrong role. One query at startup, in exchange for a misconfiguration
 // whose first symptom would otherwise be one merchant reading another's rows.
-func OpenPools(ctx context.Context, tenantURL, unscopedURL string) (Pools, error) {
-	tenant, err := Open(ctx, tenantURL)
+// The two pools are sized separately: everything a request does goes through
+// the tenant one, while the unscoped one exists for token lookups on a cache
+// miss. Passing one Limits sizes only the tenant pool; a second sizes the
+// unscoped one.
+func OpenPools(ctx context.Context, tenantURL, unscopedURL string, limits ...Limits) (Pools, error) {
+	tenantLimits, unscopedLimits := Limits{}, Limits{}
+	if len(limits) > 0 {
+		tenantLimits = limits[0]
+		unscopedLimits = limits[0]
+	}
+	if len(limits) > 1 {
+		unscopedLimits = limits[1]
+	}
+
+	tenant, err := Open(ctx, tenantURL, tenantLimits)
 	if err != nil {
 		return Pools{}, err
 	}
 
-	crossTenant, err := Open(ctx, unscopedURL)
+	crossTenant, err := Open(ctx, unscopedURL, unscopedLimits)
 	if err != nil {
 		tenant.Close()
 		return Pools{}, err

@@ -95,7 +95,7 @@ func (q *Queries) GetOrderReservation(ctx context.Context, id string) (OrderDedu
 }
 
 const getSessionForUpdate = `-- name: GetSessionForUpdate :one
-SELECT id, tenant_id, outlet_id, pos_register_id, device_id, revision, employee_name, opened_at_ms, closed_at_ms, opening_cash, counted_cash, expected_cash, payload, created_at, updated_at FROM pos_sessions WHERE id = $1 FOR UPDATE
+SELECT id, tenant_id, outlet_id, pos_register_id, device_id, revision, employee_name, opened_at_ms, closed_at_ms, opening_cash, counted_cash, expected_cash, payload, created_at, updated_at, close_kind, forced_recovery_id FROM pos_sessions WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetSessionForUpdate(ctx context.Context, id string) (PosSession, error) {
@@ -117,6 +117,8 @@ func (q *Queries) GetSessionForUpdate(ctx context.Context, id string) (PosSessio
 		&i.Payload,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CloseKind,
+		&i.ForcedRecoveryID,
 	)
 	return i, err
 }

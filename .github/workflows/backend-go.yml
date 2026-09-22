@@ -99,6 +99,11 @@ jobs:
           go run ./cmd/justclick migrate up
           go run ./cmd/justclick roles set-password
 
+      - name: latest migration rolls down and upgrades cleanly
+        run: |
+          go run ./cmd/justclick migrate down
+          go run ./cmd/justclick migrate up
+
       - run: go test ./... -race -count=1
 
       - name: verify the running API and Backoffice
@@ -108,6 +113,10 @@ jobs:
           MEDIA_DIR: /tmp/justclick-media
           MEDIA_PUBLIC_BASE_URL: http://127.0.0.1:9000/media
           REPORTS_DIR: /tmp/justclick-reports
+          # The load harness reads the server's own histogram to separate
+          # server-side latency from its own; in CI it only needs to be
+          # reachable for the smoke run not to print a note about it.
+          LOAD_METRICS_URL: http://127.0.0.1:9090/metrics
         run: |
           go build -o /tmp/justclick ./cmd/justclick
           /tmp/justclick serve > /tmp/justclick-verify.log 2>&1 &
@@ -125,8 +134,15 @@ jobs:
           go run ./scripts/verify-push
           go run ./scripts/verify-stock
           go run ./scripts/verify-tables
+          go run ./scripts/verify-till
+          go run ./scripts/verify-recovery
           go run ./scripts/verify-reports
           go run ./scripts/verify-platform
+          # The Fase 9 harness, at the smallest size that still exercises the
+          # whole device lifecycle: activate with a real code, sync, sell, move
+          # stock, sync again. Seconds, and it keeps the load test from rotting
+          # between the runs that matter.
+          go run ./scripts/loadtest smoke
 
   lint:
     runs-on: ubuntu-latest

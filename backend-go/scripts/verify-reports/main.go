@@ -518,7 +518,7 @@ func seed(ctx context.Context, owner *pgxpool.Pool, tenant string, from time.Tim
 				c := cashiers[rng.Intn(len(cashiers))]
 				order := wire.Order{
 					Id: uuid(), Revision: 1, BusinessDate: day.Format(time.DateOnly), Number: fmt.Sprintf("V-%d", o),
-					PlacedAtMs: placed.UnixMilli(), Type: "dine_in", Status: wire.Paid, PosSessionId: t.session,
+					PlacedAtMs: placed.UnixMilli(), Type: "dine_in", Status: wire.OrderStatusPaid, PosSessionId: t.session,
 					PaymentMethod: payments[rng.Intn(len(payments))], CashierId: c.id, CashierName: c.name,
 				}
 
@@ -552,17 +552,17 @@ func seed(ctx context.Context, owner *pgxpool.Pool, tenant string, from time.Tim
 				switch r := rng.Intn(100); {
 				case r < 3:
 					by, why := []string{"Manajer A", "Manajer B"}[rng.Intn(2)], "Salah input"
-					order.Status, order.AuthorizedBy, order.VoidReason = wire.Cancelled, &by, &why
+					order.Status, order.AuthorizedBy, order.VoidReason = wire.OrderStatusCancelled, &by, &why
 				case r < 5:
 					by, why, refund := "Owner", "Komplain", order.Total
 					if rng.Intn(2) == 0 {
 						refund = order.Total / 2
 					}
-					order.Status, order.AuthorizedBy, order.VoidReason, order.RefundedAmount = wire.Refunded, &by, &why, &refund
+					order.Status, order.AuthorizedBy, order.VoidReason, order.RefundedAmount = wire.OrderStatusRefunded, &by, &why, &refund
 				case r < 12:
-					order.Status = []wire.OrderStatus{wire.Served, wire.Ready, wire.Preparing}[rng.Intn(3)]
+					order.Status = []wire.OrderStatus{wire.OrderStatusServed, wire.OrderStatusReady, wire.OrderStatusPreparing}[rng.Intn(3)]
 				}
-				if order.Status == wire.Cancelled || order.Status == wire.Refunded {
+				if order.Status == wire.OrderStatusCancelled || order.Status == wire.OrderStatusRefunded {
 					now := time.Now()
 					settledAt = &now
 				}

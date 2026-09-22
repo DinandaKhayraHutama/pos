@@ -24,6 +24,7 @@ import (
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/catalogue"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/devices"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/entitlements"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/ingest"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/outlets"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/promos"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/staff"
@@ -57,8 +58,10 @@ type Handler struct {
 	stock     *stock.Service
 	tables    TableService
 	reports   ReportService
+	history   HistoryService
 	devices   *devices.Service
 	auth      *devices.CachedAuthenticator
+	recovery  *ingest.Service
 	// impersonations and setup are the platform's two ways into this panel.
 	impersonations Impersonations
 	setup          AccountSetup
@@ -79,9 +82,13 @@ type Deps struct {
 	Tables    TableService
 	// Reports serves the sales report, dashboard and exports. Nil leaves those
 	// sections out of the panel.
-	Reports    ReportService
+	Reports ReportService
+	// History serves the read-only transaction and shift screens. Nil leaves
+	// them unmounted; they also need Reports, for the merchant's clock.
+	History HistoryService
 	Devices    *devices.Service
 	CachedAuth *devices.CachedAuthenticator
+	Recovery   *ingest.Service
 	// Impersonations lets a platform admin in as an owner; nil leaves the
 	// handoff route unmounted.
 	Impersonations Impersonations
@@ -116,8 +123,10 @@ func New(d Deps) *Handler {
 		stock:          d.Stock,
 		tables:         d.Tables,
 		reports:        d.Reports,
+		history:        d.History,
 		devices:        d.Devices,
 		auth:           d.CachedAuth,
+		recovery:       d.Recovery,
 		impersonations: d.Impersonations,
 		setup:          d.Setup,
 		sessions:       sessions,
@@ -149,6 +158,7 @@ func (h *Handler) Routes() chi.Router {
 				csrf.Path("/backoffice"),
 				csrf.Secure(h.secure),
 				csrf.SameSite(csrf.SameSiteLaxMode),
+				csrf.ErrorHandler(web.CSRFFailure(h.logger)),
 			))
 
 			r.Get("/login", h.showLogin)
@@ -226,12 +236,29 @@ func (h *Handler) panelRoutes(r chi.Router) {
 		})
 	}
 
+	// Reading somebody else's sales is the permission a manager already holds
+	// to void and refund on the till; reading a drawer is the one they hold to
+	// look inside it. Both sections are read-only, and both need the merchant's
+	// clock, which Reports owns — hence the pair in the guard.
+	if h.history != nil && h.reports != nil {
+		r.With(h.require(auth.ViewAllOrders)).Get("/transactions", h.transactionsPage)
+		r.With(h.require(auth.ViewAllOrders)).Get("/transactions/{id}", h.transactionPage)
+		r.With(h.require(auth.ViewCashDrawer)).Get("/shifts", h.shiftsPage)
+		r.With(h.require(auth.ViewCashDrawer)).Get("/shifts/{id}", h.shiftPage)
+	}
+
 	// Issuing and revoking are infrastructure work, so they carry the
 	// same permission as configuring branches and tills.
 	r.With(h.require(auth.ManageOutlets)).
 		Post("/registers/{registerID}/activation-code", h.issueActivationCode)
 	r.With(h.require(auth.ManageOutlets)).
 		Post("/devices/{deviceID}/revoke", h.revokeDevice)
+	if h.recovery != nil {
+		r.With(h.require(auth.ManageOutlets)).Post("/till-sessions/{sessionID}/takeover", h.takeoverTill)
+		r.With(h.require(auth.ManageOutlets)).Post("/till-recoveries/{recoveryID}/items/{itemID}/accept", h.acceptRecoveryItem)
+		r.With(h.require(auth.ManageOutlets)).Post("/till-recoveries/{recoveryID}/items/{itemID}/discard", h.discardRecoveryItem)
+		r.With(h.require(auth.ManageOutlets)).Post("/till-recoveries/{recoveryID}/reconcile", h.reconcileRecovery)
+	}
 
 	// Each section is gated by the permission it exercises, reading
 	// included: a page someone may not act on is still a page of

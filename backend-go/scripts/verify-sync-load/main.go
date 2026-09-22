@@ -1,6 +1,12 @@
 // Command verify-sync-load seeds a disposable fleet and runs the Fase 2A k6
 // gate against the existing Compose API. No production auth/limiter is bypassed
 // by the measured requests. Run from backend-go with .env loaded.
+//
+// Kept for the Fase 2A gate it was written for. The Fase 9 harness
+// (scripts/loadtest) supersedes it for everything else: it drives the whole
+// device lifecycle rather than one endpoint, needs no k6 image, reads the
+// server's own metrics to separate server-side latency from the generator's,
+// and checks the plan's targets as gates.
 package main
 
 import (

@@ -29,13 +29,13 @@ func TestAReportFromRollupsMatchesTheOrdersItWasBuiltFrom(t *testing.T) {
 	require.EqualValues(t, 5500, r.Discount)
 	require.EqualValues(t, 6950, r.Tax)
 	require.EqualValues(t, 1000, r.ServiceCharge)
-	require.EqualValues(t, 38725, r.AverageOrder)
+	require.EqualValues(t, 34750, r.AverageOrder)
 	require.EqualValues(t, 5, r.ItemsSold, "items are summed without fanning out the order totals")
 	require.EqualValues(t, 15000, r.CostOfGoods)
 	require.EqualValues(t, 3, r.CostedItems)
 	require.InDelta(t, 0.6, r.CostCoverage, 1e-9)
 	require.True(t, r.CostCoverageLow())
-	require.EqualValues(t, 62450, r.GrossProfit)
+	require.EqualValues(t, 54500, r.GrossProfit)
 	require.EqualValues(t, 1, r.DiscountedOrders)
 	require.EqualValues(t, 1, r.CancelledCount)
 	require.EqualValues(t, 30000, r.CancelledAmount)
@@ -44,10 +44,31 @@ func TestAReportFromRollupsMatchesTheOrdersItWasBuiltFrom(t *testing.T) {
 	require.NotNil(t, r.ComputedAt)
 	require.EqualValues(t, 0, r.PendingSlices)
 
-	require.Equal(t, []reporting.Line{{Key: f.outletA, Label: "Kemang", Value: 77450, Count: 2}}, r.ByOutlet)
+	// The waterfall. Gross keeps the refunded order in and the return takes it
+	// out again, so the refund is visible instead of the day shrinking.
+	require.EqualValues(t, 90000, r.GrossSales)
+	require.EqualValues(t, 5500, r.AllDiscount)
+	require.EqualValues(t, 15000, r.SalesReturns)
+	require.EqualValues(t, 69500, r.NetSales)
+	require.EqualValues(t, r.GrossSales-r.AllDiscount-r.SalesReturns, r.NetSales, "the waterfall closes")
+	require.EqualValues(t, r.Subtotal-r.Discount, r.NetSales, "and agrees with the revenue orders")
+	require.EqualValues(t, 0, r.AnomalyCount, "a partial refund is recorded, not an anomaly")
+	require.EqualValues(t, 0, r.LegacySlices)
+	require.Equal(t, 2, r.CalculationVersion)
+	margin, ok := r.GrossMargin()
+	require.True(t, ok)
+	require.InDelta(t, 54500*100.0/69500, margin, 1e-9)
+
+	require.Equal(t, []reporting.Line{{Key: f.outletA, Label: "Kemang", Value: 77450, Net: 69500, Count: 2}}, r.ByOutlet)
 	require.Len(t, r.Daily, 1)
 	require.True(t, f.day.Equal(r.Daily[0].Date))
 	require.EqualValues(t, 77450, r.Daily[0].Revenue)
+	require.EqualValues(t, 69500, r.Daily[0].NetSales)
+
+	require.Len(t, r.ByWeekday, 1)
+	require.Equal(t, f.day.Weekday(), r.ByWeekday[0].Weekday, "the weekday comes from the business date")
+	require.EqualValues(t, 69500, r.ByWeekday[0].NetSales)
+	require.EqualValues(t, 1, r.ByWeekday[0].Days)
 
 	// Largest remainder: 5500 of the 55000 order split 3000/2500, and the
 	// category net column adds up to subtotal minus discount.
@@ -66,21 +87,38 @@ func TestAReportFromRollupsMatchesTheOrdersItWasBuiltFrom(t *testing.T) {
 	require.EqualValues(t, r.Subtotal-r.Discount, net)
 
 	require.Equal(t, []reporting.ProductLine{
-		{Key: f.coffee, Name: "Kopi Susu Gula Aren", Quantity: 3, Revenue: 45000, CostOfGoods: 15000, CostedQuantity: 3},
-		{Key: f.rice, Name: "Nasi Goreng", Quantity: 1, Revenue: 25000},
-		{Key: "name:Air Mineral", Name: "Air Mineral", Quantity: 1, Revenue: 5000},
+		{Key: f.coffee, Name: "Kopi Susu Gula Aren", Quantity: 3, Revenue: 45000, NetSales: 42000, CostOfGoods: 15000, CostedQuantity: 3},
+		{Key: f.rice, Name: "Nasi Goreng", Quantity: 1, Revenue: 25000, NetSales: 22500},
+		{Key: "name:Air Mineral", Name: "Air Mineral", Quantity: 1, Revenue: 5000, NetSales: 5000},
 	}, r.ByProduct, "a deleted product shows its newest snapshot name")
 
+	// Each category's items sum to that category's own net, because both come
+	// out of one allocation rather than two that round separately.
+	require.Equal(t, []reporting.CategoryProducts{
+		{CategoryKey: f.drinks, CategoryName: "Minuman Dingin", Products: []reporting.ProductLine{
+			{Key: f.coffee, Name: "Kopi Susu Gula Aren", Quantity: 3, Revenue: 45000, NetSales: 42000},
+		}},
+		{CategoryKey: f.food, CategoryName: "Makanan", Products: []reporting.ProductLine{
+			{Key: f.rice, Name: "Nasi Goreng", Quantity: 1, Revenue: 25000, NetSales: 22500},
+		}},
+		{CategoryKey: reporting.Uncategorised, CategoryName: "", Products: []reporting.ProductLine{
+			{Key: "name:Air Mineral", Name: "Air Mineral", Quantity: 1, Revenue: 5000, NetSales: 5000},
+		}},
+	}, r.ByProductInCategory)
+
 	require.Equal(t, []reporting.Line{
-		{Key: f.cashierSiti, Label: "Siti", Value: 54450, Count: 1},
-		{Key: "name:Budi", Label: "Budi", Value: 23000, Count: 1},
+		{Key: f.cashierSiti, Label: "Siti", Value: 54450, Net: 49500, Count: 1},
+		{Key: "name:Budi", Label: "Budi", Value: 23000, Net: 20000, Count: 1},
 	}, r.ByCashier)
+	// A tender has no net: money arrives as a receipt total, tax included.
 	require.Equal(t, []reporting.Line{
 		{Key: "cash", Label: "Tunai", Value: 54450, Count: 1},
 		{Key: "qris", Label: "QRIS", Value: 23000, Count: 1},
 	}, r.ByPayment)
-	require.Equal(t, []reporting.HourLine{{Hour: 9, Revenue: 54450, Orders: 1}, {Hour: 13, Revenue: 23000, Orders: 1}}, r.ByHour,
-		"hours on the merchant's clock")
+	require.Equal(t, []reporting.HourLine{
+		{Hour: 9, Revenue: 54450, NetSales: 49500, Orders: 1},
+		{Hour: 13, Revenue: 23000, NetSales: 20000, Orders: 1},
+	}, r.ByHour, "hours on the merchant's clock")
 	require.Equal(t, []reporting.Adjustment{
 		{Kind: "discount", Label: "Happy Hour", Count: 1, Amount: 5500},
 		{Kind: "cancelled", Label: "Manajer A", Count: 1, Amount: 30000},
@@ -105,7 +143,10 @@ func TestHoursFollowTheMerchantsTimezone(t *testing.T) {
 
 	r, err := f.svc.Report(ctx, f.tenantID, reporting.Filter{From: f.day, To: f.day})
 	require.NoError(t, err)
-	require.Equal(t, []reporting.HourLine{{Hour: 2, Revenue: 54450, Orders: 1}, {Hour: 6, Revenue: 23000, Orders: 1}}, r.ByHour)
+	require.Equal(t, []reporting.HourLine{
+		{Hour: 2, Revenue: 54450, NetSales: 49500, Orders: 1},
+		{Hour: 6, Revenue: 23000, NetSales: 20000, Orders: 1},
+	}, r.ByHour)
 }
 
 func TestASaleLandingDuringARecomputeKeepsTheSliceDirty(t *testing.T) {

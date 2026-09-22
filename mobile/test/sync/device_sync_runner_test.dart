@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -151,7 +152,7 @@ void main() {
     if (db.isOpen) await db.close();
   });
 
-  DeviceSyncRunner runner() {
+  DeviceSyncRunner runner({FutureOr<void> Function()? onUnauthorized}) {
     final client = SyncClient(
       baseUrl: 'https://api.test/api/v2',
       token: 'tok',
@@ -161,7 +162,7 @@ void main() {
     return DeviceSyncRunner(
       binding: _binding(),
       client: client,
-      onUnauthorized: () => revoked++,
+      onUnauthorized: onUnauthorized ?? () => revoked++,
     );
   }
 
@@ -235,7 +236,11 @@ void main() {
 
     final outcome = await runner().syncNow();
 
-    expect(api.requests.last, '/sync/push');
+    // The push RAN — that is the invariant. It is no longer the last request,
+    // because an accepted push now reads the stock projection back, and that
+    // read fails here too. Asserting on `last` pinned an ordering nobody
+    // promised instead of the property that matters.
+    expect(api.requests, contains('/sync/push'));
     expect(outcome!.failure, SyncFailure.server);
     expect(outcome.pullInterrupted, isTrue);
     expect(await OutboxStore.instance.count(), 0);
@@ -251,6 +256,30 @@ void main() {
     expect(revoked, 1);
     expect(api.requests, ['/sync/changes']);
     expect(await OutboxStore.instance.count(), 2);
+  });
+
+  test('a revoked sync waits until credential cleanup finishes', () async {
+    api.changesStatus = 401;
+    final cleanupStarted = Completer<void>();
+    final allowCleanup = Completer<void>();
+    var finished = false;
+    final run = runner(
+      onUnauthorized: () async {
+        cleanupStarted.complete();
+        await allowCleanup.future;
+        revoked++;
+      },
+    ).syncNow().whenComplete(() => finished = true);
+
+    await cleanupStarted.future;
+    expect(revoked, 0);
+    await Future<void>.delayed(Duration.zero);
+    expect(finished, isFalse);
+
+    allowCleanup.complete();
+    final outcome = await run;
+    expect(outcome!.unauthorized, isTrue);
+    expect(revoked, 1);
   });
 
   test('an outdated app stops and touches nothing', () async {

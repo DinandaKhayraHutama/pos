@@ -56,9 +56,10 @@ class _BackendAppState extends State<BackendApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // No periodic `/devices/me` poll. Revocation shows up as a 401 on the next
-    // sync, and a binding change as a new `device_revision` in `/sync/changes`
-    // — fifteen thousand tills asking every thirty seconds bought nothing.
+    // Still no PERIODIC `/devices/me` poll: fifteen thousand tills asking
+    // every thirty seconds bought nothing, and a binding change arrives as a
+    // new `device_revision` in `/sync/changes`. What `_accept` does do is
+    // confirm the credential once per launch — see the comment there.
     _load();
   }
 
@@ -71,11 +72,11 @@ class _BackendAppState extends State<BackendApp> with WidgetsBindingObserver {
       _repository ??= DeviceActivationRepository(baseUrl: backendApiUrl);
       final binding = await _repository!.load();
       if (binding != null) {
-        // No `/devices/me` here. A launch with an unexpired binding opens its
-        // own store offline-first, and its first request of any kind waits out
-        // the startup spread. Revocation arrives as a 401 on that first sync;
-        // a changed binding as a new `device_revision` in `/sync/changes`,
-        // which triggers exactly one check.
+        // A launch with an unexpired binding opens its own store
+        // offline-first; the catalogue is already there and the first PULL
+        // waits out the startup spread. `_accept` confirms the credential
+        // straight away, so a revoked till does not present a working POS for
+        // the length of that spread.
         await _accept(binding, justActivated: false);
       }
     } on DeviceActivationException catch (e) {
@@ -146,6 +147,25 @@ class _BackendAppState extends State<BackendApp> with WidgetsBindingObserver {
       // eight o'clock is a five-minute ramp rather than one spike. Resuming the
       // app or regaining a network still nudges a sync sooner.
       sync.start(initialDelay: startupSpreadFor(binding.deviceId));
+
+      // The credential is confirmed NOW, outside that ramp, and this is the
+      // one request a launch does not defer.
+      //
+      // The spread exists to smooth a fleet's PULL traffic, and it still does.
+      // But it was also gating the only request that can discover a
+      // revocation, so a revoked till presented a working-looking POS for up
+      // to five minutes on every launch — and indefinitely for anyone who
+      // reloaded faster than their own spread. That is not the documented
+      // promise ("instant revocation while the device is offline is not
+      // promised"): here the device is online and the app was declining to
+      // ask. One small authenticated check per LAUNCH is also not what the
+      // rejected design was — that was a periodic `/devices/me` poll from
+      // fifteen thousand tills every thirty seconds.
+      //
+      // Deliberately not awaited: the till opens immediately and offline-first
+      // is untouched, because `_verify` treats a network failure as "keep this
+      // merchant's data" and only a 401/403 revokes.
+      unawaited(_verify());
     }
   }
 
@@ -161,18 +181,31 @@ class _BackendAppState extends State<BackendApp> with WidgetsBindingObserver {
     }
   }
 
-  void _revoked() {
+  Future<void> _revoked() async {
     if (!mounted) return;
     final previous = _sync;
     _sync = null;
+    // The token is dead server-side, so the stored binding has to go with it.
+    // `verify` deletes it on its own 401, but the far more common route here is
+    // a 401 on an ordinary sync, which never reaches the repository — and a
+    // binding left behind makes the next launch adopt it offline-first and
+    // only fall back to this screen when the next sync 401s again.
     setState(() {
       _binding = null;
       _entered = false;
       _failure = ActivationFailure.revoked;
+      _busy = true;
     });
     // Disposed after the frame that unmounts the connected scope, so nothing
     // still listening to it is handed a disposed notifier.
     WidgetsBinding.instance.addPostFrameCallback((_) => previous?.dispose());
+    try {
+      await (_repository?.forget() ?? Future<void>.value());
+    } on DeviceActivationException catch (e) {
+      if (mounted) setState(() => _failure = e.failure);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   /// Fetches, stores and adopts the refreshed binding. Only ever called from a
@@ -194,7 +227,7 @@ class _BackendAppState extends State<BackendApp> with WidgetsBindingObserver {
       }
       return true;
     } on DeviceActivationException catch (e) {
-      if (e.failure == ActivationFailure.revoked) _revoked();
+      if (e.failure == ActivationFailure.revoked) await _revoked();
       return false;
     } catch (_) {
       // Storage/network failures retain this merchant's data for recovery.

@@ -108,6 +108,7 @@ func (h *Handler) Routes() chi.Router {
 		csrf.CookieName("justclick_platform_csrf"),
 		csrf.Secure(h.secure),
 		csrf.SameSite(csrf.SameSiteStrictMode),
+		csrf.ErrorHandler(web.CSRFFailure(h.logger)),
 	))
 
 	r.Get("/login", h.showLogin)
@@ -146,7 +147,12 @@ func (h *Handler) Routes() chi.Router {
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Referrer-Policy", "no-referrer")
+		// same-origin, NOT no-referrer. gorilla/csrf falls back to the Referer
+		// header when a browser sends no Origin on a form POST, and
+		// no-referrer told the browser to withhold exactly that — a panel that
+		// refused its own login with "referer not supplied". Same-origin still
+		// sends nothing to any other site.
+		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		next.ServeHTTP(w, r)
@@ -164,7 +170,7 @@ func (h *Handler) actor(r *http.Request) domain.Actor {
 
 func (h *Handler) sessionView(r *http.Request) views.Session {
 	a := adminFrom(r.Context())
-	return views.Session{AdminName: a.Name, AdminEmail: a.Email, CSRFToken: csrf.Token(r)}
+	return views.Session{AdminName: a.Name, AdminEmail: a.Email, CSRFToken: csrf.Token(r), Path: r.URL.Path}
 }
 
 func (h *Handler) render(w http.ResponseWriter, r *http.Request, c templ.Component) {

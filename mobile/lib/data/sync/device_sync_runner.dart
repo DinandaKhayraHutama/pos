@@ -85,7 +85,7 @@ class DeviceSyncRunner {
   RetryGate get gate => _client.gate;
 
   /// Called when the server says this device is no longer known.
-  final void Function()? onUnauthorized;
+  final FutureOr<void> Function()? onUnauthorized;
 
   static const _minPoll = Duration(seconds: 5);
   static const _maxPoll = Duration(hours: 1);
@@ -181,15 +181,24 @@ class DeviceSyncRunner {
         note(e);
       }
 
-      // Read back only the affected projection, not the whole catalogue.
+      // Read back only the projections this push moved, never the whole
+      // catalogue — and in ONE pull. Two blocks here meant two manifest
+      // fetches for a single sale that touched both stock and a table.
+      //
       // An ACK identifies the sequence but a superseded event does not tell
       // us the winning status. This also clears a resolved conflict promptly.
       // The same client gate still prevents requests after any Retry-After.
-      if ((push?.tableStatusSeq ?? 0) > 0 && retryAfter == null) {
+      final readBack = <String, int>{
+        // Any accepted row may have moved this outlet's quantities, and the
+        // server is the authority on where they landed.
+        if ((push?.accepted ?? 0) > 0) 'outlet_stock': 9007199254740991,
+        if ((push?.accepted ?? 0) > 0) 'stock_movements': 9007199254740991,
+        if ((push?.tableStatusSeq ?? 0) > 0)
+          'table_status': push!.tableStatusSeq,
+      };
+      if (readBack.isNotEmpty && retryAfter == null) {
         try {
-          final refreshed = await _pull.run(
-            hints: {'table_status': push!.tableStatusSeq},
-          );
+          final refreshed = await _pull.run(hints: readBack);
           pull = SyncReport(
             applied: {
               ...?pull?.applied,
@@ -223,7 +232,9 @@ class DeviceSyncRunner {
       );
     } on SyncException catch (e) {
       _lastFailure = e.failure;
-      if (e.failure == SyncFailure.unauthorized) onUnauthorized?.call();
+      if (e.failure == SyncFailure.unauthorized) {
+        await onUnauthorized?.call();
+      }
       return SyncOutcome(
         pull: pull,
         push: push,

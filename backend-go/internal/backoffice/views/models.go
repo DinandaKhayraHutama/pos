@@ -13,6 +13,8 @@ func pluralDevices(n int) string {
 	return strconv.Itoa(n) + " perangkat"
 }
 
+func int64String(n int64) string { return strconv.FormatInt(n, 10) }
+
 // View models are deliberately separate from the domain types where a domain
 // type could carry something that must not leave the server: a template that
 // takes such a struct will happily render a field the moment someone adds one.
@@ -24,6 +26,9 @@ type Session struct {
 	Role         string
 	BusinessName string
 	CSRFToken    string
+	// Path is the request path, so the sidebar can light the entry the person
+	// is actually looking at. Set from the request, never from a link.
+	Path string
 	// Which sections this person may open. Asked of permissions, never of the
 	// role, so the nav cannot drift from what the routes actually allow.
 	CanCatalogue bool
@@ -33,6 +38,11 @@ type Session struct {
 	CanStock     bool
 	CanDashboard bool
 	CanReports   bool
+	// The two read-only history sections. Separate flags rather than one,
+	// because they ask for different permissions: reading somebody else's
+	// sales and looking inside a cash drawer are not the same question.
+	CanTransactions bool
+	CanShifts       bool
 	// CanTables and CanExports are modules the platform can switch off per
 	// merchant; the sections above that are sold as modules fold the switch in.
 	CanTables  bool
@@ -57,12 +67,18 @@ type SetupAccount struct {
 }
 
 type Register struct {
-	ID           string
-	Name         string
-	OutletName   string
-	Active       bool
-	TableService bool
-	DeviceCount  int
+	ID                string
+	Name              string
+	OutletName        string
+	Active            bool
+	TableService      bool
+	DeviceCount       int
+	OperationID       string
+	ActiveSessionID   string
+	ActiveDeviceID    string
+	ActiveDeviceLabel string
+	ActiveCashier     string
+	ActiveSince       string
 }
 
 type Device struct {
@@ -79,6 +95,44 @@ type IssuedCode struct {
 	RegisterName string
 	Code         string
 	ExpiresIn    string
+}
+
+type RecoveryItem struct {
+	ID             string
+	Entity         string
+	EntityID       string
+	Revision       int64
+	Status         string
+	BusinessDate   string
+	PaymentMethod  string
+	Total          int64
+	StockEffects   int
+	DecisionReason string
+}
+
+type Recovery struct {
+	ID                   string
+	SessionID            string
+	RegisterName         string
+	OutletName           string
+	DeviceLabel          string
+	Status               string
+	Reason               string
+	ActorName            string
+	ForcedAt             string
+	OrderCountAtTakeover int64
+	ExpectedCash         int64
+	CountedCash          *int64
+	ReconciliationBasis  string
+	Items                []RecoveryItem
+}
+
+type DiagnosticFinding struct {
+	Classification string
+	Code           string
+	Entity         string
+	EntityID       string
+	Action         string
 }
 
 // Form is what a form renders from: the raw strings, not parsed values.

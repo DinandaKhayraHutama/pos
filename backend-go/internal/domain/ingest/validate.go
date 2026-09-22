@@ -97,9 +97,11 @@ func immutableSession(in wire.Session) []byte {
 	in.Revision = 0
 	in.ClosedAtMs, in.CountedCash, in.ExpectedCash = nil, nil, nil
 	in.ClosedById, in.ClosedByName, in.Note = nil, nil, nil
+	in.OrderCount = nil
 	return encode(in)
 }
 func immutableOrder(in wire.Order) []byte {
+	in.StockMovements = nil // audited independently, immutable movements may only be appended
 	in.Revision, in.Status = 0, ""
 	in.AuthorizedBy, in.VoidReason, in.RefundedAmount = nil, nil, nil
 	return encode(in)

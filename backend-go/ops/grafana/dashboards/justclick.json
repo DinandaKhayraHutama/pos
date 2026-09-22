@@ -1,0 +1,315 @@
+{
+  "uid": "justclick-fleet",
+  "title": "JustClick — fleet and money path",
+  "description": "The numbers an incident is read from. Top row is money: a rejection rate that climbs is a client build losing sales.",
+  "tags": ["justclick"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Money path",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "type": "stat",
+      "title": "Push rejection rate (alert above 0.1%)",
+      "datasource": { "type": "prometheus", "uid": "justclick-prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 4,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.001 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(justclick_push_rows_total{status=\"rejected\"}[5m])) / clamp_min(sum(rate(justclick_push_rows_total[5m])), 0.001)"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Pushed rows per second, by outcome",
+      "datasource": { "type": "prometheus", "uid": "justclick-prometheus" },
+      "gridPos": { "h": 6, "w": 9, "x": 6, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "rps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{status}}",
+          "expr": "sum by (status) (rate(justclick_push_rows_total[5m]))"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Rejections per second, by code",
+      "description": "settled and duplicate are ordinary retries. schema_rejected climbing is a client bug.",
+      "datasource": { "type": "prometheus", "uid": "justclick-prometheus" },
+      "gridPos": { "h": 6, "w": 9, "x": 15, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "rps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{code}}",
+          "expr": "sum by (code) (rate(justclick_push_rows_total{status=~\"rejected|retry\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Serving",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 }
+    },
+    {
+      "type": "timeseries",
+      "title": "p99 latency by route (gate: changes 20 ms, push 300 ms)",
+      "datasource": { "type": "prometheus", "uid": "justclick-prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{route}}",
+          "expr": "histogram_quantile(0.99, sum by (le, route) (rate(justclick_http_request_duration_seconds_bucket{surface=\"api\"}[5m])))"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Requests per second by route",
+      "datasource": { "type": "prometheus", "uid": "justclick-prometheus" },
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{route}}",
+          "expr": "sum by (route) (rate(justclick_http_requests_total{surface=\"api\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Non-2xx per second by status",
+      "datasource": { "type": "prometheus", "uid": "justclick-prometheus" },
+      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{status}}",
+          "expr": "sum by (status) (rate(justclick_http_requests_total{status!~\"2..\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Devices seen in the last five minutes",
+      "datasource": { "type": "prometheus", "uid": "justclick-prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 15 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [{ "refId": "A", "expr": "justclick_devices_seen_5m" }]
+    },
+    {
+      "type": "stat",
+      "title": "Device auth served from cache",
+      "description": "Every miss re-reads the whole device chain from PostgreSQL.",
+      "datasource": { "type": "prometheus", "uid": "justclick-prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 15 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 0.8 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(justclick_device_auth_cache_total{result=\"hit\"}[5m])) / clamp_min(sum(rate(justclick_device_auth_cache_total[5m])), 0.001)"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Rows served on the pull path, per second",
+      "datasource": { "type": "prometheus", "uid": "justclick-prometheus" },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 15 },
+      "fieldConfig": { "defaults": { "unit": "rps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{entity}}",
+          "expr": "sum by (entity) (rate(justclick_sync_pull_rows_total[5m]))"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Jobs and rollups",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 21 }
+    },
+    {
+      "type": "timeseries",
+      "title": "River jobs by state",
+      "datasource": { "type": "prometheus", "uid": "justclick-prometheus" },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 22 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{queue}} {{state}}",
+          "expr": "justclick_river_jobs"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Dead jobs (alert above 0)",
+      "datasource": { "type": "prometheus", "uid": "justclick-prometheus" },
+      "gridPos": { "h": 6, "w": 4, "x": 8, "y": 22 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        { "refId": "A", "expr": "sum(justclick_river_jobs{state=\"discarded\"})" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Report rollup staleness (alert above 15 min)",
+      "datasource": { "type": "prometheus", "uid": "justclick-prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 22 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "legendFormat": "oldest waiting slice", "expr": "justclick_report_rollup_staleness_seconds" },
+        { "refId": "B", "legendFormat": "slices waiting", "expr": "justclick_report_dirty_slices" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Rows in a DEFAULT partition",
+      "description": "No report or retention job looks there.",
+      "datasource": { "type": "prometheus", "uid": "justclick-prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 22 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        { "refId": "A", "legendFormat": "{{table}}", "expr": "justclick_default_partition_occupied" }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "PostgreSQL, Redis and the box",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 28 }
+    },
+    {
+      "type": "timeseries",
+      "title": "pgx pool: connections and waits",
+      "description": "A pool whose connections are all busy does not fail, it queues — and the queue shows in no other metric.",
+      "datasource": { "type": "prometheus", "uid": "justclick-prometheus" },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 29 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "legendFormat": "{{pool}} {{state}}", "expr": "justclick_pgxpool_connections" },
+        { "refId": "B", "legendFormat": "{{pool}} waited/s", "expr": "rate(justclick_pgxpool_empty_acquires_total[5m])" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "PostgreSQL connections and locks",
+      "datasource": { "type": "prometheus", "uid": "justclick-prometheus" },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 29 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "legendFormat": "backends {{state}}", "expr": "sum by (state) (pg_stat_activity_count)" },
+        { "refId": "B", "legendFormat": "locks {{mode}}", "expr": "sum by (mode) (pg_locks_count)" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Redis hit ratio and memory",
+      "datasource": { "type": "prometheus", "uid": "justclick-prometheus" },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 29 },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "hit ratio",
+          "expr": "rate(redis_keyspace_hits_total[5m]) / clamp_min(rate(redis_keyspace_hits_total[5m]) + rate(redis_keyspace_misses_total[5m]), 0.001)"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "memory used / max",
+          "expr": "redis_memory_used_bytes / clamp_min(redis_memory_max_bytes, 1)"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Filesystem used (alert above 75%)",
+      "datasource": { "type": "prometheus", "uid": "justclick-prometheus" },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 35 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{mountpoint}}",
+          "expr": "1 - node_filesystem_avail_bytes{fstype!~\"tmpfs|overlay\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|overlay\"}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Process CPU and resident memory",
+      "datasource": { "type": "prometheus", "uid": "justclick-prometheus" },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 35 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "legendFormat": "{{job}} cpu cores", "expr": "rate(process_cpu_seconds_total{job=~\"api|worker\"}[5m])" },
+        { "refId": "B", "legendFormat": "{{job}} rss bytes", "expr": "process_resident_memory_bytes{job=~\"api|worker\"}" }
+      ]
+    }
+  ]
+}

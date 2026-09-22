@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 
 import 'wire_values.dart';
+import 'stock_movement_push.dart';
 
 /// A sale as `POST /api/v2/sync/push` receives it.
 ///
@@ -102,8 +103,33 @@ class OrderPush {
     }
 
     final delta = wireIntOrNull(order['server_time_delta_ms']);
+    final sessionId = order['pos_session_id'];
+    final claimed = sessionId is String && sessionId.isNotEmpty
+        ? await txn.query(
+            '_till_sessions',
+            where: 'id = ?',
+            whereArgs: [sessionId],
+          )
+        : const <Map<String, Object?>>[];
+    final effects = <Map<String, Object?>>[];
+    if (claimed.isNotEmpty) {
+      final movements = await txn.query(
+        'stock_movements',
+        where: 'order_id = ?',
+        whereArgs: [orderId],
+        orderBy: 'id',
+      );
+      for (final movement in movements) {
+        final effect = await StockMovementPush.payloadWithin(
+          txn,
+          movement['id'] as String,
+        );
+        if (effect != null) effects.add({...effect, 'revision': 1});
+      }
+    }
 
     return {
+      if (claimed.isNotEmpty) 'stock_movements': effects,
       'id': order['id'],
       'business_date': businessDate,
       'number': order['number'],

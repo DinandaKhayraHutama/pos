@@ -50,7 +50,10 @@ type Outlet struct {
 type Register struct {
 	ID       string
 	OutletID string
-	Name     string
+	// OutletName is filled by Registers, which lists across branches; the
+	// per-outlet reads leave it empty because the branch is already known.
+	OutletName string
+	Name       string
 	// Whether this till runs the floor-plan flow. Per register, not per
 	// outlet: one counter can seat guests while the next hands food over.
 	TableService bool
@@ -137,6 +140,53 @@ func (s *Service) Get(ctx context.Context, tenantID, id string) (Outlet, error) 
 	}
 
 	return o, err
+}
+
+// Registers lists tills, optionally narrowed to one branch, with the outlet
+// name each belongs to. It exists for the filters on the history screens: a
+// chain's till list is only meaningful once you can tell "Kasir 1" in Kemang
+// from "Kasir 1" in Bintaro, so the branch travels with the row.
+//
+// Inactive tills are included. A closed till still has months of sales behind
+// it, and leaving it out of a filter makes those sales unreachable.
+func (s *Service) Registers(ctx context.Context, tenantID, outletID string) ([]Register, error) {
+	if outletID != "" && !validation.UUID(outletID) {
+		return nil, ErrNotFound
+	}
+	var out []Register
+	err := pg.InTenantReadTx(ctx, s.pools.Tenant, tenantID, func(ctx context.Context, tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT r.id::text, r.outlet_id::text, r.name, r.table_service, r.active, r.sort_order,
+			       (SELECT count(*) FROM devices d
+			        WHERE d.tenant_id = r.tenant_id AND d.pos_register_id = r.id AND d.revoked_at IS NULL),
+			       o.name
+			FROM pos_registers r
+			JOIN outlets o ON o.tenant_id = r.tenant_id AND o.id = r.outlet_id
+			WHERE r.tenant_id = $1 AND r.deleted_at IS NULL
+			  AND ($2::uuid IS NULL OR r.outlet_id = $2::uuid)
+			ORDER BY o.sort_order, o.name, r.active DESC, r.sort_order, r.name`, tenantID, nilIfEmpty(outletID))
+		if err != nil {
+			return err
+		}
+		out, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (Register, error) {
+			var (
+				r     Register
+				count int64
+			)
+			err := row.Scan(&r.ID, &r.OutletID, &r.Name, &r.TableService, &r.Active, &r.SortOrder, &count, &r.OutletName)
+			r.DeviceCount = int(count)
+			return r, err
+		})
+		return err
+	})
+	return out, err
+}
+
+func nilIfEmpty(v string) *string {
+	if v == "" {
+		return nil
+	}
+	return &v
 }
 
 // Register returns one register.

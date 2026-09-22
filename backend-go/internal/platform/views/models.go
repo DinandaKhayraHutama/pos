@@ -18,6 +18,8 @@ type Session struct {
 	AdminName  string
 	AdminEmail string
 	CSRFToken  string
+	// Path is the request path, so the sidebar can light the current entry.
+	Path string
 }
 
 type Enrollment struct {

@@ -290,6 +290,24 @@ void main() {
     expect(again!['business_date'], stored);
   });
 
+  test(
+    'a legacy sale without a session skips the permit lookup safely',
+    () async {
+      final order = await sell(await openSession());
+      await db.update(
+        'orders',
+        {'pos_session_id': null},
+        where: 'id = ?',
+        whereArgs: [order.id],
+      );
+
+      final payload = await OrderPush.payloadWithin(db, order.id);
+
+      expect(payload!['pos_session_id'], isNull);
+      expect(payload.containsKey('stock_movements'), isFalse);
+    },
+  );
+
   test('a session carries exactly the Session schema keys', () async {
     final shift = await ShiftRepository.instance.open(
       employeeId: 'e1',

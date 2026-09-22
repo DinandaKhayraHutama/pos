@@ -314,6 +314,37 @@ A tombstone (`deleted_at_ms` set) deletes the local row, letting the existing
 401 means the device was revoked or its token expired, and no amount of retrying
 fixes it — the caller has to send the user back to activation rather than spin.
 
+**Sending them back to activation is not enough on its own: the stored binding
+has to go too.** `BackendApp._revoked` now calls
+`DeviceActivationRepository.forget()`. `verify()` already deleted the binding on
+its own 401, but revocation almost always arrives as a 401 on an ordinary sync,
+which reaches the app through `onUnauthorized` and never touches the repository.
+With the binding still in secure storage the next launch read it back, opened
+the connected store offline-first, let the cashier into the till, and dropped
+back to the activation screen only when the first sync 401'd — and that sync
+waits `startupSpreadFor(deviceId)`, up to five minutes. The symptom was a revoke
+that looked like it had not taken: relaunch, get in, get thrown out a minute or
+two later, every time. `forget()` keeps the INSTALLATION uuid, so re-activating
+still re-binds to the same `devices` row and a recovery case raised against this
+installation can still recognise it. `test/repositories/device_verify_test.dart`
+pins both halves.
+
+**The credential is confirmed once per LAUNCH, outside the startup spread.**
+`_accept` fires `_verify()` (unawaited) for a launch that adopted a saved
+binding. The spread still smooths the fleet's PULL traffic — that part is
+unchanged — but it used to gate the only request that could discover a
+revocation, so a revoked till presented a working-looking POS for
+`hash(device_id) mod 300` seconds on every launch, and **indefinitely for
+anyone who reloaded faster than their own spread**. One device measured 186
+seconds, which is exactly how a revoked till stayed usable through a manual
+test. This does not reinstate the design that was rejected: that was a
+*periodic* `/devices/me` poll every thirty seconds from fifteen thousand tills,
+not one check per launch. Offline-first is untouched, because `_verify` keeps
+the merchant's data on a network failure and only a 401/403 revokes. The
+repository half is pinned by `device_activation_repository_test.dart`; the
+wiring itself has no widget test (there is no `BackendApp` test harness), so
+`../docs/MANUAL_TEST_LOKAL.md` steps F6a and F6b cover it.
+
 Pulled rows are matched on the manifest's `key` columns (`id`, or the pair for a
 join table) with UPDATE followed by INSERT only for new rows, inside the page
 transaction. Never use REPLACE here: replacing a category cascades to products,
@@ -397,10 +428,29 @@ for a week must still be holding its sales. It also orders `pending()`
 (least-tried first), so rows the server keeps answering `retry` for cannot fill
 every request and starve newer sales.
 
-**Refused rows are recoverable.** `_dead_letter` keeps the refused payload, the
-code, and details such as who holds a busy register. Settings shows the count on
-an activated till, and tapping it re-snapshots every refused row whose local row
-still exists (`DeadLetterStore.requeueAll`).
+**Refused rows are recoverable, one reviewed row at a time.** `_dead_letter`
+keeps the refused payload, the code, `recovery_id` when the server sent one, and
+details such as who holds a busy register. Settings shows the count on an
+activated till, and tapping it opens the **Recovery Center**
+([recovery_center_page.dart](lib/features/recovery/recovery_center_page.dart)),
+which is where anyone finds out these rows exist at all.
+
+`DeadLetterStore.requeue(id)` replaced the old `requeueAll()`, and the
+difference is the point: a blanket "retry everything" is exactly the bulk
+retry-on-conflict that paritas F0 forbids. Only `register_busy`,
+`session_closed` and `recovery_required` can be requeued from the POS, and a
+`recovery_required` row offers the button **only** after
+`GET /till/recoveries/{id}` reports the manager accepted that exact
+entity+revision. Everything else — `schema_rejected` and friends — is evidence
+to investigate, not something the cashier can push again. Missing source rows
+stay as evidence rather than being cleaned up.
+
+The layering is deliberate: `requeue` enforces only the code whitelist, the
+Recovery Center decides whether to *offer* the button, and **the server stays
+the authority**. A row sent again without an approval behind it is simply
+refused as `recovery_required` once more and returns to dead letter — the client
+cannot talk its way past the guard, so the UI gate is there to stop a pointless
+round trip, not to be the security boundary.
 
 **`OutboxPush` sends batches**: at most 200 rows a request, the `pos_sessions`
 batch before `orders` (a session before the sales that name it — the server
@@ -468,6 +518,99 @@ it to dead letter as `register_mismatch` — kept, never sent as the wrong till.
 delivered newer rows (a renamed till, table service switched off) the cursor has
 moved past them, and re-writing the stored binding on every launch put the old
 values back for good.
+
+### When the server force-closed this till's drawer (v29, paritas F0)
+
+The server has no heartbeat and never takes a drawer back on its own, so the
+only way a device's session can vanish from under it is a **manager's
+takeover in the Backoffice**. `TillCoordinator.recover` is where this device
+finds out, and what it does next is the whole of F0 on the client:
+
+- It sends its own locally-active session as `?local_session_id=` on
+  `GET /till/sessions/current`. A `data: null` answer alone is ambiguous — the
+  cashier might simply hold nothing. `data: null` **plus a locally active
+  coordinated session** is the signal, and the response's `recovery` pointer
+  names the case.
+- It then writes `_till_sessions.state = 'recovery_required'` with the case id.
+  `assertSellable` only lets `active_confirmed` sell, so checkout is blocked on
+  that session until a manager has decided its fate — and unlike `conflict`,
+  this state names the case so the Recovery Center can ask the server about it.
+- **It keeps every local row.** Orders, the outbox, dead letter and the counted
+  cash all stay exactly as they are; the cash figures are recovery evidence. The
+  only thing it mirrors is the server's `closed_at`, and only because the
+  partial unique index on `shifts(pos_id) WHERE closed_at IS NULL` would
+  otherwise stop this installation from opening its replacement drawer.
+- A queued sale from that drawer comes back `recovery_required` with a
+  `recovery_id`, which `DeadLetterStore` records on the row and on the till
+  state. The till cannot push it through by retrying; see "Refused rows are
+  recoverable" above for why the retry button is gated on the server's
+  decision rather than offered by default.
+
+**`TillCoordinator.pendingDrawer` decides which local drawer to ask the server
+about, and its LEFT join is load-bearing.** Two kinds of open shift need an
+answer: one with a `_till_sessions` permit naming this cashier, and one with
+**no permit row at all**. The second is not hypothetical — a session opened by a
+build from before coordinated tills existed went out through the legacy outbox
+push, so `_save` never ran for it, and the server register is still
+`coordinated_sessions = false` with no `till_claims` row. The original query
+started `FROM _till_sessions JOIN shifts`, so `recover` could not see those at
+all: it returned having done nothing, and the drawer stayed open forever —
+unresumable (no permit) and uncloseable (nothing reconciled it). **Re-activating
+the device did not help**, because the same blind query ran again. A shift whose
+permit names ANOTHER cashier is still excluded: it may be legitimately held
+after a handover.
+
+The write that clears it is an **upsert**, not an update: a stranded session has
+no permit row, and `tx.update` on a missing row silently touches nothing, which
+left the state invisible to the Recovery Center. The inserted row carries an
+exhausted receipt block (`receipt_next` past `receipt_end`) rather than an
+invented one — the drawer is closed and will never number another receipt.
+`RecoveryInspector` also names the state directly as `shift_without_till_permit`
+so it is visible before anyone signs in.
+
+**Tapping the refusing tile is what asks.** `recover` is otherwise only reached
+from `signIn`, so a cashier whose sign-in is remembered from a previous launch
+never triggered it and the only escape was to sign out and back in — which
+nobody would guess. `PosSessionOpenCard._reconcile` runs the same
+`coordinator.recover`, then re-resolves. The till still decides nothing: a
+force-closed drawer comes back closed and the register frees up, and anything
+else keeps every local row and repeats the explanation. `test/repositories/till_permit_test.dart`
+pins the query; `TestTakeoverClosesADrawerThatHasNoClaim` pins the server half —
+that a claimless session still yields a recovery pointer, and that `CurrentTill`
+reports no claim *without* erroring, so the till reads `data: null` beside the
+pointer rather than a failed request.
+
+**An open row in `shifts` is NOT permission to sell into it, and
+`TillCoordinator.holdsPermit` is the single place that says so.** `shifts` says
+a drawer is open; `_till_sessions` says whether the server agrees THIS device
+and cashier may sell into it, and the two legitimately disagree — a session that
+reached the server through the legacy push path never got a `till_claims` row, a
+force-closed one is `recovery_required`, a handed-over one names the other
+cashier. The till picker used to read `shifts` while `_resolvePosContext` read
+`_till_sessions`, so a stranded drawer was offered as **Resume** and the tap
+resolved straight back to "no session": nothing happened, nothing was said, and
+the cashier could neither resume nor close it. Both now call `holdsPermit`, the
+picker renders a fourth state for it (`sessionNeedsRecovery`), and `_resume`
+checks its own outcome so even a stale answer produces an explanation instead of
+a dead button. `test/repositories/till_permit_test.dart` pins every state.
+
+The till deliberately **cannot** close such a drawer itself — that is a
+manager's controlled takeover in Backoffice → Perangkat, and the server allows
+it on a claimless session precisely because this is the case with no other way
+out (see `TestTakeoverClosesADrawerThatHasNoClaim` and the comment in
+`ForceTakeover`).
+
+**`recovery_required` is only claimed when the server named a case.** `recover`
+used to write it whenever `/till/sessions/current` returned no claim, even with
+`recovery` null — which manufactured a state nobody could clear: no case in the
+Backoffice to accept or reject, and the Recovery Center pointing at nothing.
+Without a case id the honest state is `conflict`.
+
+`RecoveryInspector` ([recovery_inspector.dart](lib/data/recovery/recovery_inspector.dart))
+is the read-only side: it reads the outbox, dead letter, till state, shifts and
+stock movements and reports what it found with a safe next action. **It never
+deletes, requeues or changes a business row** — that separation is what makes it
+safe to run on a till that is already in trouble.
 
 ### Stock on an activated till (v26, Fase 5)
 
@@ -589,7 +732,8 @@ flutter build web --release          # produces build/web — a single static bu
 
 Two things make web different, both already wired up:
 
-- **`sqflite` and `path_provider` have no web implementation.** [db_platform.dart](lib/data/database/db_platform.dart) is the seam: a conditional export picks [db_platform_io.dart](lib/data/database/db_platform_io.dart) (documents dir + default factory) on native, and [db_platform_web.dart](lib/data/database/db_platform_web.dart) (SQLite-on-wasm + IndexedDB) on web. `AppDatabase._open` just calls `configureDatabaseFactory()` then `resolveDatabasePath()`. Nothing above the database layer knows which platform it is on. Before this seam existed, every DB-backed screen on web rendered empty with `MissingPluginException(... getApplicationDocumentsDirectory ...)`.
+- **`sqflite` and `path_provider` have no web implementation.** [db_platform.dart](lib/data/database/db_platform.dart) is the seam: a conditional export picks [db_platform_io.dart](lib/data/database/db_platform_io.dart) on native, and [db_platform_web.dart](lib/data/database/db_platform_web.dart) (SQLite-on-wasm + IndexedDB) on web. `AppDatabase._open` just calls `configureDatabaseFactory()` then `resolveDatabasePath()`. Nothing above the database layer knows which platform it is on. Before this seam existed, every DB-backed screen on web rendered empty with `MissingPluginException(... getApplicationDocumentsDirectory ...)`.
+- **Windows and Linux have no `sqflite` plugin either, and that is what `db_platform_io.dart` now settles** (paritas F0.2). iOS, Android and macOS use the platform plugin; on Windows/Linux `configureDatabaseFactory()` calls `sqfliteFfiInit()` and installs `databaseFactoryFfi`, once, **before the first database operation including `databaseExists`**. `sqflite_common_ffi` therefore moved out of `dev_dependencies` into the real dependencies — it is production code on desktop now, not test scaffolding. It costs Android nothing: the debug APK carries no `libsqlite3.so`, because Android never takes the FFI path. `test/repositories/native_file_persistence_test.dart` is the proof that matters — a real file on disk, written, closed, reopened, with `_outbox` and `_dead_letter` intact and `PRAGMA user_version` at `currentVersion`. It skips itself off Windows/Linux. **Still unproven: a packaged `Runner.exe` finding `sqlite3.dll`** — that needs Visual Studio, which the CI `windows` job has and the current dev machine does not (see `../docs/FASE_0_VERIFICATION.md`).
 - **`web/sqlite3.wasm` is committed and version-locked.** It must match the resolved `sqlite3` version in `pubspec.lock`; see the re-download command in the header of `db_platform_web.dart`. The upstream `dart run sqflite_common_ffi_web:setup` generator does **not** work on this toolchain (it shells out to `webdev`, which fails with "'dart compile' does not support build hooks" on Dart 3.10), which is why the app uses `databaseFactoryFfiWebNoWebWorker` — that path needs only the wasm, no generated worker.
 
 **Testing gotcha that will waste your time:** Flutter registers a service worker, so a reloaded page happily serves the *previous* build and your fix looks like it did nothing. Always unregister it before judging a change:
@@ -698,7 +842,11 @@ Edit `lib/l10n/app_en.arb` and `lib/l10n/app_id.arb`, then run `flutter gen-l10n
 
 ### DB migrations
 
-`lib/data/database/app_database.dart` — bump `currentVersion` and add the step in `_onUpgrade`. Current version: **21** — v21 added `tables.active` (see "Table Management" below); `DEFAULT 1` needs no backfill, since every table that already existed was already visible on the board. Previous version: **20** — v20 added per-product modifier defaults (`product_modifier_options.is_default`); existing scope is preserved with no defaults assigned. Previous version: **19** — **v19 added `pb1_rate`, `service_charge_rate`, and `service_charge_amount` on `orders`** (see "PB1 and Service Charge" below). Additive — three new columns, no deferred backfill step at all: the two rate columns stay NULL-by-absence on a pre-v19 row (the exact PB1 rate that produced its `tax` amount is genuinely unrecoverable if the store rate ever changed), and `service_charge_amount`'s `DEFAULT 0` needs no backfill `UPDATE` because 0 is a fact for those rows, not a guess — the feature did not exist yet. Earlier steps: (v2 added `image_url` / `icon_key` to products; v3 nulled seed image URLs that went 404; v4 added `icon_key` to categories and backfilled it; v5 backfilled photos for the 13 seed products that had none, guarded by `image_url IS NULL`; v6 seeded a week of demo orders, guarded on `orders` being empty so real transactions are never mixed with fabricated ones; v7 added nullable `cost` / `sku` / `stock` to products and gave the packaged seed items an opening count; v8 added the `employees` table and seeded three staff; v9 added `shifts`; v10 added the owner role, `product_variants`, `promos`, the `stock_movements` ledger, per-product `tax_rate`, per-line `variant_name` / `unit_cost`, and the void/refund columns on `orders`; v11 renamed three seeded staff and every snapshot of their names; v12 grew the floor plan to 31 tables and replaced the seeded week with a generated month; v13 added `outlets` and the outlet columns on `orders`; v14 added `outlet_stock`; v15 gave `tables` an `outlet_id`; v16 added `pos_registers`, the till/branch/closed-by columns on `shifts`, `pos_id` / `pos_name` / `pos_session_id` on `orders`, and the partial unique index that allows one open session per till; v17 added `modifier_groups`, `modifier_options`, `product_modifier_groups`, `order_item_modifiers`, and `category_id` / `category_name` on `order_items`; v18 added `product_modifier_options`, narrowing which of an attached group's options a product actually offers). Seed data (26 products, 5 categories, **31 tables**, **~1,500 orders over 30 days**, 4 staff, 3 promos, 6 variant sets, **3 tills**, **4 modifier groups**) lives here; Settings → "Reset demo data" re-seeds all of it.
+`lib/data/database/app_database.dart` — bump `currentVersion` and add the step in `_onUpgrade`. Current version: **29**.
+
+**v29 (paritas F0) added manager-mediated recovery:** `recovery_id` on `_dead_letter`, and `recovery_id` / `recovery_detected_at` on `_till_sessions`. Purely additive through `_addColumnIfMissing`, and deliberately so — the whole point of F0 is that no queue row, till state, receipt number or dead-letter payload is ever dropped to make a migration simpler. `test/repositories/recovery_migration_test.dart` opens a real v28 file holding a queued sale and a refused row, upgrades it, and asserts both survive. `_till_sessions.state` gained one value, `recovery_required`: a drawer the server force-closed. It blocks checkout (`assertSellable`) and, unlike `conflict`, it names the case a manager has to decide.
+
+**The enumerated history below stops at v21 and has not been rewritten.** Versions 22–28 landed with the original Fase 4–9 work and are documented where that work is; read `_onUpgrade` itself for the authority. Earlier: v21 added `tables.active` (see "Table Management" below); `DEFAULT 1` needs no backfill, since every table that already existed was already visible on the board. Previous version: **20** — v20 added per-product modifier defaults (`product_modifier_options.is_default`); existing scope is preserved with no defaults assigned. Previous version: **19** — **v19 added `pb1_rate`, `service_charge_rate`, and `service_charge_amount` on `orders`** (see "PB1 and Service Charge" below). Additive — three new columns, no deferred backfill step at all: the two rate columns stay NULL-by-absence on a pre-v19 row (the exact PB1 rate that produced its `tax` amount is genuinely unrecoverable if the store rate ever changed), and `service_charge_amount`'s `DEFAULT 0` needs no backfill `UPDATE` because 0 is a fact for those rows, not a guess — the feature did not exist yet. Earlier steps: (v2 added `image_url` / `icon_key` to products; v3 nulled seed image URLs that went 404; v4 added `icon_key` to categories and backfilled it; v5 backfilled photos for the 13 seed products that had none, guarded by `image_url IS NULL`; v6 seeded a week of demo orders, guarded on `orders` being empty so real transactions are never mixed with fabricated ones; v7 added nullable `cost` / `sku` / `stock` to products and gave the packaged seed items an opening count; v8 added the `employees` table and seeded three staff; v9 added `shifts`; v10 added the owner role, `product_variants`, `promos`, the `stock_movements` ledger, per-product `tax_rate`, per-line `variant_name` / `unit_cost`, and the void/refund columns on `orders`; v11 renamed three seeded staff and every snapshot of their names; v12 grew the floor plan to 31 tables and replaced the seeded week with a generated month; v13 added `outlets` and the outlet columns on `orders`; v14 added `outlet_stock`; v15 gave `tables` an `outlet_id`; v16 added `pos_registers`, the till/branch/closed-by columns on `shifts`, `pos_id` / `pos_name` / `pos_session_id` on `orders`, and the partial unique index that allows one open session per till; v17 added `modifier_groups`, `modifier_options`, `product_modifier_groups`, `order_item_modifiers`, and `category_id` / `category_name` on `order_items`; v18 added `product_modifier_options`, narrowing which of an attached group's options a product actually offers). Seed data (26 products, 5 categories, **31 tables**, **~1,500 orders over 30 days**, 4 staff, 3 promos, 6 variant sets, **3 tills**, **4 modifier groups**) lives here; Settings → "Reset demo data" re-seeds all of it.
 
 `backfillOrderItemCategory` runs the same `UPDATE ... WHERE category_id IS NULL` shape as `backfillOrderItemCost`: rows written before v17 get `category_id` / `category_name` filled in from whatever `products` / `categories` still exist at migration time, and rows whose product was already deleted stay NULL — the information genuinely no longer exists, so leaving it NULL is honest rather than a bug. `seedModifiers` follows `seedVariants`'s FK-safety pattern exactly, checking `products` for a row before inserting into `product_modifier_groups`, for the same reason: a partially-seeded or user-edited catalogue must not abort the whole migration over one missing product.
 

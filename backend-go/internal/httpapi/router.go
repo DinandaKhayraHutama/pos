@@ -15,6 +15,7 @@ import (
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/backoffice"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/catalogue"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/devices"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/history"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/ingest"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/outlets"
 	domainplatform "github.com/daniryckidinata/nti_pos/backend-go/internal/domain/platform"
@@ -27,6 +28,7 @@ import (
 	v2 "github.com/daniryckidinata/nti_pos/backend-go/internal/httpapi/v2"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/httpapi/wire"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/media"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/metrics"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/pg"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/platform"
 )
@@ -58,11 +60,17 @@ type Deps struct {
 	Mail domainplatform.Mailer
 	// LinkBaseURL is the origin e-mailed links start with.
 	LinkBaseURL string
+	// Metrics records request latency, push outcomes and auth cache hits. A
+	// nil value instruments nothing, which is what every test wants.
+	Metrics *metrics.Metrics
 }
 
 func NewRouter(d Deps) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.Recoverer)
+	// Outside the handlers and inside the recoverer, so a panic is counted as
+	// the 500 the caller actually received rather than not counted at all.
+	r.Use(d.Metrics.Middleware)
 	if d.TrustProxy {
 		// Caddy overwrites this private header; the API port is not published.
 		r.Use(middleware.ClientIPFromHeader("X-Justclick-Client-IP"))
@@ -87,7 +95,7 @@ func NewRouter(d Deps) http.Handler {
 	}
 
 	svc := devices.NewService(d.Pools, d.AppKey)
-	cachedAuth := devices.NewCachedAuthenticator(svc, d.Redis, d.Logger)
+	cachedAuth := devices.NewCachedAuthenticator(svc, d.Redis, d.Logger, devices.WithCacheObserver(d.Metrics))
 	feed := syncfeed.NewService(d.Pools, d.Redis, d.Logger)
 	push, err := ingest.NewService(d.Pools, feed, d.Logger)
 	if err != nil {
@@ -100,9 +108,11 @@ func NewRouter(d Deps) http.Handler {
 		Ingest:       push,
 		Devices:      cachedAuth,
 		Sync:         feed,
+		Reports:      d.Reports,
 		Redis:        d.Redis,
 		Logger:       d.Logger,
 		PollInterval: d.SyncPollInterval,
+		Metrics:      d.Metrics,
 	}).Routes())
 
 	// The platform invalidates through the same auth cache the API
@@ -128,8 +138,10 @@ func NewRouter(d Deps) http.Handler {
 		Stock:          stock.NewService(d.Pools, feed),
 		Tables:         tables.NewService(d.Pools, feed),
 		Reports:        d.Reports,
+		History:        history.New(d.Pools),
 		Devices:        svc,
 		CachedAuth:     cachedAuth,
+		Recovery:       push,
 		Impersonations: platformSvc,
 		Setup:          platformSvc,
 		Logger:         d.Logger,

@@ -24,6 +24,7 @@ type Reports interface {
 	VerifySlice(ctx context.Context, tenantID, outletID string, day time.Time) ([]string, bool, error)
 	RunDueSchedules(ctx context.Context, now time.Time) (int, error)
 	PurgeExports(ctx context.Context, olderThan time.Time) (int, error)
+	QueuePending(ctx context.Context, tenantID string) error
 }
 
 // WorkerDeps are the domain services the worker runs jobs for. A nil one is
@@ -44,6 +45,11 @@ const (
 	exportRetention = 30 * 24 * time.Hour
 	// consistencySample is how many slices the weekly check recomputes.
 	consistencySample = 20
+	// backfillSweep is how often the worker drains durable dirty markers into
+	// slice jobs. Frequent, because it is what makes a definition change land
+	// on years of history without one enormous transaction; cheap, because a
+	// merchant with nothing pending reads one empty page.
+	backfillSweep = time.Minute
 )
 
 // NewWorker is the one River client of the worker process.
@@ -63,12 +69,14 @@ func NewWorker(pool *pgxpool.Pool, logger *slog.Logger, deps WorkerDeps) (*river
 	}
 
 	if deps.Reports != nil {
+		river.AddWorker(workers, &reportBackfillWorker{pool: pool, reports: deps.Reports, logger: logger})
 		river.AddWorker(workers, &reportSliceWorker{reports: deps.Reports})
 		river.AddWorker(workers, &reportExportWorker{reports: deps.Reports})
 		river.AddWorker(workers, &reportNightlyWorker{pool: pool, reports: deps.Reports, logger: logger})
 		river.AddWorker(workers, &reportConsistencyWorker{pool: pool, reports: deps.Reports, logger: logger})
 		river.AddWorker(workers, &reportSchedulesWorker{reports: deps.Reports, logger: logger})
 		periodic = append(periodic,
+			periodicJob(backfillSweep, ReportBackfill{}, "report-backfill", true),
 			periodicJob(24*time.Hour, ReportNightly{}, "report-nightly", true),
 			periodicJob(7*24*time.Hour, ReportConsistency{}, "report-consistency", false),
 			periodicJob(15*time.Minute, ReportSchedules{}, "report-schedules", true),

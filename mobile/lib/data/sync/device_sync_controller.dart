@@ -135,11 +135,11 @@ class DeviceSyncController extends ChangeNotifier {
   /// Manual "Sync now", and the awaited first sync after activation.
   Future<SyncOutcome?> syncNow() => _scheduler.syncNow();
 
-  /// Sends every refused row that still exists up again.
-  Future<int> retryRejected() async {
-    final requeued = await DeadLetterStore.instance.requeueAll();
+  /// Sends one explicitly reviewed refused row up again.
+  Future<bool> retryRejected(int id) async {
+    final requeued = await DeadLetterStore.instance.requeue(id);
     await refreshCounts();
-    if (requeued > 0) unawaited(syncNow());
+    if (requeued) unawaited(syncNow());
     return requeued;
   }
 

@@ -15,7 +15,7 @@ import (
 // rollupTables are every table a slice owns, in the order they are rebuilt.
 var rollupTables = []string{
 	"daily_sales_rollup", "daily_category_rollup", "daily_product_rollup", "daily_employee_rollup",
-	"daily_payment_rollup", "hourly_sales_rollup", "daily_adjustment_rollup",
+	"daily_payment_rollup", "hourly_sales_rollup", "daily_adjustment_rollup", "daily_product_category_rollup",
 }
 
 // revenue is the till's rule: every order that is not undone.
@@ -44,7 +44,8 @@ WITH o AS (
 INSERT INTO daily_sales_rollup (
 	tenant_id, outlet_id, business_date, order_count, subtotal, discount, tax, service_charge,
 	revenue, items_sold, cost_of_goods, costed_items, discounted_orders,
-	cancelled_count, cancelled_amount, refunded_count, refunded_amount)
+	cancelled_count, cancelled_amount, refunded_count, refunded_amount,
+	gross_sales, all_discount, sales_returns, anomaly_count, calculation_version)
 SELECT $1, $2, $3::date,
 	count(*) FILTER (WHERE rev),
 	COALESCE(sum(subtotal) FILTER (WHERE rev), 0),
@@ -57,7 +58,22 @@ SELECT $1, $2, $3::date,
 	count(*) FILTER (WHERE status = 'cancelled'),
 	COALESCE(sum(COALESCE(refunded_amount, total)) FILTER (WHERE status = 'cancelled'), 0),
 	count(*) FILTER (WHERE status = 'refunded'),
-	COALESCE(sum(COALESCE(refunded_amount, total)) FILTER (WHERE status = 'refunded'), 0)
+	COALESCE(sum(COALESCE(refunded_amount, total)) FILTER (WHERE status = 'refunded'), 0),
+	-- The waterfall. Gross keeps a refunded order IN, because the sale did
+	-- happen; the return then takes it out again, which is what makes a refund
+	-- visible instead of the day quietly shrinking. Identically:
+	-- gross - all_discount - sales_returns == subtotal - discount over "rev".
+	COALESCE(sum(subtotal) FILTER (WHERE status <> 'cancelled'), 0),
+	COALESCE(sum(discount) FILTER (WHERE status <> 'cancelled'), 0),
+	COALESCE(sum(subtotal - discount) FILTER (WHERE status = 'refunded'), 0),
+	-- An anomaly is an order whose own arithmetic does not close, or one that
+	-- handed back more than it ever took. A refund of LESS than the total is
+	-- NOT an anomaly — it is a partial refund the till recorded honestly, and
+	-- F1 shows it beside the return rather than inventing lines for it. A NULL
+	-- refunded_amount means the whole total, so it is not compared at all:
+	-- an IS DISTINCT FROM test would flag every ordinary full refund.
+	count(*) FILTER (WHERE total <> subtotal - discount + tax + service_charge_amount
+		OR (status = 'refunded' AND refunded_amount > total)), 2
 FROM o
 HAVING count(*) > 0`
 
@@ -82,11 +98,11 @@ GROUP BY 4`
 
 const employeeSQL = `
 INSERT INTO daily_employee_rollup (tenant_id, outlet_id, business_date, cashier_key, cashier_name,
-	name_at_ms, order_count, revenue, discount)
+	name_at_ms, order_count, revenue, discount, net_sales)
 SELECT $1, $2, $3::date,
 	COALESCE(NULLIF(payload->>'cashier_id', ''), 'name:' || cashier_name),
 	(array_agg(cashier_name ORDER BY placed_at_ms DESC, id DESC))[1],
-	max(placed_at_ms), count(*), sum(total), sum(discount)
+	max(placed_at_ms), count(*), sum(total), sum(discount), sum(subtotal - discount)
 FROM orders
 WHERE ` + sliceOrders + ` AND ` + revenue + `
 GROUP BY 4`
@@ -98,11 +114,15 @@ FROM orders
 WHERE ` + sliceOrders + ` AND ` + revenue + `
 GROUP BY payment_method`
 
+// Every per-dimension rollup — hour, product, category, cashier — is over the
+// revenue orders only, so its gross is the day's gross MINUS what was refunded
+// and its net adds up to exactly daily_sales_rollup's subtotal - discount. The
+// waterfall's wider gross lives on daily_sales_rollup alone.
 const hourlySQL = `
-INSERT INTO hourly_sales_rollup (tenant_id, outlet_id, business_date, hour, order_count, revenue)
+INSERT INTO hourly_sales_rollup (tenant_id, outlet_id, business_date, hour, order_count, revenue, net_sales, gross_sales)
 SELECT $1, $2, $3::date,
 	extract(hour FROM (to_timestamp(o.placed_at_ms / 1000.0) AT TIME ZONE t.timezone))::smallint,
-	count(*), sum(o.total)
+	count(*), sum(o.total), sum(o.subtotal - o.discount), sum(o.subtotal)
 FROM orders o
 CROSS JOIN (SELECT timezone FROM tenants WHERE id = $1) t
 WHERE o.tenant_id = $1 AND o.outlet_id = $2 AND o.business_date = $3::date AND o.` + revenue + `
@@ -122,16 +142,6 @@ SELECT $1, $2, $3::date, status, COALESCE(authorized_by, ''), count(*), sum(COAL
 FROM orders
 WHERE ` + sliceOrders + ` AND status IN ('cancelled', 'refunded')
 GROUP BY 4, 5`
-
-// categoryLinesSQL feeds AggregateCategories: one row per (order, category,
-// snapshot name), in a fixed order so a name tie resolves the same way twice.
-const categoryLinesSQL = `
-SELECT o.id::text, o.discount, o.subtotal, o.placed_at_ms,
-	COALESCE(it.payload->>'category_id', ''), COALESCE(it.category_name, ''),
-	sum(it.unit_price * it.quantity)::bigint, sum(it.quantity)::bigint
-` + orderLines + `
-GROUP BY o.id, o.discount, o.subtotal, o.placed_at_ms, 5, 6
-ORDER BY o.placed_at_ms, o.id, 5, 6`
 
 const categoryInsertSQL = `
 INSERT INTO daily_category_rollup (tenant_id, outlet_id, business_date, category_key, category_name,
@@ -217,36 +227,7 @@ func writeSlice(ctx context.Context, tx pgx.Tx, tenantID, outletID, date string)
 		}
 	}
 
-	lines, err := categoryLines(ctx, tx, tenantID, outletID, date)
-	if err != nil {
-		return err
-	}
-	if len(lines) == 0 {
-		return nil
-	}
-	categories := AggregateCategories(lines)
-	keys, names := make([]string, len(categories)), make([]string, len(categories))
-	namedAt, gross, net, items := make([]int64, len(categories)), make([]int64, len(categories)),
-		make([]int64, len(categories)), make([]int64, len(categories))
-	for i, c := range categories {
-		keys[i], names[i], namedAt[i], gross[i], net[i], items[i] = c.Key, c.Name, c.NameAtMs, c.Gross, c.Net, c.Items
-	}
-	if _, err := tx.Exec(ctx, categoryInsertSQL, tenantID, outletID, date,
-		keys, names, namedAt, gross, net, items); err != nil {
-		return fmt.Errorf("write daily_category_rollup: %w", err)
-	}
-	return nil
-}
-
-func categoryLines(ctx context.Context, tx pgx.Tx, tenantID, outletID, date string) ([]CategoryLine, error) {
-	rows, err := tx.Query(ctx, categoryLinesSQL, tenantID, outletID, date)
-	if err != nil {
-		return nil, fmt.Errorf("read category lines: %w", err)
-	}
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (CategoryLine, error) {
-		var l CategoryLine
-		err := row.Scan(&l.OrderID, &l.OrderDiscount, &l.OrderSubtotal, &l.PlacedAtMs,
-			&l.CategoryID, &l.SnapshotName, &l.LineTotal, &l.Quantity)
-		return l, err
-	})
+	// The category split and the product-inside-category split share one read
+	// and one allocation, so they cannot disagree by a rounding rupiah.
+	return writeCategoryAndProduct(ctx, tx, tenantID, outletID, date)
 }

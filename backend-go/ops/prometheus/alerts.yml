@@ -1,0 +1,165 @@
+# The alerts from the plan, written against metrics that exist.
+#
+# Two of the plan's alerts are NOT here because nothing publishes them yet, and
+# a rule that can never fire is worse than a missing one — it looks like cover:
+#
+#   * backup age > 26 hours  — pgBackRest is not deployed (Fase 10 / VPS work).
+#     When it is, export its last successful backup timestamp and alert on
+#     time() - justclick_backup_last_success_seconds > 26*3600.
+#   * certificate expiry < 20 days — Caddy renews its own certificate and
+#     publishes no metric. Add blackbox_exporter and alert on
+#     probe_ssl_earliest_cert_expiry - time() < 20*86400. Until then the
+#     external synthetic check in the runbook is the only cover, and it is the
+#     failure that would take 15,000 tills offline at once.
+groups:
+  - name: money
+    rules:
+      # The single most important alert in the system. A rejection rate that
+      # climbs is a client build losing sales, and the code label says which
+      # refusal it is hitting. Settled/duplicate are ordinary retries, so the
+      # rate is measured across all rejections and read with the breakdown.
+      - alert: PushRejectionRateAboveTarget
+        expr: |
+          sum(rate(justclick_push_rows_total{status="rejected"}[10m]))
+            /
+          clamp_min(sum(rate(justclick_push_rows_total[10m])), 0.001)
+            > 0.001
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "More than 0.1% of pushed rows are being rejected"
+          description: "Break down by code: sum by (code) (rate(justclick_push_rows_total{status=\"rejected\"}[10m]))."
+
+      - alert: PushRowsRetryingPersistently
+        expr: sum(rate(justclick_push_rows_total{status="retry"}[10m])) > 0
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: "Tills are being told to keep rows and retry"
+          description: "The till holds the sale, so nothing is lost yet — but the queue grows until this clears."
+
+  - name: jobs
+    rules:
+      # A discarded job is a rollup that will never run: the report is wrong
+      # and nothing else says so.
+      - alert: RiverHasDeadJobs
+        expr: justclick_river_jobs{state="discarded"} > 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "A background job has been discarded"
+          description: "See /platform/ops for the last twenty, with their errors."
+
+      - alert: ReportRollupStale
+        expr: justclick_report_rollup_staleness_seconds > 900
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "A report slice has been waiting more than 15 minutes"
+
+      - alert: RowsInDefaultPartition
+        expr: justclick_default_partition_occupied > 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "Rows have landed in a DEFAULT partition"
+          description: "No report or retention job looks there. Find them, create the partition, move them."
+
+      - alert: FleetMetricsUnavailable
+        expr: justclick_fleet_scrape_ok == 0
+        for: 10m
+        labels:
+          severity: warn
+        annotations:
+          summary: "The worker cannot read the fleet gauges"
+          description: "Queue depth, rollup staleness and devices-seen are blind while this is firing."
+
+  - name: serving
+    rules:
+      - alert: SyncChangesSlow
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le) (rate(justclick_http_request_duration_seconds_bucket{route="/api/v2/sync/changes"}[10m]))
+          ) > 0.02
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "p99 of /sync/changes is above the 20 ms gate"
+
+      - alert: PushSlow
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le) (rate(justclick_http_request_duration_seconds_bucket{route="/api/v2/sync/push"}[10m]))
+          ) > 0.3
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "p99 of /sync/push is above the 300 ms gate"
+
+      - alert: DeviceAuthCacheMissing
+        expr: |
+          sum(rate(justclick_device_auth_cache_total{result="hit"}[10m]))
+            /
+          clamp_min(sum(rate(justclick_device_auth_cache_total[10m])), 0.001)
+            < 0.8
+        for: 10m
+        labels:
+          severity: warn
+        annotations:
+          summary: "Fewer than 80% of device authentications are served from cache"
+          description: "Every miss re-reads the whole device chain from PostgreSQL. Check Redis before the database."
+
+      - alert: ConnectionPoolSaturated
+        expr: rate(justclick_pgxpool_empty_acquires_total[5m]) > 1
+        for: 10m
+        labels:
+          severity: warn
+        annotations:
+          summary: "Requests are queueing for a database connection"
+          description: "Latency will rise with no slow query to explain it. Raise PG_MAX_CONNS, within PostgreSQL's max_connections."
+
+      - alert: NoDevicesSeen
+        expr: justclick_devices_seen_5m == 0
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: "No till has been seen for fifteen minutes"
+          description: "Outside trading hours this is normal; during them it is an outage nothing else may have noticed."
+
+  - name: host
+    rules:
+      - alert: DiskAbove75Percent
+        expr: |
+          (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}
+               / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) > 0.75
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "A filesystem is more than 75% full"
+          description: "PostgreSQL stops writing before it stops accepting connections, and recovery from a full disk is not quick."
+
+      - alert: PostgresUnreachable
+        expr: pg_up == 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "The PostgreSQL exporter cannot reach the database"
+
+      - alert: RedisUnreachable
+        expr: redis_up == 0
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "Redis is unreachable"
+          description: "Authentication falls back to PostgreSQL and the rate limiter allows. Latency, not correctness."

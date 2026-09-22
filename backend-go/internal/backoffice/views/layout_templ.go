@@ -48,7 +48,15 @@ func Shell(title string, s Session) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " · JustClick POS</title><!-- No icon yet; declaring an empty one stops every page load from asking for /favicon.ico and logging a 404. --><link rel=\"icon\" href=\"data:,\"><script src=\"/backoffice/static/htmx.min.js\"></script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " · JustClick POS</title><!-- No icon yet; declaring an empty one stops every page load from asking for /favicon.ico and logging a 404. --><link rel=\"icon\" href=\"data:,\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = RailPreference().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<script src=\"/backoffice/static/htmx.min.js\"></script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -56,20 +64,20 @@ func Shell(title string, s Session) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</head><body hx-headers=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</head><body class=\"app\" hx-headers=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(csrfHeaders(s.CSRFToken))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 21, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 22, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -79,92 +87,75 @@ func Shell(title string, s Session) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<header class=\"topbar\"><div class=\"brand\">JustClick POS</div><nav>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"layout\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if s.CanDashboard {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<a href=\"/backoffice/dashboard\">Dashboard</a> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
+		templ_7745c5c3_Err = Sidebar("JustClick POS", "/backoffice/dashboard", false, s.NavView()).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
 		}
-		if s.CanReports {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<a href=\"/backoffice/reports\">Laporan</a> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div class=\"pane\"><header class=\"topbar\"><button type=\"button\" class=\"rail-toggle\" aria-label=\"Buka atau tutup menu\" aria-expanded=\"true\" onclick=\"toggleRail()\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
 		}
-		if s.CanCatalogue {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<a href=\"/backoffice/catalogue/products\">Produk</a> <a href=\"/backoffice/catalogue/categories\">Kategori</a> <a href=\"/backoffice/catalogue/modifiers\">Modifier</a> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
+		templ_7745c5c3_Err = NavIcon("menu").Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
 		}
-		if s.CanPromos {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<a href=\"/backoffice/promos\">Promo</a> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		if s.CanStaff {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<a href=\"/backoffice/staff\">Karyawan</a> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		if s.CanOutlets {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<a href=\"/backoffice/outlets\">Outlet</a> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		if s.CanStock {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<a href=\"/backoffice/stock\">Stok</a> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<a href=\"/backoffice/devices\">Perangkat</a></nav><div class=\"who\"><span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</button><div class=\"crumb\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var4 string
-		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(s.EmployeeName)
+		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(s.BusinessName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 54, Col: 27}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 39, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, " · ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div><div class=\"who\"><span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var5 string
-		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(RoleLabel(s.Role))
+		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(s.EmployeeName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 54, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 41, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</span><form method=\"post\" action=\"/backoffice/logout\"><input type=\"hidden\" name=\"gorilla.csrf.Token\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, " · ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var6 string
-		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(s.CSRFToken)
+		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(RoleLabel(s.Role))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 56, Col: 72}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 41, Col: 54}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\"> <button type=\"submit\" class=\"link\">Keluar</button></form></div></header><main>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</span><form method=\"post\" action=\"/backoffice/logout\"><input type=\"hidden\" name=\"gorilla.csrf.Token\" value=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var7 string
+		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(s.CSRFToken)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 43, Col: 74}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\"> <button type=\"submit\" class=\"link\">Keluar</button></form></div></header><main>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -172,7 +163,7 @@ func Shell(title string, s Session) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</main><div id=\"toast\" class=\"toast\" hidden></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</main></div></div><div id=\"toast\" class=\"toast\" hidden></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -180,7 +171,11 @@ func Shell(title string, s Session) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</body></html>")
+		templ_7745c5c3_Err = RailScript().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -208,12 +203,12 @@ func toastScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var7 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var7 == nil {
-			templ_7745c5c3_Var7 = templ.NopComponent
+		templ_7745c5c3_Var8 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var8 == nil {
+			templ_7745c5c3_Var8 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<script>\n\t\t(function () {\n\t\t\tvar box = document.getElementById(\"toast\"), timer;\n\t\t\tfunction show(message, bad) {\n\t\t\t\tbox.textContent = message;\n\t\t\t\tbox.className = bad ? \"toast bad\" : \"toast\";\n\t\t\t\tbox.hidden = false;\n\t\t\t\tclearTimeout(timer);\n\t\t\t\ttimer = setTimeout(function () { box.hidden = true; }, 3500);\n\t\t\t}\n\t\t\tdocument.body.addEventListener(\"toast\", function (e) { show(e.detail.value, false); });\n\t\t\tdocument.body.addEventListener(\"toastError\", function (e) { show(e.detail.value, true); });\n\t\t\tdocument.body.addEventListener(\"htmx:responseError\", function (e) {\n\t\t\t\tvar status = e.detail.xhr.status;\n\t\t\t\tshow(status === 403 ? \"Anda tidak punya izin untuk tindakan ini.\"\n\t\t\t\t\t: status === 404 ? \"Data tidak ditemukan. Muat ulang halaman.\"\n\t\t\t\t\t: \"Terjadi kesalahan di server. Coba lagi.\", true);\n\t\t\t});\n\t\t\tdocument.body.addEventListener(\"htmx:sendError\", function () {\n\t\t\t\tshow(\"Tidak terhubung ke server.\", true);\n\t\t\t});\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<script>\n\t\t(function () {\n\t\t\tvar box = document.getElementById(\"toast\"), timer;\n\t\t\tfunction show(message, bad) {\n\t\t\t\tbox.textContent = message;\n\t\t\t\tbox.className = bad ? \"toast bad\" : \"toast\";\n\t\t\t\tbox.hidden = false;\n\t\t\t\tclearTimeout(timer);\n\t\t\t\ttimer = setTimeout(function () { box.hidden = true; }, 3500);\n\t\t\t}\n\t\t\tdocument.body.addEventListener(\"toast\", function (e) { show(e.detail.value, false); });\n\t\t\tdocument.body.addEventListener(\"toastError\", function (e) { show(e.detail.value, true); });\n\t\t\tdocument.body.addEventListener(\"htmx:responseError\", function (e) {\n\t\t\t\tvar status = e.detail.xhr.status;\n\t\t\t\tshow(status === 403 ? \"Anda tidak punya izin untuk tindakan ini.\"\n\t\t\t\t\t: status === 404 ? \"Data tidak ditemukan. Muat ulang halaman.\"\n\t\t\t\t\t: \"Terjadi kesalahan di server. Coba lagi.\", true);\n\t\t\t});\n\t\t\tdocument.body.addEventListener(\"htmx:sendError\", function () {\n\t\t\t\tshow(\"Tidak terhubung ke server.\", true);\n\t\t\t});\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -237,25 +232,25 @@ func Bare(title string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var8 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var8 == nil {
-			templ_7745c5c3_Var8 = templ.NopComponent
+		templ_7745c5c3_Var9 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var9 == nil {
+			templ_7745c5c3_Var9 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<!doctype html><html lang=\"id\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<!doctype html><html lang=\"id\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var9 string
-		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(title)
+		var templ_7745c5c3_Var10 string
+		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 106, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 96, Col: 17}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, " · JustClick POS</title><!-- No icon yet; declaring an empty one stops every page load from asking for /favicon.ico and logging a 404. --><link rel=\"icon\" href=\"data:,\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, " · JustClick POS</title><!-- No icon yet; declaring an empty one stops every page load from asking for /favicon.ico and logging a 404. --><link rel=\"icon\" href=\"data:,\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -263,15 +258,15 @@ func Bare(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</head><body class=\"centered\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</head><body class=\"centered\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templ_7745c5c3_Var8.Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = templ_7745c5c3_Var9.Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -295,12 +290,12 @@ func styles() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var10 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var10 == nil {
-			templ_7745c5c3_Var10 = templ.NopComponent
+		templ_7745c5c3_Var11 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var11 == nil {
+			templ_7745c5c3_Var11 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<style>\n\t\t:root { --ink:#101828; --muted:#667085; --line:#e4e7ec; --bg:#f8f9fb; --blue:#1e40af; --danger:#b42318; --ok:#067647; }\n\t\t* { box-sizing:border-box; }\n\t\tbody { margin:0; font:15px/1.5 system-ui,-apple-system,\"Segoe UI\",sans-serif; color:var(--ink); background:var(--bg); }\n\t\tbody.centered { display:grid; place-items:center; min-height:100vh; }\n\t\t.topbar { display:flex; align-items:center; gap:24px; padding:12px 24px; background:#fff; border-bottom:1px solid var(--line); flex-wrap:wrap; }\n\t\t.brand { font-weight:650; color:var(--blue); }\n\t\t.topbar nav { display:flex; gap:4px; flex:1; flex-wrap:wrap; }\n\t\t.topbar a { color:var(--ink); text-decoration:none; padding:6px 10px; border-radius:6px; }\n\t\t.topbar a:hover { background:var(--bg); }\n\t\t.who { display:flex; align-items:center; gap:12px; color:var(--muted); font-size:13px; }\n\t\tmain { padding:24px; max-width:1100px; margin:0 auto; }\n\t\th1 { font-size:20px; margin:0 0 4px; }\n\t\th2 { font-size:16px; margin:0 0 12px; }\n\t\t.sub { color:var(--muted); margin:0 0 20px; font-size:14px; }\n\t\t.head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }\n\t\t.card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:20px; margin-bottom:20px; }\n\t\ttable { width:100%; border-collapse:collapse; }\n\t\tth,td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:middle; }\n\t\tth { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }\n\t\ttd.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }\n\t\ttr:last-child td { border-bottom:0; }\n\t\ta { color:var(--blue); }\n\t\tbutton, a.button { font:inherit; cursor:pointer; border-radius:7px; border:1px solid var(--line); background:#fff; padding:7px 12px; color:var(--ink); text-decoration:none; display:inline-block; }\n\t\tbutton.primary, a.button.primary { background:var(--blue); border-color:var(--blue); color:#fff; }\n\t\tbutton.danger { color:var(--danger); border-color:#f5c2bd; }\n\t\tbutton.link { border:0; background:none; color:var(--muted); padding:0; text-decoration:underline; }\n\t\t.badge { font-size:12px; padding:2px 8px; border-radius:999px; background:var(--bg); border:1px solid var(--line); color:var(--muted); white-space:nowrap; }\n\t\t.badge.off { color:var(--danger); border-color:#f5c2bd; }\n\t\t.badge.on { color:var(--ok); border-color:#abefc6; }\n\t\tform.stack { display:grid; gap:14px; width:340px; }\n\t\tform.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; align-items:start; }\n\t\tform.grid .wide { grid-column:1/-1; }\n\t\tform.inline { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }\n\t\tform.inline label { min-width:140px; }\n\t\t.actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }\n\t\tlabel { display:grid; gap:6px; font-size:13px; color:var(--muted); }\n\t\tlabel.check { display:flex; gap:8px; align-items:center; color:var(--ink); font-size:14px; }\n\t\tinput, select, textarea { font:inherit; padding:9px 11px; border:1px solid var(--line); border-radius:7px; background:#fff; color:var(--ink); }\n\t\tinput[type=checkbox] { width:16px; height:16px; padding:0; }\n\t\t.invalid input, .invalid select, .invalid textarea { border-color:var(--danger); }\n\t\t.error { color:var(--danger); font-size:13px; margin:0; }\n\t\t.hint { color:var(--muted); font-size:12px; }\n\t\t.code { font:600 26px/1 ui-monospace,SFMono-Regular,Consolas,monospace; letter-spacing:.14em; padding:14px 0; }\n\t\t.notice { background:#fffaeb; border:1px solid #fedf89; border-radius:8px; padding:12px 14px; font-size:13px; }\n\t\t.pager { display:flex; gap:10px; justify-content:flex-end; margin-top:12px; }\n\t\t.group { border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin-bottom:10px; }\n\t\t.group .options { display:flex; flex-wrap:wrap; gap:6px 18px; margin:8px 0 0 24px; }\n\t\t.row { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; padding:10px 0; border-bottom:1px solid var(--line); }\n\t\t.row:last-child { border-bottom:0; }\n\t\t.toast { position:fixed; right:20px; bottom:20px; background:var(--ink); color:#fff; padding:10px 14px; border-radius:8px; font-size:14px; max-width:380px; }\n\t\t.toast.bad { background:var(--danger); }\n\t\t.product-image { display:block; max-width:240px; max-height:240px; border:1px solid var(--line); border-radius:8px; margin-bottom:14px; background:var(--bg); }\n\t\t.impersonation { position:sticky; top:0; z-index:20; display:flex; gap:16px; align-items:center; flex-wrap:wrap; background:var(--danger); color:#fff; padding:10px 24px; font-size:14px; }\n\t\t.impersonation strong { font-weight:650; }\n\t\t.impersonation form { margin-left:auto; }\n\t\t.impersonation button { background:#fff; color:var(--danger); border-color:#fff; font-weight:600; }\n\t</style>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<style>\n\t\t:root { --ink:#101828; --muted:#667085; --line:#e4e7ec; --bg:#f8f9fb; --blue:#1e40af; --danger:#b42318; --ok:#067647; }\n\t\t* { box-sizing:border-box; }\n\t\tbody { margin:0; font:15px/1.5 system-ui,-apple-system,\"Segoe UI\",sans-serif; color:var(--ink); background:var(--bg); }\n\t\tbody.centered { display:grid; place-items:center; min-height:100vh; }\n\t\t/* ---- shell: fixed sidebar, scrolling pane ------------------------ */\n\t\t.layout { display:flex; align-items:stretch; min-height:100vh; }\n\t\t.pane { flex:1; min-width:0; display:flex; flex-direction:column; }\n\t\t.topbar { display:flex; align-items:center; gap:16px; padding:12px 24px; background:#fff; border-bottom:1px solid var(--line); }\n\t\t.crumb { flex:1; font-weight:600; color:var(--ink); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }\n\t\t.who { display:flex; align-items:center; gap:12px; color:var(--muted); font-size:13px; }\n\t\tmain { padding:24px; max-width:1100px; margin:0 auto; width:100%; }\n\n\t\t/* ---- sidebar ----------------------------------------------------- */\n\t\t.side { width:244px; flex:0 0 244px; background:#fff; border-right:1px solid var(--line); display:flex; flex-direction:column; position:sticky; top:0; height:100vh; overflow-y:auto; transition:width .15s ease, flex-basis .15s ease; }\n\t\t.side-head { padding:16px 18px; border-bottom:1px solid var(--line); }\n\t\t.side-head .brand { display:flex; align-items:center; gap:8px; font-weight:650; color:var(--blue); text-decoration:none; white-space:nowrap; }\n\t\t.side-nav { padding:10px; display:flex; flex-direction:column; gap:2px; }\n\t\t.ic { width:20px; height:20px; flex:0 0 20px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }\n\t\t.nav-link, .nav-group > summary { display:flex; align-items:center; gap:10px; padding:9px 11px; border-radius:8px; color:var(--ink); text-decoration:none; font-size:14px; cursor:pointer; }\n\t\t.nav-link:hover, .nav-group > summary:hover { background:var(--bg); }\n\t\t.nav-link.is-active { background:#eef2ff; color:var(--blue); font-weight:600; }\n\t\t.nav-group > summary { list-style:none; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.05em; }\n\t\t.nav-group > summary::-webkit-details-marker { display:none; }\n\t\t.chev { margin-left:auto; width:7px; height:7px; border-right:1.6px solid currentColor; border-bottom:1.6px solid currentColor; transform:rotate(45deg); transition:transform .15s ease; }\n\t\t.nav-group[open] > summary .chev { transform:rotate(-135deg); }\n\t\t.nav-sub { display:flex; flex-direction:column; gap:2px; margin:2px 0 6px; }\n\t\t/* Indented to the icon column, so a sub-item reads as belonging to its\n\t\t   group rather than as another top-level destination. */\n\t\t.nav-link.sub { padding-left:41px; font-size:14px; color:var(--ink); }\n\n\t\t/* ---- collapsed to an icon rail ----------------------------------- */\n\t\thtml.rail .side { width:64px; flex-basis:64px; }\n\t\thtml.rail .nav-text, html.rail .chev, html.rail .env-tag { display:none; }\n\t\thtml.rail .side-head { padding:16px 0; text-align:center; }\n\t\thtml.rail .nav-link, html.rail .nav-group > summary { justify-content:center; padding:10px 0; }\n\t\t/* A group's items stay reachable on the rail: the icon is the group, the\n\t\t   list below it is still the group's, just without the heading text. */\n\t\thtml.rail .nav-link.sub { padding:7px 0; font-size:11px; text-align:center; justify-content:center; }\n\t\thtml.rail .nav-link.sub .nav-text { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:56px; }\n\t\t.rail-toggle { border:0; background:none; padding:6px; color:var(--muted); display:flex; align-items:center; border-radius:7px; }\n\t\t.rail-toggle:hover { background:var(--bg); color:var(--ink); }\n\n\t\t/* ---- narrow screens: the rail is the only sensible default ------- */\n\t\t@media (max-width:820px) {\n\t\t\t.side { width:64px; flex-basis:64px; }\n\t\t\t.side .nav-text, .side .chev, .side .env-tag { display:none; }\n\t\t\t.side .nav-link, .side .nav-group > summary { justify-content:center; padding:10px 0; }\n\t\t\tmain { padding:16px; }\n\t\t}\n\t\th1 { font-size:20px; margin:0 0 4px; }\n\t\th2 { font-size:16px; margin:0 0 12px; }\n\t\t.sub { color:var(--muted); margin:0 0 20px; font-size:14px; }\n\t\t.head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }\n\t\t.card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:20px; margin-bottom:20px; }\n\t\ttable { width:100%; border-collapse:collapse; }\n\t\tth,td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:middle; }\n\t\tth { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }\n\t\ttd.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }\n\t\ttr:last-child td { border-bottom:0; }\n\t\ta { color:var(--blue); }\n\t\tbutton, a.button { font:inherit; cursor:pointer; border-radius:7px; border:1px solid var(--line); background:#fff; padding:7px 12px; color:var(--ink); text-decoration:none; display:inline-block; }\n\t\tbutton.primary, a.button.primary { background:var(--blue); border-color:var(--blue); color:#fff; }\n\t\tbutton.danger { color:var(--danger); border-color:#f5c2bd; }\n\t\tbutton.link { border:0; background:none; color:var(--muted); padding:0; text-decoration:underline; }\n\t\t.badge { font-size:12px; padding:2px 8px; border-radius:999px; background:var(--bg); border:1px solid var(--line); color:var(--muted); white-space:nowrap; }\n\t\t.badge.off { color:var(--danger); border-color:#f5c2bd; }\n\t\t.badge.on { color:var(--ok); border-color:#abefc6; }\n\t\tform.stack { display:grid; gap:14px; width:340px; }\n\t\tform.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; align-items:start; }\n\t\tform.grid .wide { grid-column:1/-1; }\n\t\tform.inline { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }\n\t\tform.inline label { min-width:140px; }\n\t\t.actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }\n\t\tlabel { display:grid; gap:6px; font-size:13px; color:var(--muted); }\n\t\tlabel.check { display:flex; gap:8px; align-items:center; color:var(--ink); font-size:14px; }\n\t\tinput, select, textarea { font:inherit; padding:9px 11px; border:1px solid var(--line); border-radius:7px; background:#fff; color:var(--ink); }\n\t\tinput[type=checkbox] { width:16px; height:16px; padding:0; }\n\t\t.invalid input, .invalid select, .invalid textarea { border-color:var(--danger); }\n\t\t.error { color:var(--danger); font-size:13px; margin:0; }\n\t\t.hint { color:var(--muted); font-size:12px; }\n\t\t.code { font:600 26px/1 ui-monospace,SFMono-Regular,Consolas,monospace; letter-spacing:.14em; padding:14px 0; }\n\t\t.notice { background:#fffaeb; border:1px solid #fedf89; border-radius:8px; padding:12px 14px; font-size:13px; }\n\t\t.pager { display:flex; gap:10px; justify-content:flex-end; margin-top:12px; }\n\t\t.group { border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin-bottom:10px; }\n\t\t.group .options { display:flex; flex-wrap:wrap; gap:6px 18px; margin:8px 0 0 24px; }\n\t\t.row { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; padding:10px 0; border-bottom:1px solid var(--line); }\n\t\t.row:last-child { border-bottom:0; }\n\t\t.toast { position:fixed; right:20px; bottom:20px; background:var(--ink); color:#fff; padding:10px 14px; border-radius:8px; font-size:14px; max-width:380px; }\n\t\t.toast.bad { background:var(--danger); }\n\t\t.product-image { display:block; max-width:240px; max-height:240px; border:1px solid var(--line); border-radius:8px; margin-bottom:14px; background:var(--bg); }\n\t\t.impersonation { position:sticky; top:0; z-index:20; display:flex; gap:16px; align-items:center; flex-wrap:wrap; background:var(--danger); color:#fff; padding:10px 24px; font-size:14px; }\n\t\t.impersonation strong { font-weight:650; }\n\t\t.impersonation form { margin-left:auto; }\n\t\t.impersonation button { background:#fff; color:var(--danger); border-color:#fff; font-weight:600; }\n\t</style>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -325,9 +320,9 @@ func Styles() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var11 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var11 == nil {
-			templ_7745c5c3_Var11 = templ.NopComponent
+		templ_7745c5c3_Var12 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var12 == nil {
+			templ_7745c5c3_Var12 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		templ_7745c5c3_Err = styles().Render(ctx, templ_7745c5c3_Buffer)
@@ -357,79 +352,504 @@ func impersonationBanner(b ImpersonationBanner, csrfToken string) templ.Componen
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var12 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var12 == nil {
-			templ_7745c5c3_Var12 = templ.NopComponent
+		templ_7745c5c3_Var13 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var13 == nil {
+			templ_7745c5c3_Var13 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<div class=\"impersonation\" role=\"alert\"><span><strong>MODE SUPPORT</strong> · ")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var13 string
-		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(b.AdminName)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 188, Col: 54}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, " masuk sebagai ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<div class=\"impersonation\" role=\"alert\"><span><strong>MODE SUPPORT</strong> · ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var14 string
-		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(b.EmployeeName)
+		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(b.AdminName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 188, Col: 87}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 216, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</span> <span>Alasan: ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, " masuk sebagai ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var15 string
-		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(b.Reason)
+		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(b.EmployeeName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 189, Col: 26}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 216, Col: 87}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</span> <span>Berakhir ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</span> <span>Alasan: ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var16 string
-		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(b.EndsAt)
+		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(b.Reason)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 190, Col: 27}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 217, Col: 26}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</span><form method=\"post\" action=\"/backoffice/impersonation/end\"><input type=\"hidden\" name=\"gorilla.csrf.Token\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</span> <span>Berakhir ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var17 string
-		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(csrfToken)
+		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(b.EndsAt)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 192, Col: 67}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 218, Col: 27}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\"> <button type=\"submit\">Akhiri impersonasi</button></form></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</span><form method=\"post\" action=\"/backoffice/impersonation/end\"><input type=\"hidden\" name=\"gorilla.csrf.Token\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var18 string
+		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue(csrfToken)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 220, Col: 67}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var18)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\"> <button type=\"submit\">Akhiri impersonasi</button></form></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// Sidebar is the navigation for both panels: the merchant Backoffice and the
+// platform panel render the same chrome so support staff move between them
+// without relearning where anything is.
+//
+// Groups are <details>, not a JavaScript accordion: the browser already knows
+// how to open and close a disclosure, keyboard and screen reader included, and
+// a group holding the current page arrives already open rather than opening
+// after a script runs.
+func Sidebar(brand, home string, platform bool, nav NavView) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var19 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var19 == nil {
+			templ_7745c5c3_Var19 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		var templ_7745c5c3_Var20 = []any{"side", templ.KV("platform", platform)}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var20...)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<aside class=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var21 string
+		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var20).String())
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 1, Col: 0}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\"><div class=\"side-head\"><a class=\"brand\" href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var22 templ.SafeURL
+		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(home))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 237, Col: 46}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var23 string
+		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(brand)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 238, Col: 11}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, " ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if platform {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<span class=\"env-tag\">PLATFORM</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</a></div><nav class=\"side-nav\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		for _, group := range nav.Groups {
+			if group.Label == "" {
+				for _, item := range group.Items {
+					var templ_7745c5c3_Var24 = []any{"nav-link", templ.KV("is-active", item.Href == nav.Active)}
+					templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var24...)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<a class=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var25 string
+					templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var24).String())
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 1, Col: 0}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\" href=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var26 templ.SafeURL
+					templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(item.Href))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 250, Col: 38}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "\" title=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var27 string
+					templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.ResolveAttributeValue(item.Label)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 251, Col: 25}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var27)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = NavIcon(group.Icon).Render(ctx, templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "<span class=\"nav-text\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var28 string
+					templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(item.Label)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 254, Col: 42}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "</span></a>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+			} else {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "<details class=\"nav-group\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				if nav.Open(group) {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, " open")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "><summary title=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var29 string
+				templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.ResolveAttributeValue(group.Label)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 259, Col: 34}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var29)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = NavIcon(group.Icon).Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "<span class=\"nav-text\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var30 string
+				templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(group.Label)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 261, Col: 43}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "</span> <span class=\"chev\" aria-hidden=\"true\"></span></summary><div class=\"nav-sub\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				for _, item := range group.Items {
+					var templ_7745c5c3_Var31 = []any{"nav-link", "sub", templ.KV("is-active", item.Href == nav.Active)}
+					templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var31...)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "<a class=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var32 string
+					templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var31).String())
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 1, Col: 0}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var32)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "\" href=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var33 templ.SafeURL
+					templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(item.Href))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 268, Col: 40}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "\"><span class=\"nav-text\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var34 string
+					templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(item.Label)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/backoffice/views/layout.templ`, Line: 270, Col: 44}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "</span></a>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "</div></details>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "</nav></aside>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// railScript is the only JavaScript the navigation needs: remember whether the
+// person collapsed it. Every page here is a full load, so without persistence
+// the sidebar would spring back open on every click.
+//
+// The state is read before first paint in Shell's <head>-adjacent script below,
+// so a collapsed rail never flashes open.
+func RailScript() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var35 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var35 == nil {
+			templ_7745c5c3_Var35 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "<script>\n\t\tfunction toggleRail() {\n\t\t\tvar collapsed = document.documentElement.classList.toggle(\"rail\");\n\t\t\tvar button = document.querySelector(\".rail-toggle\");\n\t\t\tif (button) button.setAttribute(\"aria-expanded\", collapsed ? \"false\" : \"true\");\n\t\t\ttry { localStorage.setItem(\"jc-rail\", collapsed ? \"1\" : \"0\"); } catch (e) { /* private mode */ }\n\t\t}\n\t\t(function () {\n\t\t\tvar button = document.querySelector(\".rail-toggle\");\n\t\t\tif (button && document.documentElement.classList.contains(\"rail\")) {\n\t\t\t\tbutton.setAttribute(\"aria-expanded\", \"false\");\n\t\t\t}\n\t\t})();\n\t</script>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// railPreference runs before the body is painted. Reading the stored choice
+// after render would show the sidebar wide for one frame and then snap it
+// shut on every single page load.
+func RailPreference() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var36 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var36 == nil {
+			templ_7745c5c3_Var36 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "<script>\n\t\ttry {\n\t\t\tif (localStorage.getItem(\"jc-rail\") === \"1\") {\n\t\t\t\tdocument.documentElement.classList.add(\"rail\");\n\t\t\t}\n\t\t} catch (e) { /* private mode: start expanded */ }\n\t</script>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// navIcon keeps the collapsed rail meaningful. Inline rather than a sprite or
+// an icon font: two files fewer to serve, and nothing to load before the menu
+// is usable.
+func NavIcon(name string) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var37 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var37 == nil {
+			templ_7745c5c3_Var37 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		switch name {
+		case "home":
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "<svg class=\"ic\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 10.5 12 4l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z\"></path></svg>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		case "chart":
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "<svg class=\"ic\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 20V10M10 20V4M16 20v-7M22 20H2\"></path></svg>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		case "book":
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "<svg class=\"ic\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 4h11a3 3 0 0 1 3 3v13H7a3 3 0 0 0-3 3z\"></path><path d=\"M18 7h2v13h-2\"></path></svg>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		case "box":
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "<svg class=\"ic\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 7.5 12 3l9 4.5V17L12 21l-9-4V7.5z\"></path><path d=\"M3 7.5 12 12l9-4.5M12 12v9\"></path></svg>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		case "people":
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "<svg class=\"ic\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"9\" cy=\"8\" r=\"3.2\"></circle><path d=\"M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5\"></path><path d=\"M16 5.5a3.2 3.2 0 0 1 0 6M17 14.8c2.4.5 4 2.4 4 5.2\"></path></svg>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		case "store":
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "<svg class=\"ic\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 9h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z\"></path><path d=\"M3 9l1.5-5h15L21 9M9 21v-6h6v6\"></path></svg>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		case "building":
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "<svg class=\"ic\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 21V4a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v17\"></path><path d=\"M15 10h3a1 1 0 0 1 1 1v10M3 21h18M9 7h2M9 11h2M9 15h2\"></path></svg>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		case "log":
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "<svg class=\"ic\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z\"></path><path d=\"M14 3v6h6M9 13h7M9 17h5\"></path></svg>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		case "pulse":
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "<svg class=\"ic\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M2 12h4l3 8 4-16 3 8h6\"></path></svg>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		case "menu":
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "<svg class=\"ic\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 6h16M4 12h16M4 18h16\"></path></svg>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		default:
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "<svg class=\"ic\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"8\"></circle></svg>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 		}
 		return nil
 	})

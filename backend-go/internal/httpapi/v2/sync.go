@@ -86,6 +86,11 @@ func (h *Handler) syncPull(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// page.Entity, never the query string: an unknown entity was already
+	// refused above, but labelling a metric with something a device chooses is
+	// how a registry grows a series per request until the process runs out of
+	// memory.
+	h.metrics.PullRows(page.Entity, len(page.Rows))
 	render.JSON(w, h.logger, http.StatusOK, page)
 }
 

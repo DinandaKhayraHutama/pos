@@ -23,6 +23,7 @@ type reportsSpy struct {
 	due      int
 	purged   int
 	verified int
+	queued   []string
 	mismatch []string
 }
 
@@ -63,10 +64,18 @@ func (s *reportsSpy) PurgeExports(context.Context, time.Time) (int, error) {
 	return 0, nil
 }
 
+func (s *reportsSpy) QueuePending(_ context.Context, tenantID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.queued = append(s.queued, tenantID)
+	return nil
+}
+
 func (s *reportsSpy) snapshot() reportsSpy {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return reportsSpy{slices: s.slices, marked: append([]string(nil), s.marked...), due: s.due, purged: s.purged, verified: s.verified}
+	return reportsSpy{slices: s.slices, marked: append([]string(nil), s.marked...), due: s.due,
+		purged: s.purged, verified: s.verified, queued: append([]string(nil), s.queued...)}
 }
 
 func TestTheWorkerRunsTheReportingJobs(t *testing.T) {
@@ -85,10 +94,13 @@ func TestTheWorkerRunsTheReportingJobs(t *testing.T) {
 	require.NoError(t, client.Start(ctx))
 	defer client.Stop(context.Background())
 
-	// The nightly recompute and the schedule scan run at start.
+	// The nightly recompute, the schedule scan and the backfill sweep all run
+	// at start. The sweep matters on a fresh process: a definition change lands
+	// as durable dirty markers, and nothing else turns them into work.
 	require.Eventually(t, func() bool {
 		s := spy.snapshot()
-		return len(s.marked) == 1 && s.marked[0] == tenantID && s.due >= 1 && s.purged >= 1
+		return len(s.marked) == 1 && s.marked[0] == tenantID && s.due >= 1 && s.purged >= 1 &&
+			len(s.queued) >= 1 && s.queued[0] == tenantID
 	}, 15*time.Second, 100*time.Millisecond)
 
 	// A slice that changed while it computed is snoozed, not failed: its

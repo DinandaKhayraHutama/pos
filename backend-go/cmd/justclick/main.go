@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,10 +15,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
 
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/ingest"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/reporting"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/stock"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/syncfeed"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/tenancy"
@@ -26,6 +30,7 @@ import (
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/jobs"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/logging"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/media"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/metrics"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/pg"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/redisx"
 	"github.com/daniryckidinata/nti_pos/backend-go/migrations"
@@ -38,6 +43,11 @@ const usage = `usage:
   justclick migrate down          roll back the last migration
   justclick migrate status        show migration state
   justclick tenant create [flags] onboard a merchant and its first Owner
+  justclick diagnostics till --tenant UUID
+                                  inspect till integrity without changing data
+  justclick diagnostics reports --tenant UUID [--from D] [--to D] [--outlet UUID]
+                                  list orders whose money does not close;
+                                  read-only, and nothing is repaired
   justclick roles set-password    set credentials for the two login roles,
                                   from APP_DB_PASSWORD and UNSCOPED_DB_PASSWORD
   justclick platform admin create --name N --email E
@@ -89,9 +99,94 @@ func run() error {
 			return errors.New(usage)
 		}
 		return setRolePasswords(cfg)
+	case "diagnostics":
+		if len(os.Args) < 3 {
+			return errors.New(usage)
+		}
+		switch os.Args[2] {
+		case "till":
+			return diagnoseTill(cfg, logger, os.Args[3:])
+		case "reports":
+			return diagnoseReports(cfg, logger, os.Args[3:])
+		}
+		return errors.New(usage)
 	default:
 		return errors.New(usage)
 	}
+}
+
+// diagnoseReports inventories orders whose stored figures do not close. It
+// only ever reads: F1 reports inconsistent history, it does not rewrite a
+// receipt to make a total tidy.
+func diagnoseReports(cfg config.Config, logger *slog.Logger, args []string) error {
+	fs := flag.NewFlagSet("diagnostics reports", flag.ContinueOnError)
+	tenantID := fs.String("tenant", "", "tenant UUID")
+	outletID := fs.String("outlet", "", "outlet UUID; every outlet when empty")
+	from := fs.String("from", "", "first business date, YYYY-MM-DD; a year ago when empty")
+	to := fs.String("to", "", "last business date, YYYY-MM-DD; today when empty")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *tenantID == "" {
+		return errors.New("--tenant is required")
+	}
+	ctx := context.Background()
+	pools, err := openPools(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer pools.Close()
+	service, err := newReports(cfg, pools, logger)
+	if err != nil {
+		return err
+	}
+
+	filter := reporting.Filter{From: reporting.ParseDate(*from), To: reporting.ParseDate(*to), OutletID: *outletID}
+	if *to == "" {
+		if filter.To, err = service.Today(ctx, *tenantID); err != nil {
+			return err
+		}
+	}
+	if *from == "" {
+		// A year, the same bound a report accepts, so the default answer is
+		// the widest one the tool can actually give.
+		filter.From = filter.To.AddDate(0, 0, -(reporting.MaxReportDays - 1))
+	}
+	found, err := service.Anomalies(ctx, *tenantID, filter)
+	if err != nil {
+		return err
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(found)
+}
+
+func diagnoseTill(cfg config.Config, logger *slog.Logger, args []string) error {
+	fs := flag.NewFlagSet("diagnostics till", flag.ContinueOnError)
+	tenantID := fs.String("tenant", "", "tenant UUID")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *tenantID == "" {
+		return errors.New("--tenant is required")
+	}
+	ctx := context.Background()
+	pools, err := openPools(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer pools.Close()
+	service, err := ingest.NewService(pools, syncfeed.NewService(pools, nil, logger), logger)
+	if err != nil {
+		return err
+	}
+	report, err := service.DiagnoseTill(ctx, *tenantID)
+	if err != nil {
+		return err
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(report)
 }
 
 func worker(cfg config.Config, logger *slog.Logger) error {
@@ -113,17 +208,36 @@ func worker(cfg config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+
+	// The fleet-wide numbers are published here rather than from the API: they
+	// are cross-merchant reads, this process already holds that credential,
+	// and there is exactly one worker, so the gauges mean one thing.
+	observatory := metrics.New()
+	observatory.Register(
+		jobs.NewFleetCollector(pools.Unscoped, logger),
+		metrics.NewPoolCollector(map[string]*pgxpool.Pool{"tenant": pools.Tenant, "unscoped": pools.Unscoped}),
+	)
+	stopMetrics, err := metrics.Serve(cfg.MetricsAddr, observatory, logger)
+	if err != nil {
+		return err
+	}
+
 	if err := client.Start(ctx); err != nil {
 		return err
 	}
 	<-ctx.Done()
 	drain, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	if err := stopMetrics(drain); err != nil {
+		logger.Warn("metrics listener did not stop cleanly", slog.Any("error", err))
+	}
 	return client.Stop(drain)
 }
 
 func openPools(ctx context.Context, cfg config.Config) (pg.Pools, error) {
-	return pg.OpenPools(ctx, cfg.DatabaseURL, cfg.UnscopedDatabaseURL)
+	return pg.OpenPools(ctx, cfg.DatabaseURL, cfg.UnscopedDatabaseURL,
+		pg.Limits{MaxConns: cfg.PGMaxConns, MinConns: cfg.PGMinConns},
+		pg.Limits{MaxConns: cfg.PGUnscopedMaxConns, MinConns: cfg.PGMinConns})
 }
 
 // setRolePasswords gives the two login roles their credentials. Passwords live
@@ -147,10 +261,18 @@ func setRolePasswords(cfg config.Config) error {
 	}
 	defer pool.Close()
 
-	for _, role := range []struct{ name, password string }{
+	roles := []struct{ name, password string }{
 		{pg.AppRole, appPassword},
 		{pg.UnscopedRole, crossPassword},
-	} {
+	}
+	// Optional: only deployments that run the observability profile have a
+	// metrics credential, and an existing install must not start failing here
+	// because it does not.
+	if metricsPassword := os.Getenv("METRICS_DB_PASSWORD"); metricsPassword != "" {
+		roles = append(roles, struct{ name, password string }{pg.MetricsRole, metricsPassword})
+	}
+
+	for _, role := range roles {
 		// ALTER ROLE ... PASSWORD accepts no bind parameters, so PostgreSQL is
 		// asked to build the statement with format(%I, %L) and it is executed
 		// as returned. That keeps the quoting rules in the one place that
@@ -299,6 +421,15 @@ func serve(cfg config.Config, logger *slog.Logger) error {
 		return err
 	}
 
+	observatory := metrics.New()
+	observatory.Register(metrics.NewPoolCollector(map[string]*pgxpool.Pool{
+		"tenant": pools.Tenant, "unscoped": pools.Unscoped,
+	}))
+	stopMetrics, err := metrics.Serve(cfg.MetricsAddr, observatory, logger)
+	if err != nil {
+		return err
+	}
+
 	srv := &http.Server{
 		Addr: cfg.HTTPAddr,
 		Handler: httpapi.NewRouter(httpapi.Deps{
@@ -318,6 +449,7 @@ func serve(cfg config.Config, logger *slog.Logger) error {
 			PlatformSessionDB: platformSessionDB,
 			Mail:              mail,
 			LinkBaseURL:       linkBase,
+			Metrics:           observatory,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -341,7 +473,13 @@ func serve(cfg config.Config, logger *slog.Logger) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	return srv.Shutdown(shutdownCtx)
+	// The application listener drains first: metrics stay readable while it
+	// does, which is the window an operator most wants to watch.
+	err = srv.Shutdown(shutdownCtx)
+	if stopErr := stopMetrics(shutdownCtx); stopErr != nil {
+		logger.Warn("metrics listener did not stop cleanly", slog.Any("error", stopErr))
+	}
+	return err
 }
 
 func migrate(cfg config.Config, command string) error {

@@ -4,6 +4,7 @@ import '../database/app_database.dart';
 import '../preferences/app_preferences.dart';
 import 'device_registration.dart';
 import 'till_binding.dart';
+import 'till_coordinator.dart';
 
 /// Activation opens a store of this merchant's own, and it starts EMPTY.
 ///
@@ -25,6 +26,8 @@ Future<AppPreferences> prepareConnectedStorage(
   DeviceRegistration binding,
 ) async {
   await AppDatabase.instance.configureConnectedStore(binding.storageScope);
+  TillCoordinator.current?.client.close();
+  TillCoordinator.current = TillCoordinator(binding);
   AppPreferences.configureScope(binding.storageScope);
   TillBinding.configure(
     TillBinding(

@@ -46,7 +46,7 @@ type CategorySales struct {
 // AggregateCategories splits each order's discount across the categories it
 // touched, by largest remainder.
 //
-// A port of backend/app/Domain/Reporting/CategorySalesAggregator.php, itself a
+// A port of the Laravel CategorySalesAggregator (that tree is gone), itself a
 // port of the till's aggregateCategorySales. Allocating
 // discount × line / subtotal per category and flooring leaves up to
 // (categories − 1) rupiah unaccounted for on every order, and over a month the

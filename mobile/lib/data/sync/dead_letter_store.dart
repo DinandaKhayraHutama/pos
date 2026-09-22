@@ -18,6 +18,7 @@ class DeadLetter {
     required this.rejectedAt,
     this.message,
     this.details = const {},
+    this.recoveryId,
   });
 
   final int id;
@@ -32,6 +33,7 @@ class DeadLetter {
 
   /// Anything else the result said, such as who holds a busy register.
   final Map<String, Object?> details;
+  final String? recoveryId;
   final DateTime rejectedAt;
 }
 
@@ -56,6 +58,7 @@ class DeadLetterStore {
     'duplicate',
     'settled',
     'session_closed',
+    'recovery_required',
     'unknown_entity',
     'schema_rejected',
     'stale_revision',
@@ -85,6 +88,7 @@ class DeadLetterStore {
         'code': code,
         'message': message,
         'details': details.isEmpty ? null : jsonEncode(details),
+        'recovery_id': details['recovery_id'],
         'rejected_at': DateTime.now().millisecondsSinceEpoch,
       });
       await txn.delete(
@@ -98,6 +102,35 @@ class DeadLetterStore {
           sent.entityId,
           rejected: true,
         );
+      }
+      if (sent.entity == 'pos_sessions') {
+        await txn.update(
+          '_till_sessions',
+          {'state': 'conflict'},
+          where: 'id = ?',
+          whereArgs: [sent.entityId],
+        );
+      }
+      if (code == 'recovery_required' && sent.entity == 'orders') {
+        try {
+          final payload = jsonDecode(sent.payload!) as Map<String, dynamic>;
+          final sessionId = payload['pos_session_id'];
+          if (sessionId is String) {
+            await txn.update(
+              '_till_sessions',
+              {
+                'state': 'recovery_required',
+                'recovery_id': details['recovery_id'],
+                'recovery_detected_at': DateTime.now().millisecondsSinceEpoch,
+              },
+              where: 'id = ?',
+              whereArgs: [sessionId],
+            );
+          }
+        } catch (_) {
+          // The exact payload remains in dead-letter even when diagnostics
+          // cannot extract its session id.
+        }
       }
     });
   }
@@ -155,6 +188,45 @@ class DeadLetterStore {
     });
   }
 
+  /// Requeues one explicitly reviewed item. Missing source rows remain as
+  /// evidence; incompatible codes cannot be retried from the POS.
+  Future<bool> requeue(int id) async {
+    final db = await AppDatabase.instance.db;
+    return db.transaction((txn) async {
+      final rows = await txn.query(
+        table,
+        where: 'id = ?',
+        whereArgs: [id],
+        limit: 1,
+      );
+      if (rows.isEmpty) return false;
+      final letter = _fromRow(rows.first);
+      if (!{
+        'register_busy',
+        'session_closed',
+        'recovery_required',
+      }.contains(letter.code)) {
+        return false;
+      }
+      final payload = await OutboxStore.payloadWithin(
+        txn,
+        letter.entity,
+        letter.entityId,
+      );
+      if (payload == null) return false;
+      await OutboxStore.enqueueWithin(txn, letter.entity, letter.entityId);
+      if (letter.entity == 'table_status_events') {
+        await TableRepository.setRejectedWithin(
+          txn,
+          letter.entityId,
+          rejected: false,
+        );
+      }
+      await txn.delete(table, where: 'id = ?', whereArgs: [id]);
+      return true;
+    });
+  }
+
   static DeadLetter _fromRow(Map<String, Object?> r) {
     Map<String, Object?> details = const {};
     final raw = r['details'] as String?;
@@ -175,6 +247,8 @@ class DeadLetterStore {
       code: r['code'] as String,
       message: r['message'] as String?,
       details: details,
+      recoveryId:
+          r['recovery_id'] as String? ?? details['recovery_id'] as String?,
       rejectedAt: DateTime.fromMillisecondsSinceEpoch(
         (r['rejected_at'] as num).toInt(),
       ),

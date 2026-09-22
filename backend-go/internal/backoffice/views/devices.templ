@@ -1,6 +1,6 @@
 package views
 
-templ DevicesPage(s Session, registers []Register, devices []Device) {
+templ DevicesPage(s Session, registers []Register, devices []Device, recoveries []Recovery, diagnostics []DiagnosticFinding) {
 	@Shell("Perangkat", s) {
 		<h1>Perangkat</h1>
 		<p class="sub">{ s.BusinessName } — terbitkan kode aktivasi untuk sebuah till, atau cabut perangkat yang hilang.</p>
@@ -13,6 +13,7 @@ templ DevicesPage(s Session, registers []Register, devices []Device) {
 						<th>Outlet</th>
 						<th>Layanan meja</th>
 						<th>Perangkat</th>
+						<th>Sesi aktif</th>
 						<th></th>
 					</tr>
 				</thead>
@@ -34,6 +35,14 @@ templ DevicesPage(s Session, registers []Register, devices []Device) {
 								}
 							</td>
 							<td>{ pluralDevices(r.DeviceCount) }</td>
+							<td>
+								if r.ActiveSessionID != "" {
+									<strong>{ r.ActiveCashier }</strong><br/>
+									<span class="sub">{ r.ActiveDeviceLabel } · { r.ActiveSince }</span>
+								} else {
+									<span class="sub">Tidak ada</span>
+								}
+							</td>
 							<td style="text-align:right">
 								if r.Active {
 									<button
@@ -43,11 +52,25 @@ templ DevicesPage(s Session, registers []Register, devices []Device) {
 										hx-swap="innerHTML"
 									>Terbitkan kode</button>
 								}
+								if s.CanOutlets && r.ActiveSessionID != "" {
+									<details style="margin-top:8px;text-align:left">
+										<summary class="danger">Takeover</summary>
+										<form method="post" action={ "/backoffice/till-sessions/" + r.ActiveSessionID + "/takeover" } style="min-width:260px;margin-top:8px">
+											<input type="hidden" name="gorilla.csrf.Token" value={ s.CSRFToken }/>
+											<input type="hidden" name="operation_id" value={ r.OperationID }/>
+											<input type="hidden" name="device_id" value={ r.ActiveDeviceID }/>
+											<label>Ketik nama till <strong>{ r.Name }</strong><input name="register_name" required autocomplete="off"/></label>
+											<label>Alasan<input name="reason" required maxlength="2000"/></label>
+											<label>Kas terhitung (opsional)<input name="counted_cash" inputmode="numeric"/></label>
+											<button class="danger" type="submit">Tutup paksa dan cabut perangkat</button>
+										</form>
+									</details>
+								}
 							</td>
 						</tr>
 					}
 					if len(registers) == 0 {
-						<tr><td colspan="5" class="sub">Belum ada till.</td></tr>
+						<tr><td colspan="6" class="sub">Belum ada till.</td></tr>
 					}
 				</tbody>
 			</table>
@@ -76,6 +99,58 @@ templ DevicesPage(s Session, registers []Register, devices []Device) {
 				</tbody>
 			</table>
 		</div>
+		if s.CanOutlets {
+			<div class="card">
+				<h2>Diagnostik sinkronisasi</h2>
+				if len(diagnostics) == 0 {
+					<p><span class="badge">healthy</span> Tidak ada konflik server yang terdeteksi.</p>
+				} else {
+					<table><thead><tr><th>Status</th><th>Masalah</th><th>Entitas</th><th>Tindakan aman</th></tr></thead><tbody>
+						for _, d := range diagnostics {
+							<tr><td><span class="badge off">{ d.Classification }</span></td><td>{ d.Code }</td><td>{ d.Entity } · <code>{ d.EntityID }</code></td><td>{ d.Action }</td></tr>
+						}
+					</tbody></table>
+				}
+			</div>
+			<div class="card" id="recovery-area">
+				<h2>Recovery Center</h2>
+				<p class="sub">Payload asli tetap disimpan. Keputusan di bawah tidak mengubah snapshot kas takeover.</p>
+				for _, recovery := range recoveries {
+					<section style="border-top:1px solid var(--line);padding:16px 0">
+						<h3 style="margin:0">{ recovery.OutletName } · { recovery.RegisterName } <span class="badge">{ recovery.Status }</span></h3>
+						<p class="sub">{ recovery.DeviceLabel } · sesi <code>{ recovery.SessionID }</code> · { recovery.ForcedAt } · oleh { recovery.ActorName }</p>
+						<p><strong>Alasan:</strong> { recovery.Reason }<br/><strong>Snapshot:</strong> { int64String(recovery.OrderCountAtTakeover) } order, ekspektasi { Rupiah(recovery.ExpectedCash) }
+						if recovery.CountedCash != nil {
+							<span> · terhitung { Rupiah(*recovery.CountedCash) }</span>
+						}
+						</p>
+						<table><thead><tr><th>Transaksi</th><th>Ringkasan</th><th>Status</th><th>Keputusan</th></tr></thead><tbody>
+							for _, item := range recovery.Items {
+								<tr><td><code>{ item.EntityID }</code><br/><span class="sub">rev { int64String(item.Revision) }</span></td><td>{ item.BusinessDate } · { item.PaymentMethod } · { Rupiah(item.Total) } · { int64String(int64(item.StockEffects)) } efek stok</td><td>{ item.Status }
+									if item.DecisionReason != "" {
+										<br/><span class="sub">{ item.DecisionReason }</span>
+									}
+								</td><td>
+									if item.Status == "pending" {
+										<form method="post" action={ "/backoffice/till-recoveries/" + recovery.ID + "/items/" + item.ID + "/accept" } style="display:inline"><input type="hidden" name="gorilla.csrf.Token" value={ s.CSRFToken }/><button class="primary" type="submit">Terima</button></form>
+										<form method="post" action={ "/backoffice/till-recoveries/" + recovery.ID + "/items/" + item.ID + "/discard" } style="display:inline"><input type="hidden" name="gorilla.csrf.Token" value={ s.CSRFToken }/><input name="reason" required maxlength="2000" placeholder="Alasan penolakan"/><button class="danger" type="submit">Tolak</button></form>
+									}
+								</td></tr>
+							}
+							if len(recovery.Items) == 0 {
+								<tr><td colspan="4" class="sub">Belum ada transaksi terlambat.</td></tr>
+							}
+						</tbody></table>
+						if recovery.Status == "open" {
+							<form method="post" action={ "/backoffice/till-recoveries/" + recovery.ID + "/reconcile" } style="margin-top:12px"><input type="hidden" name="gorilla.csrf.Token" value={ s.CSRFToken }/><select name="basis" required><option value="device_checked">Perangkat kembali, seluruh antrean diperiksa</option><option value="device_unavailable">Perangkat tidak dapat dipulihkan, risiko diterima</option></select><input name="reason" required maxlength="2000" placeholder="Catatan penutupan"/><button type="submit">Tutup recovery</button></form>
+						}
+					</section>
+				}
+				if len(recoveries) == 0 {
+					<p class="sub">Belum ada kasus recovery.</p>
+				}
+			</div>
+		}
 	}
 }
 

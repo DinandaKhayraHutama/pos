@@ -35,6 +35,83 @@ type Category struct {
 	UpdatedAt pgtype.Timestamptz
 }
 
+type DailyAdjustmentRollup struct {
+	TenantID     string
+	OutletID     string
+	BusinessDate pgtype.Date
+	Kind         string
+	Label        string
+	OrderCount   int64
+	Amount       int64
+}
+
+type DailyCategoryRollup struct {
+	TenantID     string
+	OutletID     string
+	BusinessDate pgtype.Date
+	CategoryKey  string
+	CategoryName string
+	NameAtMs     int64
+	GrossSales   int64
+	NetSales     int64
+	ItemsSold    int64
+}
+
+type DailyEmployeeRollup struct {
+	TenantID     string
+	OutletID     string
+	BusinessDate pgtype.Date
+	CashierKey   string
+	CashierName  string
+	NameAtMs     int64
+	OrderCount   int64
+	Revenue      int64
+	Discount     int64
+}
+
+type DailyPaymentRollup struct {
+	TenantID      string
+	OutletID      string
+	BusinessDate  pgtype.Date
+	PaymentMethod string
+	OrderCount    int64
+	Revenue       int64
+}
+
+type DailyProductRollup struct {
+	TenantID       string
+	OutletID       string
+	BusinessDate   pgtype.Date
+	ProductKey     string
+	ProductName    string
+	NameAtMs       int64
+	Quantity       int64
+	GrossSales     int64
+	CostOfGoods    int64
+	CostedQuantity int64
+}
+
+type DailySalesRollup struct {
+	TenantID         string
+	OutletID         string
+	BusinessDate     pgtype.Date
+	OrderCount       int64
+	Subtotal         int64
+	Discount         int64
+	Tax              int64
+	ServiceCharge    int64
+	Revenue          int64
+	ItemsSold        int64
+	CostOfGoods      int64
+	CostedItems      int64
+	DiscountedOrders int64
+	CancelledCount   int64
+	CancelledAmount  int64
+	RefundedCount    int64
+	RefundedAmount   int64
+	ComputedAt       pgtype.Timestamptz
+}
+
 type Device struct {
 	ID             string
 	TenantID       string
@@ -65,6 +142,30 @@ type Employee struct {
 	DeletedAt pgtype.Timestamptz
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
+}
+
+type HourlySalesRollup struct {
+	TenantID     string
+	OutletID     string
+	BusinessDate pgtype.Date
+	Hour         int16
+	OrderCount   int64
+	Revenue      int64
+}
+
+type ImpersonationSession struct {
+	ID               string
+	TenantID         string
+	EmployeeID       string
+	SuperAdminID     string
+	Reason           string
+	HandoffSha256    []byte
+	HandoffExpiresAt pgtype.Timestamptz
+	StartedAt        pgtype.Timestamptz
+	ExpiresAt        pgtype.Timestamptz
+	EndedAt          pgtype.Timestamptz
+	EndedBy          pgtype.Text
+	CreatedAt        pgtype.Timestamptz
 }
 
 type IngestLog struct {
@@ -193,37 +294,70 @@ type OutletStock struct {
 	UpdatedAt pgtype.Timestamptz
 }
 
+type PasswordSetupToken struct {
+	ID          string
+	TenantID    string
+	EmployeeID  string
+	TokenSha256 []byte
+	ExpiresAt   pgtype.Timestamptz
+	UsedAt      pgtype.Timestamptz
+	CancelledAt pgtype.Timestamptz
+	CreatedBy   pgtype.UUID
+	CreatedAt   pgtype.Timestamptz
+}
+
+type PlatformAuditLog struct {
+	ID              string
+	At              pgtype.Timestamptz
+	SuperAdminID    pgtype.UUID
+	Action          string
+	TenantID        pgtype.UUID
+	ImpersonationID pgtype.UUID
+	Ip              pgtype.Text
+	Detail          []byte
+}
+
+type PlatformSession struct {
+	Token  string
+	Data   []byte
+	Expiry pgtype.Timestamptz
+}
+
 type PosRegister struct {
-	ID             string
-	TenantID       string
-	OutletID       string
-	Name           string
-	TableService   bool
-	Active         bool
-	SortOrder      int32
-	CreatedAt      pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
-	SyncSeq        int64
-	DeletedAt      pgtype.Timestamptz
-	AuthGeneration int64
+	ID                  string
+	TenantID            string
+	OutletID            string
+	Name                string
+	TableService        bool
+	Active              bool
+	SortOrder           int32
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+	SyncSeq             int64
+	DeletedAt           pgtype.Timestamptz
+	AuthGeneration      int64
+	CoordinatedSessions bool
+	ReceiptCounter      int64
 }
 
 type PosSession struct {
-	ID            string
-	TenantID      string
-	OutletID      string
-	PosRegisterID string
-	DeviceID      string
-	Revision      int64
-	EmployeeName  string
-	OpenedAtMs    int64
-	ClosedAtMs    pgtype.Int8
-	OpeningCash   int64
-	CountedCash   pgtype.Int8
-	ExpectedCash  pgtype.Int8
-	Payload       []byte
-	CreatedAt     pgtype.Timestamptz
-	UpdatedAt     pgtype.Timestamptz
+	ID               string
+	TenantID         string
+	OutletID         string
+	PosRegisterID    string
+	DeviceID         string
+	Revision         int64
+	EmployeeName     string
+	OpenedAtMs       int64
+	ClosedAtMs       pgtype.Int8
+	OpeningCash      int64
+	CountedCash      pgtype.Int8
+	ExpectedCash     pgtype.Int8
+	Payload          []byte
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	CloseKind        string
+	ForcedRecoveryID pgtype.UUID
 }
 
 type Product struct {
@@ -316,6 +450,42 @@ type ReportDirtySlice struct {
 	ChangedAt    pgtype.Timestamptz
 }
 
+type ReportExport struct {
+	ID            string
+	TenantID      string
+	RequestedBy   pgtype.UUID
+	ScheduleID    pgtype.UUID
+	Format        string
+	OutletID      pgtype.UUID
+	DateFrom      pgtype.Date
+	DateTo        pgtype.Date
+	Status        string
+	FileKey       pgtype.Text
+	ByteSize      pgtype.Int8
+	Error         pgtype.Text
+	TokenSha256   []byte
+	LinkExpiresAt pgtype.Timestamptz
+	DeliveredAt   pgtype.Timestamptz
+	DeliveryError pgtype.Text
+	CreatedAt     pgtype.Timestamptz
+	FinishedAt    pgtype.Timestamptz
+}
+
+type ReportSchedule struct {
+	ID         string
+	TenantID   string
+	CreatedBy  pgtype.UUID
+	Frequency  string
+	Format     string
+	OutletID   pgtype.UUID
+	Recipients []string
+	Active     bool
+	NextRunAt  pgtype.Timestamptz
+	LastRunAt  pgtype.Timestamptz
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+}
+
 type Session struct {
 	Token  string
 	Data   []byte
@@ -346,6 +516,27 @@ type StockMovement struct {
 	SyncSeq         int64
 	DeletedAt       pgtype.Timestamptz
 	CreatedAt       pgtype.Timestamptz
+}
+
+type SuperAdmin struct {
+	ID            string
+	Name          string
+	Email         string
+	Password      string
+	TotpSecret    pgtype.Text
+	TotpEnabledAt pgtype.Timestamptz
+	TotpLastStep  int64
+	Active        bool
+	LastLoginAt   pgtype.Timestamptz
+	CreatedAt     pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+}
+
+type SuperAdminRecoveryCode struct {
+	SuperAdminID string
+	CodeSha256   []byte
+	UsedAt       pgtype.Timestamptz
+	CreatedAt    pgtype.Timestamptz
 }
 
 type SyncCounter struct {
@@ -405,11 +596,111 @@ type TableStatusEvent struct {
 }
 
 type Tenant struct {
-	ID             string
-	Name           string
-	Slug           string
-	Status         string
-	CreatedAt      pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
-	AuthGeneration int64
+	ID              string
+	Name            string
+	Slug            string
+	Status          string
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	AuthGeneration  int64
+	Timezone        string
+	SuspendedAt     pgtype.Timestamptz
+	SuspendedReason pgtype.Text
+}
+
+type TenantFeatureFlag struct {
+	TenantID  string
+	Flag      string
+	Enabled   bool
+	UpdatedAt pgtype.Timestamptz
+	UpdatedBy pgtype.UUID
+}
+
+type TenantLimit struct {
+	TenantID         string
+	MaxOutlets       pgtype.Int4
+	MaxRegisters     pgtype.Int4
+	MaxActiveDevices pgtype.Int4
+	UpdatedAt        pgtype.Timestamptz
+	UpdatedBy        pgtype.UUID
+}
+
+type TillAccess struct {
+	TokenHash  []byte
+	TenantID   string
+	DeviceID   string
+	EmployeeID string
+	PinHash    string
+	ExpiresAt  pgtype.Timestamptz
+}
+
+type TillClaim struct {
+	SessionID        string
+	TenantID         string
+	OutletID         string
+	RegisterID       string
+	DeviceID         string
+	ActiveEmployeeID pgtype.UUID
+	ReceiptStart     int64
+	ReceiptEnd       int64
+}
+
+type TillOperator struct {
+	TenantID   string
+	SessionID  string
+	EmployeeID string
+}
+
+type TillRecovery struct {
+	ID                     string
+	TenantID               string
+	OutletID               string
+	RegisterID             string
+	SessionID              string
+	DeviceID               string
+	OperationID            string
+	ActorEmployeeID        pgtype.UUID
+	ActorName              string
+	Reason                 string
+	ForcedAt               pgtype.Timestamptz
+	OrderCountAtTakeover   int64
+	ExpectedCashAtTakeover int64
+	CountedCash            pgtype.Int8
+	Status                 string
+	ReconciliationBasis    pgtype.Text
+	ReconciliationReason   pgtype.Text
+	ReconciledAt           pgtype.Timestamptz
+	ReconciledByEmployeeID pgtype.UUID
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+}
+
+type TillRecoveryEvent struct {
+	ID              string
+	TenantID        string
+	RecoveryID      string
+	EventType       string
+	ActorEmployeeID pgtype.UUID
+	ActorName       pgtype.Text
+	Detail          []byte
+	CreatedAt       pgtype.Timestamptz
+}
+
+type TillRecoveryItem struct {
+	ID                  string
+	TenantID            string
+	RecoveryID          string
+	Entity              string
+	EntityID            string
+	Revision            int64
+	Payload             []byte
+	PayloadSha256       []byte
+	SourceIngestDate    pgtype.Date
+	SourceIngestID      string
+	Status              string
+	DecisionReason      pgtype.Text
+	DecidedAt           pgtype.Timestamptz
+	DecidedByEmployeeID pgtype.UUID
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
 }

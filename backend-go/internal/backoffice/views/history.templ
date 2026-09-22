@@ -1,0 +1,644 @@
+package views
+
+import (
+	"fmt"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/history"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/reporting"
+)
+
+type TransactionsView struct {
+	Filter    history.OrderFilter
+	Page      history.OrderPage
+	Outlets   []Option
+	Registers []Option
+	Cashiers  []Option
+	Form      Form
+}
+
+type TransactionView struct {
+	Order    history.OrderDetail
+	Location *time.Location
+}
+
+type ShiftsView struct {
+	Filter    history.SessionFilter
+	Page      history.SessionPage
+	State     string
+	Outlets   []Option
+	Registers []Option
+	Cashiers  []Option
+	Location  *time.Location
+	Form      Form
+}
+
+type ShiftView struct {
+	Session  history.SessionDetail
+	Location *time.Location
+}
+
+// TransactionStatusOptions groups the statuses the way people ask for them:
+// the money that counted, and the two ways it was undone. The individual
+// kitchen statuses follow, because "which orders are still in the kitchen" is
+// a real question with a different answer.
+var TransactionStatusOptions = []Option{
+	{Value: "", Label: "Semua status"},
+	{Value: history.GroupSales, Label: "Penjualan"},
+	{Value: history.GroupCancelled, Label: "Dibatalkan"},
+	{Value: history.GroupRefunded, Label: "Refund"},
+	{Value: "pending", Label: "Pending"},
+	{Value: "preparing", Label: "Diproses"},
+	{Value: "ready", Label: "Siap"},
+	{Value: "served", Label: "Tersaji"},
+	{Value: "paid", Label: "Lunas"},
+}
+
+var ShiftStateOptions = []Option{
+	{Value: "", Label: "Terbuka & tertutup"},
+	{Value: "open", Label: "Masih terbuka"},
+	{Value: "closed", Label: "Sudah ditutup"},
+}
+
+// WithAllOption puts an "every one of these" entry at the top of a select.
+func WithAllOption(label string, options []Option) []Option {
+	return append([]Option{{Value: "", Label: label}}, options...)
+}
+
+func statusLabel(status string) string {
+	switch status {
+	case "cancelled":
+		return "Dibatalkan"
+	case "refunded":
+		return "Refund"
+	case "paid":
+		return "Lunas"
+	case "pending":
+		return "Pending"
+	case "preparing":
+		return "Diproses"
+	case "ready":
+		return "Siap"
+	case "served":
+		return "Tersaji"
+	}
+	return status
+}
+
+// statusClass paints the two undone groups differently from a sale. It reads
+// the STATUS rather than a boolean, so a status added later is neutral instead
+// of quietly rendering as a completed sale.
+func statusClass(status string) string {
+	switch status {
+	case "cancelled", "refunded":
+		return "badge off"
+	case "paid", "served":
+		return "badge"
+	}
+	return "badge warn"
+}
+
+func millis(ms int64, loc *time.Location) string {
+	if ms == 0 {
+		return "—"
+	}
+	return time.UnixMilli(ms).In(loc).Format("02 Jan 2006 15:04")
+}
+
+func millisPtr(ms *int64, loc *time.Location) string {
+	if ms == nil {
+		return "—"
+	}
+	return millis(*ms, loc)
+}
+
+func moneyPtr(v *int64) string {
+	if v == nil {
+		return "—"
+	}
+	return Rupiah(*v)
+}
+
+func countLabel(n int64) string { return strconv.FormatInt(n, 10) }
+
+// orNotRecorded is the phrase for a field the till never sent. It matters that
+// this is not an empty cell: "nothing here" and "nobody wrote this down" look
+// the same on a screen and mean very different things in an argument about a
+// refund.
+func orNotRecorded(v string) string {
+	if strings.TrimSpace(v) == "" {
+		return "tidak tercatat"
+	}
+	return v
+}
+
+func receiptLabel(number string) string {
+	if strings.TrimSpace(number) == "" {
+		return "tanpa nomor"
+	}
+	return number
+}
+
+// transactionsQuery rebuilds the current filter as a query string, so the
+// "next page" link carries every filter with it. A cursor is a position in one
+// ordering: handed to a different filter it would page through a list nobody
+// asked for, which is why it is always sent together with the filter it
+// belongs to and dropped the moment a filter changes.
+func transactionsQuery(f history.OrderFilter, cursor string) string {
+	q := url.Values{}
+	q.Set("from", DateValue(f.From))
+	q.Set("to", DateValue(f.To))
+	setIf(q, "outlet", f.OutletID)
+	setIf(q, "register", f.RegisterID)
+	setIf(q, "cashier", f.CashierID)
+	setIf(q, "receipt", f.Receipt)
+	setIf(q, "status", f.Group)
+	setIf(q, "cursor", cursor)
+	return "/backoffice/transactions?" + q.Encode()
+}
+
+func shiftsQuery(f history.SessionFilter, state, cursor string) string {
+	q := url.Values{}
+	q.Set("from", DateValue(f.From))
+	q.Set("to", DateValue(f.To))
+	setIf(q, "outlet", f.OutletID)
+	setIf(q, "register", f.RegisterID)
+	setIf(q, "cashier", f.CashierID)
+	setIf(q, "state", state)
+	setIf(q, "cursor", cursor)
+	return "/backoffice/shifts?" + q.Encode()
+}
+
+func setIf(q url.Values, key, value string) {
+	if value != "" {
+		q.Set(key, value)
+	}
+}
+
+func differenceLabel(s history.SessionRow) string {
+	diff, ok := s.Difference()
+	if !ok {
+		return "—"
+	}
+	if diff > 0 {
+		return "+" + Rupiah(diff)
+	}
+	return Rupiah(diff)
+}
+
+// differenceClass flags any difference at all, in either direction. A drawer
+// with more money in it than it should have is not good news: it is usually a
+// sale that was never rung up.
+func differenceClass(s history.SessionRow) string {
+	diff, ok := s.Difference()
+	if !ok || diff == 0 {
+		return ""
+	}
+	return "badge off"
+}
+
+func closeKindLabel(s history.SessionRow) string {
+	if s.Open() {
+		return "Terbuka"
+	}
+	if s.CloseKind == "forced" {
+		return "Ditutup paksa"
+	}
+	return "Ditutup"
+}
+
+templ historyStyles() {
+	<style>
+		.filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+		.pager { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+		.kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+		.kv div .sub { font-size: 11px; }
+		.lines td.num { white-space: nowrap; }
+		.modifiers { color: #555; font-size: 11px; }
+	</style>
+}
+
+templ TransactionsPage(s Session, v TransactionsView) {
+	@Shell("Transaksi", s) {
+		@historyStyles()
+		<h1>Transaksi</h1>
+		<p class="sub">
+			Riwayat struk yang sudah sampai ke server. Halaman ini hanya membaca — pembatalan dan refund
+			dilakukan di kasir, tempat laci dan orangnya berada.
+		</p>
+		<div class="card">
+			// GET, so a filtered list is a URL somebody can bookmark or send to
+			// a colleague. Changing any filter starts at the first page: the
+			// cursor names a position in the previous ordering.
+			<form method="get" action="/backoffice/transactions" class="filters">
+				@Field(v.Form, "Dari", "from", "date", templ.Attributes{"required": true})
+				@Field(v.Form, "Sampai", "to", "date", templ.Attributes{"required": true})
+				@Select(v.Form, "Outlet", "outlet", WithAllOutlets(v.Outlets))
+				@Select(v.Form, "Register", "register", WithAllOption("Semua register", v.Registers))
+				@Select(v.Form, "Kasir", "cashier", WithAllOption("Semua kasir", v.Cashiers))
+				@Select(v.Form, "Status", "status", TransactionStatusOptions)
+				@Field(v.Form, "Nomor struk", "receipt", "search", templ.Attributes{"placeholder": "R-1042"})
+				<button type="submit" class="primary">Tampilkan</button>
+			</form>
+		</div>
+		@TransactionsTable(v)
+	}
+}
+
+templ TransactionsTable(v TransactionsView) {
+	<div id="transactions" class="card">
+		<table>
+			<thead>
+				<tr>
+					<th>Struk</th>
+					<th>Waktu</th>
+					<th>Outlet / register</th>
+					<th>Kasir</th>
+					<th>Status</th>
+					<th class="num">Penjualan bersih</th>
+					<th class="num">Total</th>
+				</tr>
+			</thead>
+			<tbody>
+				for _, o := range v.Page.Rows {
+					<tr>
+						<td><a href={ templ.SafeURL("/backoffice/transactions/" + o.ID) }>{ receiptLabel(o.Number) }</a></td>
+						<td>{ DateValue(o.BusinessDate) }</td>
+						<td>
+							{ o.OutletName }
+							<div class="sub">{ o.RegisterName }</div>
+						</td>
+						<td>{ o.CashierName }</td>
+						<td>
+							<span class={ statusClass(o.Status) }>{ statusLabel(o.Status) }</span>
+							if o.RecoveryID != "" {
+								<span class="badge warn">recovery</span>
+							}
+						</td>
+						<td class="num">
+							if o.Group() == history.GroupSales {
+								{ Rupiah(o.NetSales) }
+							} else {
+								—
+							}
+						</td>
+						<td class="num">{ Rupiah(o.Total) }</td>
+					</tr>
+				}
+				if len(v.Page.Rows) == 0 {
+					<tr><td colspan="7" class="sub">Tidak ada transaksi pada filter ini.</td></tr>
+				}
+			</tbody>
+		</table>
+		<div class="pager">
+			<span class="hint">
+				{ countLabel(int64(len(v.Page.Rows))) } transaksi di halaman ini ·
+				penjualan bersih { Rupiah(v.Page.PageNetSales) } · total { Rupiah(v.Page.PageTotal) }.
+				Angka periode penuh ada di Laporan.
+			</span>
+			if v.Page.Next != "" {
+				<a
+					class="button"
+					href={ templ.SafeURL(transactionsQuery(v.Filter, v.Page.Next)) }
+					hx-get={ transactionsQuery(v.Filter, v.Page.Next) }
+					hx-target="#transactions"
+					hx-swap="outerHTML"
+				>Halaman berikutnya</a>
+			}
+		</div>
+	</div>
+}
+
+templ TransactionPage(s Session, v TransactionView) {
+	@Shell("Transaksi "+receiptLabel(v.Order.Number), s) {
+		@historyStyles()
+		<p><a href="/backoffice/transactions">← Kembali ke daftar</a></p>
+		<h1>{ receiptLabel(v.Order.Number) }</h1>
+		<p class="sub">
+			Nama pada struk adalah snapshot saat transaksi dibuat. Mengganti nama produk atau kategori
+			di katalog tidak mengubah struk lama.
+		</p>
+		<div class="card">
+			<div class="kv">
+				<div><div class="sub">Status</div><span class={ statusClass(v.Order.Status) }>{ statusLabel(v.Order.Status) }</span></div>
+				<div><div class="sub">Tanggal bisnis</div>{ DateValue(v.Order.BusinessDate) }</div>
+				<div><div class="sub">Waktu transaksi</div>{ millis(v.Order.PlacedAtMs, v.Location) }</div>
+				<div><div class="sub">Outlet</div>{ v.Order.OutletName }</div>
+				<div><div class="sub">Register</div>{ v.Order.RegisterName }</div>
+				<div><div class="sub">Kasir</div>{ v.Order.CashierName }</div>
+				<div><div class="sub">Metode bayar</div>{ reporting.PaymentLabel(v.Order.PaymentMethod) }</div>
+				<div><div class="sub">Jenis</div>{ orNotRecorded(v.Order.Type) }</div>
+				if v.Order.TableName != "" {
+					<div><div class="sub">Meja</div>{ v.Order.TableName }</div>
+				}
+				if v.Order.CustomerName != "" {
+					<div><div class="sub">Pelanggan</div>{ v.Order.CustomerName }</div>
+				}
+				if v.Order.PromoName != "" {
+					<div><div class="sub">Promo</div>{ v.Order.PromoName }</div>
+				}
+			</div>
+			if v.Order.Note != "" {
+				<p class="hint">Catatan: { v.Order.Note }</p>
+			}
+		</div>
+		<div class="card">
+			<h2>Item</h2>
+			<table class="lines">
+				<thead><tr><th>Produk</th><th class="num">Harga satuan</th><th class="num">Qty</th><th class="num">Jumlah</th></tr></thead>
+				<tbody>
+					for _, it := range v.Order.Items {
+						<tr>
+							<td>
+								{ it.ProductName }
+								if it.VariantName != "" {
+									<span class="sub">· { it.VariantName }</span>
+								}
+								if it.CategoryName != "" {
+									<div class="sub">{ it.CategoryName }</div>
+								}
+								for _, m := range it.Modifiers {
+									<div class="modifiers">+ { m.GroupName }: { m.OptionName } ({ Rupiah(m.PriceDelta) })</div>
+								}
+								if it.Note != "" {
+									<div class="modifiers">“{ it.Note }”</div>
+								}
+							</td>
+							// The unit price already carries variant and modifier
+							// deltas; the modifier lines above are the breakdown,
+							// never a second charge.
+							<td class="num">{ Rupiah(it.UnitPrice) }</td>
+							<td class="num">{ countLabel(it.Quantity) }</td>
+							<td class="num">{ Rupiah(it.LineTotal) }</td>
+						</tr>
+					}
+					if len(v.Order.Items) == 0 {
+						<tr><td colspan="4" class="sub">Struk ini tidak menyimpan rincian item.</td></tr>
+					}
+				</tbody>
+			</table>
+		</div>
+		<div class="card">
+			<h2>Nominal</h2>
+			<table>
+				<tbody>
+					<tr><td>Subtotal</td><td class="num">{ Rupiah(v.Order.Subtotal) }</td></tr>
+					<tr><td>Diskon</td><td class="num">−{ Rupiah(v.Order.Discount) }</td></tr>
+					<tr><td><strong>Penjualan bersih</strong></td><td class="num"><strong>{ Rupiah(v.Order.NetSales) }</strong></td></tr>
+					<tr><td>Pajak (PB1)</td><td class="num">+{ Rupiah(v.Order.Tax) }</td></tr>
+					<tr><td>Service charge</td><td class="num">+{ Rupiah(v.Order.ServiceCharge) }</td></tr>
+					<tr><td><strong>Total</strong></td><td class="num"><strong>{ Rupiah(v.Order.Total) }</strong></td></tr>
+					// Amount paid can include the cash a customer handed over
+					// before change; it is not revenue, and it is labelled so.
+					<tr><td>Dibayar <span class="sub">(termasuk uang yang dikembalikan sebagai kembalian)</span></td><td class="num">{ Rupiah(v.Order.AmountPaid) }</td></tr>
+					if v.Order.RefundedAmount != nil {
+						<tr><td>Uang refund</td><td class="num">{ moneyPtr(v.Order.RefundedAmount) }</td></tr>
+					}
+				</tbody>
+			</table>
+		</div>
+		if v.Order.Status == "cancelled" || v.Order.Status == "refunded" {
+			<div class="card">
+				<h2>Pembatalan / refund</h2>
+				<div class="kv">
+					<div><div class="sub">Diotorisasi oleh</div>{ orNotRecorded(v.Order.AuthorizedBy) }</div>
+					<div><div class="sub">Alasan</div>{ orNotRecorded(v.Order.VoidReason) }</div>
+					<div>
+						<div class="sub">Tercatat di server</div>
+						if v.Order.SettledAt != nil {
+							{ v.Order.SettledAt.In(v.Location).Format("02 Jan 2006 15:04") }
+						} else {
+							tidak tercatat
+						}
+					</div>
+				</div>
+				<p class="hint">
+					Nominal ini tetap melekat pada tanggal bisnis transaksi aslinya. Waktu keputusan
+					di atas adalah saat server menerimanya.
+				</p>
+			</div>
+		}
+		<div class="card">
+			<h2>Asal data</h2>
+			<div class="kv">
+				<div><div class="sub">Sesi kasir</div><a href={ templ.SafeURL("/backoffice/shifts/" + v.Order.SessionID) }>{ v.Order.SessionID }</a></div>
+				<div><div class="sub">Perangkat</div>{ orNotRecorded(v.Order.DeviceUUID) }</div>
+				<div><div class="sub">Revisi</div>{ countLabel(v.Order.Revision) }</div>
+				if v.Order.RecoveryID != "" {
+					<div>
+						<div class="sub">Masuk lewat pemulihan</div>
+						<a href="/backoffice/devices">{ v.Order.RecoveryID }</a>
+					</div>
+				}
+			</div>
+		</div>
+	}
+}
+
+templ ShiftsPage(s Session, v ShiftsView) {
+	@Shell("Shift", s) {
+		@historyStyles()
+		<h1>Shift kasir</h1>
+		<p class="sub">
+			Periode di bawah menyaring waktu BUKA laci, bukan tanggal tutupnya — shift malam yang
+			melewati tengah malam tetap muncul pada hari ia dimulai.
+		</p>
+		<div class="card">
+			<form method="get" action="/backoffice/shifts" class="filters">
+				@Field(v.Form, "Dibuka dari", "from", "date", templ.Attributes{"required": true})
+				@Field(v.Form, "Sampai", "to", "date", templ.Attributes{"required": true})
+				@Select(v.Form, "Outlet", "outlet", WithAllOutlets(v.Outlets))
+				@Select(v.Form, "Register", "register", WithAllOption("Semua register", v.Registers))
+				@Select(v.Form, "Kasir", "cashier", WithAllOption("Semua kasir", v.Cashiers))
+				@Select(v.Form, "Keadaan", "state", ShiftStateOptions)
+				<button type="submit" class="primary">Tampilkan</button>
+			</form>
+			<p class="hint">
+				Filter kasir mencakup kasir yang membuka laci maupun kasir yang punya transaksi di sesi itu,
+				karena setelah serah terima keduanya sering berbeda orang.
+			</p>
+		</div>
+		@ShiftsTable(v)
+	}
+}
+
+templ ShiftsTable(v ShiftsView) {
+	<div id="shifts" class="card">
+		<table>
+			<thead>
+				<tr>
+					<th>Dibuka</th>
+					<th>Outlet / register</th>
+					<th>Dibuka oleh</th>
+					<th>Keadaan</th>
+					<th class="num">Modal awal</th>
+					<th class="num">Expected</th>
+					<th class="num">Counted</th>
+					<th class="num">Selisih</th>
+					<th class="num">Order</th>
+				</tr>
+			</thead>
+			<tbody>
+				for _, s := range v.Page.Rows {
+					<tr>
+						<td><a href={ templ.SafeURL("/backoffice/shifts/" + s.ID) }>{ millis(s.OpenedAtMs, v.Location) }</a></td>
+						<td>
+							{ s.OutletName }
+							<div class="sub">{ s.RegisterName }</div>
+						</td>
+						<td>{ s.EmployeeName }</td>
+						<td>
+							<span class={ statusClass(shiftBadgeStatus(s)) }>{ closeKindLabel(s) }</span>
+						</td>
+						<td class="num">{ Rupiah(s.OpeningCash) }</td>
+						<td class="num">{ moneyPtr(s.ExpectedCash) }</td>
+						<td class="num">{ moneyPtr(s.CountedCash) }</td>
+						<td class="num"><span class={ differenceClass(s) }>{ differenceLabel(s) }</span></td>
+						<td class="num">{ countLabel(s.OrderCount) }</td>
+					</tr>
+				}
+				if len(v.Page.Rows) == 0 {
+					<tr><td colspan="9" class="sub">Tidak ada sesi pada filter ini.</td></tr>
+				}
+			</tbody>
+		</table>
+		<div class="pager">
+			<span class="hint">{ countLabel(int64(len(v.Page.Rows))) } sesi di halaman ini.</span>
+			if v.Page.Next != "" {
+				<a
+					class="button"
+					href={ templ.SafeURL(shiftsQuery(v.Filter, v.State, v.Page.Next)) }
+					hx-get={ shiftsQuery(v.Filter, v.State, v.Page.Next) }
+					hx-target="#shifts"
+					hx-swap="outerHTML"
+				>Halaman berikutnya</a>
+			}
+		</div>
+	</div>
+}
+
+templ ShiftPage(s Session, v ShiftView) {
+	@Shell("Shift "+v.Session.RegisterName, s) {
+		@historyStyles()
+		<p><a href="/backoffice/shifts">← Kembali ke daftar</a></p>
+		<h1>{ v.Session.OutletName } · { v.Session.RegisterName }</h1>
+		<div class="card">
+			<div class="kv">
+				<div><div class="sub">Dibuka</div>{ millis(v.Session.OpenedAtMs, v.Location) }</div>
+				<div><div class="sub">Ditutup</div>{ millisPtr(v.Session.ClosedAtMs, v.Location) }</div>
+				<div><div class="sub">Dibuka oleh</div>{ v.Session.EmployeeName }</div>
+				<div><div class="sub">Keadaan</div><span class={ statusClass(shiftBadgeStatus(v.Session.SessionRow)) }>{ closeKindLabel(v.Session.SessionRow) }</span></div>
+				<div><div class="sub">Modal awal</div>{ Rupiah(v.Session.OpeningCash) }</div>
+				<div><div class="sub">Expected cash</div>{ moneyPtr(v.Session.ExpectedCash) }</div>
+				<div><div class="sub">Counted cash</div>{ moneyPtr(v.Session.CountedCash) }</div>
+				<div><div class="sub">Selisih</div><span class={ differenceClass(v.Session.SessionRow) }>{ differenceLabel(v.Session.SessionRow) }</span></div>
+				<div><div class="sub">Perangkat</div>{ orNotRecorded(v.Session.DeviceUUID) }</div>
+			</div>
+			<p class="hint">
+				Angka penjualan sesi ini dihitung dari struk yang sudah diterima server:
+				{ Rupiah(v.Session.NetSales) } penjualan bersih, { Rupiah(v.Session.Revenue) } penerimaan,
+				{ Rupiah(v.Session.CashTaken) } di antaranya tunai, dari { countLabel(v.Session.OrderCount) } order.
+				Struk yang masih tertahan di tablet belum termasuk.
+			</p>
+		</div>
+		if v.Session.Recovery != nil {
+			<div class="card">
+				<h2>Penutupan paksa</h2>
+				<div class="kv">
+					<div><div class="sub">Diputuskan oleh</div>{ v.Session.Recovery.ActorName }</div>
+					<div><div class="sub">Waktu</div>{ v.Session.Recovery.ForcedAt.In(v.Location).Format("02 Jan 2006 15:04") }</div>
+					<div><div class="sub">Alasan</div>{ v.Session.Recovery.Reason }</div>
+					<div><div class="sub">Expected cash saat takeover</div>{ Rupiah(v.Session.Recovery.ExpectedCashAtTakeover) }</div>
+					<div><div class="sub">Counted cash manajer</div>{ moneyPtr(v.Session.Recovery.CountedCash) }</div>
+					<div><div class="sub">Order saat takeover</div>{ countLabel(v.Session.Recovery.OrderCountAtTakeover) }</div>
+					<div><div class="sub">Status kasus</div>{ v.Session.Recovery.Status }</div>
+					<div>
+						<div class="sub">Struk tertahan</div>
+						{ countLabel(v.Session.Recovery.PendingItems) } menunggu ·
+						{ countLabel(v.Session.Recovery.AcceptedItems) } diterima ·
+						{ countLabel(v.Session.Recovery.DiscardedItems) } dibuang
+					</div>
+				</div>
+				<p class="hint">
+					Hitungan manajer disimpan di samping snapshot server, bukan menggantikannya.
+					Keputusan per struk ada di <a href="/backoffice/devices">Perangkat</a>.
+				</p>
+			</div>
+		}
+		if len(v.Session.Operators) > 0 {
+			<div class="card">
+				<h2>Kasir pada sesi ini</h2>
+				<table>
+					<thead><tr><th>Nama</th><th>Ditugaskan</th><th>Aktif</th></tr></thead>
+					<tbody>
+						for _, op := range v.Session.Operators {
+							<tr>
+								<td>{ op.Name }</td>
+								<td>{ op.AssignedAt.In(v.Location).Format("02 Jan 2006 15:04") }</td>
+								<td>
+									if op.Active {
+										<span class="badge">sedang menjual</span>
+									} else {
+										<span class="sub">selesai</span>
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		}
+		@sessionOrders("Transaksi dalam sesi", v.Session.Orders, v.Location,
+			"Termasuk struk yang tanggal bisnisnya berbeda, karena sesi ini boleh melewati tengah malam.")
+		if len(v.Session.AfterClose) > 0 {
+			@sessionOrders("Transaksi setelah penutupan", v.Session.AfterClose, v.Location,
+				"Struk dengan waktu setelah snapshot penutupan — unggahan terlambat atau hasil pemulihan. Ditampilkan terpisah karena laci yang sudah dihitung tidak ditulis ulang.")
+		}
+	}
+}
+
+templ sessionOrders(title string, rows []history.OrderRow, loc *time.Location, note string) {
+	<div class="card">
+		<h2>{ title }</h2>
+		<p class="sub">{ note }</p>
+		<table>
+			<thead><tr><th>Struk</th><th>Waktu</th><th>Kasir</th><th>Status</th><th class="num">Total</th></tr></thead>
+			<tbody>
+				for _, o := range rows {
+					<tr>
+						<td><a href={ templ.SafeURL("/backoffice/transactions/" + o.ID) }>{ receiptLabel(o.Number) }</a></td>
+						<td>{ millis(o.PlacedAtMs, loc) }</td>
+						<td>{ o.CashierName }</td>
+						<td><span class={ statusClass(o.Status) }>{ statusLabel(o.Status) }</span></td>
+						<td class="num">{ Rupiah(o.Total) }</td>
+					</tr>
+				}
+				if len(rows) == 0 {
+					<tr><td colspan="5" class="sub">Tidak ada transaksi.</td></tr>
+				}
+			</tbody>
+		</table>
+		if len(rows) == history.PageSize {
+			<p class="hint">
+				Menampilkan { fmt.Sprintf("%d", history.PageSize) } transaksi pertama. Gunakan daftar Transaksi
+				dengan filter register dan tanggal untuk sisanya.
+			</p>
+		}
+	</div>
+}
+
+// shiftBadgeStatus maps a drawer onto the same three badge tones the order
+// statuses use, so "ditutup paksa" and "dibatalkan" read alike: both are
+// something a person had to intervene in.
+func shiftBadgeStatus(s history.SessionRow) string {
+	switch {
+	case s.Open():
+		return "pending"
+	case s.CloseKind == "forced":
+		return "cancelled"
+	}
+	return "paid"
+}

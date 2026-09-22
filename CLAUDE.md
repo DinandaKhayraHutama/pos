@@ -4,25 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository layout
 
-This is a monorepo holding three separate projects. **This file is only an index —
+This is a monorepo holding two projects. **This file is only an index —
 no project's real guidance lives here.**
 
 | Path | Project | Its own guidance |
 |---|---|---|
-| `mobile/` | Flutter POS app | [`mobile/CLAUDE.md`](mobile/CLAUDE.md) — the substantial one, read it before touching anything under `mobile/` |
-| `backend-go/` | Go API + Backoffice — **the backend being built** | [`backend-go/CLAUDE.md`](backend-go/CLAUDE.md) — read it before touching anything under `backend-go/` |
-| `backend/` | Laravel API + Backoffice — **superseded** | [`backend/CLAUDE.md`](backend/CLAUDE.md) |
-
-**`backend/` is being replaced by `backend-go/`.** It is kept only as a
-reference for the invariants it documents — the lost-update proof in
-`SyncCursor`, the three money guarantees in `OrderIngest`, the largest-remainder
-discount split in `CategorySalesAggregator` — and it will be deleted once the Go
-backend passes the pilot gate. Do not add features to it. `backend-go/CLAUDE.md`
-is the successor to `backend/CLAUDE.md` as the invariant record.
+| `mobile/` | Flutter POS till | [`mobile/CLAUDE.md`](mobile/CLAUDE.md) — the substantial one, read it before touching anything under `mobile/` |
+| `backend-go/` | Go API + Backoffice + platform admin | [`backend-go/CLAUDE.md`](backend-go/CLAUDE.md) — the invariant record, read it before touching anything under `backend-go/` |
 
 The projects share no code and no toolchain. Flutter commands run from
-`mobile/`, `go` from `backend-go/`, `php artisan` from `backend/`, and no
-directory's guidance applies to another.
+`mobile/` and `go` from `backend-go/`; no directory's guidance applies to the
+other.
 
 **The Flutter project root is `mobile/`, not the repository root.** `pubspec.yaml`,
 `l10n.yaml`, `analysis_options.yaml`, `test/`, `integration_test/` and every
@@ -36,6 +28,20 @@ The Dart package is still named `nti_pos` (`name:` in `mobile/pubspec.yaml`), so
 imports stay `package:nti_pos/...` regardless of the folder rename. Android
 `applicationId` (`com.example.nti_pos`) and the iOS bundle id
 (`com.example.ntiPos`) are likewise unchanged.
+
+## There is no Laravel here
+
+The first backend was Laravel 12 + Filament. It was replaced by `backend-go/`
+before either reached production and the tree has been **deleted** — there is no
+`backend/` directory, no PHP, and no `php artisan` in this repository.
+
+Comments in the Go code still say "the Laravel original", and they are worth
+keeping: they record *why* an invariant exists, not where to go and read it. The
+four scale defects that caused the rewrite, and the invariants inherited from
+it — the lost-update proof behind `SyncCursor`, the three money guarantees of
+`OrderIngest`, the largest-remainder discount split — are written up in
+[`plan.md`](plan.md) and, where the code that keeps them lives, in
+[`backend-go/CLAUDE.md`](backend-go/CLAUDE.md).
 
 ## Commits
 

@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/backoffice/views"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/auth"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/reporting"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/validation"
 )
@@ -326,22 +327,55 @@ func (h *Handler) dashboardTiles(w http.ResponseWriter, r *http.Request) {
 	h.render(w, r, views.DashboardTiles(v))
 }
 
-// dashboardView is today against yesterday on the merchant's clock, from the
-// same rollups the report reads.
+// dashboardView is one period against the same number of days immediately
+// before it, from the same rollups the report reads.
+//
+// Cost and profit are stripped from the RESULT for anyone without
+// viewFinancialReports: a manager gets the sales picture and not the
+// merchant's buying price, and withholding it in the template would leave it
+// in the HTML for anyone who looked.
 func (h *Handler) dashboardView(r *http.Request) (views.DashboardView, error) {
 	ctx, tenantID := r.Context(), tenantOf(r)
 	today, err := h.reports.Today(ctx, tenantID)
 	if err != nil {
 		return views.DashboardView{}, err
 	}
-	yesterday := today.AddDate(0, 0, -1)
-	v := views.DashboardView{}
-	if v.Today, err = h.reports.Report(ctx, tenantID, reporting.Filter{From: today, To: today}); err != nil {
+	q := r.URL.Query()
+	filter, preset := reporting.ResolvePeriod(q.Get("period"), today,
+		reporting.ParseDate(q.Get("from")), reporting.ParseDate(q.Get("to")))
+	filter.OutletID = strings.TrimSpace(q.Get("outlet"))
+
+	v := views.DashboardView{Preset: preset, Filter: filter, Form: views.NewForm()}
+	v.Form.Values["from"] = views.DateValue(filter.From)
+	v.Form.Values["to"] = views.DateValue(filter.To)
+	v.Form.Values["outlet"] = filter.OutletID
+	v.ShowCosts = employeeFrom(ctx).Can(auth.ViewFinancialReports)
+
+	if v.Outlets, err = h.outletOptions(r); err != nil {
 		return v, err
 	}
-	if v.Yesterday, err = h.reports.Report(ctx, tenantID, reporting.Filter{From: yesterday, To: yesterday}); err != nil {
+	if v.Location, err = h.reports.Location(ctx, tenantID); err != nil {
 		return v, err
 	}
-	v.Location, err = h.reports.Location(ctx, tenantID)
-	return v, err
+
+	current, err := h.reports.Report(ctx, tenantID, filter)
+	switch {
+	case err == nil:
+		v.Current, v.HasReport = current, true
+	case errors.Is(err, reporting.ErrNotFound):
+		absorb(&v.Form, validation.Errors{"outlet": "Outlet tidak dikenal."})
+		return v, nil
+	case !absorb(&v.Form, err):
+		return v, err
+	default:
+		return v, nil
+	}
+
+	if v.Previous, err = h.reports.Report(ctx, tenantID, reporting.PreviousPeriod(filter)); err != nil {
+		return v, err
+	}
+	if !v.ShowCosts {
+		v.Current, v.Previous = v.Current.WithoutCostData(), v.Previous.WithoutCostData()
+	}
+	return v, nil
 }

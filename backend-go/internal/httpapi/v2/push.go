@@ -64,5 +64,26 @@ func (h *Handler) syncPush(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	render.JSON(w, h.logger, 200, h.ingest.Push(ctx, bindingFrom(r.Context()), req))
+	response := h.ingest.Push(ctx, bindingFrom(r.Context()), req)
+	h.countPushRows(response)
+	render.JSON(w, h.logger, 200, response)
+}
+
+// countPushRows is where the rejection rate comes from.
+//
+// It is counted here rather than inside the domain because the per-row results
+// are exactly what the till is told, so the metric and the device's own view of
+// what happened to a sale cannot drift apart. A rate that climbs on one code is
+// the earliest visible sign of a client build losing money.
+func (h *Handler) countPushRows(response wire.PushResponse) {
+	if h.metrics == nil {
+		return
+	}
+	for _, result := range response.Results {
+		code := ""
+		if result.Code != nil {
+			code = string(*result.Code)
+		}
+		h.metrics.PushRow(result.Entity, string(result.Status), code)
+	}
 }

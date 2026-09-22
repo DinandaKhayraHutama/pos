@@ -219,18 +219,21 @@ func (h *Handler) sessionView(r *http.Request) views.Session {
 	employee := employeeFrom(r.Context())
 
 	s := views.Session{
-		EmployeeName: employee.Name,
-		Role:         string(employee.Role),
-		BusinessName: employee.BusinessName,
-		CSRFToken:    csrf.Token(r),
-		CanCatalogue: employee.Can(auth.ManageCatalogue),
-		CanPromos:    employee.Can(auth.ManagePromos) && employee.Has(entitlements.Promos),
-		CanStaff:     employee.Can(auth.ManageEmployees),
-		CanOutlets:   employee.Can(auth.ManageOutlets),
-		CanStock:     employee.Can(auth.AdjustStock) && employee.Has(entitlements.Stock),
-		CanDashboard: h.reports != nil && employee.Can(auth.ViewDailySummary),
-		CanReports:   h.reports != nil && employee.Can(auth.ViewFinancialReports),
-		CanTables:    employee.Can(auth.ManageOutlets) && employee.Has(entitlements.Tables),
+		EmployeeName:    employee.Name,
+		Role:            string(employee.Role),
+		BusinessName:    employee.BusinessName,
+		CSRFToken:       csrf.Token(r),
+		Path:            r.URL.Path,
+		CanCatalogue:    employee.Can(auth.ManageCatalogue),
+		CanPromos:       employee.Can(auth.ManagePromos) && employee.Has(entitlements.Promos),
+		CanStaff:        employee.Can(auth.ManageEmployees),
+		CanOutlets:      employee.Can(auth.ManageOutlets),
+		CanStock:        employee.Can(auth.AdjustStock) && employee.Has(entitlements.Stock),
+		CanDashboard:    h.reports != nil && employee.Can(auth.ViewDailySummary),
+		CanReports:      h.reports != nil && employee.Can(auth.ViewFinancialReports),
+		CanTransactions: h.history != nil && h.reports != nil && employee.Can(auth.ViewAllOrders),
+		CanShifts:       h.history != nil && h.reports != nil && employee.Can(auth.ViewCashDrawer),
+		CanTables:       employee.Can(auth.ManageOutlets) && employee.Has(entitlements.Tables),
 		CanExports: h.reports != nil && employee.Can(auth.ViewFinancialReports) &&
 			employee.Has(entitlements.ReportExports),
 	}

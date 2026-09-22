@@ -153,6 +153,17 @@ class OutboxPush {
       for (final candidate in candidates) {
         final entry = await OutboxStore.instance.ensureSnapshot(candidate);
         if (entry == null) continue;
+        if (entity == 'pos_sessions') {
+          final payload = jsonDecode(entry.payload!) as Map<String, dynamic>;
+          if (payload['order_count'] != null) {
+            // A close cannot pass any pending or refused business operation.
+            final db = await AppDatabase.instance.db;
+            final remaining = await db.rawQuery(
+              "SELECT 1 FROM _outbox WHERE entity != 'pos_sessions' UNION ALL SELECT 1 FROM _dead_letter LIMIT 1",
+            );
+            if (remaining.isNotEmpty) continue;
+          }
+        }
         if (!await _boundToThisTill(entry)) {
           // Written before the binding was enforced, or by a path that went
           // around it. Sending it would misattribute a drawer or a sale, so it
@@ -322,6 +333,19 @@ class OutboxPush {
               entry.entityId,
               entry.revision!,
             );
+            if (entry.entity == 'pos_sessions') {
+              final payload =
+                  jsonDecode(entry.payload!) as Map<String, dynamic>;
+              if (payload['closed_at_ms'] != null) {
+                final db = await AppDatabase.instance.db;
+                await db.update(
+                  '_till_sessions',
+                  {'state': 'closed'},
+                  where: 'id = ?',
+                  whereArgs: [entry.entityId],
+                );
+              }
+            }
             accepted++;
           case _Status.rejected:
             await DeadLetterStore.instance.moveFromOutbox(
@@ -431,6 +455,7 @@ class OutboxPush {
             'holder_session_id',
             'holder_employee_name',
             'business_date',
+            'recovery_id',
           ])
             if (result[key] != null) key: result[key],
         });

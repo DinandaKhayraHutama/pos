@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -29,9 +30,21 @@ type ScheduleView struct {
 }
 
 type DashboardView struct {
-	Today     reporting.Report
-	Yesterday reporting.Report
+	// Preset is which period button is lit; Filter is what it resolved to.
+	Preset string
+	Filter reporting.Filter
+	// Current and Previous cover the same NUMBER OF DAYS, so a 31-day month is
+	// never compared against a 28-day one.
+	Current   reporting.Report
+	Previous  reporting.Report
+	HasReport bool
+	// ShowCosts is viewFinancialReports. When it is false the reports above
+	// have already had cost and profit removed — this only decides whether to
+	// leave a gap where they would have been.
+	ShowCosts bool
+	Outlets   []Option
 	Location  *time.Location
+	Form      Form
 }
 
 // RenderReportHTML renders the standalone printable report a PDF export is
@@ -104,10 +117,12 @@ func reportMax(values ...int64) string {
 	return strconv.FormatInt(m, 10)
 }
 
+// Every bar below is scaled against the same column it draws, so a chart and
+// the number beside it are never two different measures.
 func dailyMax(r reporting.Report) string {
 	vals := make([]int64, len(r.Daily))
 	for i, d := range r.Daily {
-		vals[i] = d.Revenue
+		vals[i] = d.NetSales
 	}
 	return reportMax(vals...)
 }
@@ -115,7 +130,15 @@ func dailyMax(r reporting.Report) string {
 func hourMax(r reporting.Report) string {
 	vals := make([]int64, len(r.ByHour))
 	for i, h := range r.ByHour {
-		vals[i] = h.Revenue
+		vals[i] = h.NetSales
+	}
+	return reportMax(vals...)
+}
+
+func weekdayMax(r reporting.Report) string {
+	vals := make([]int64, len(r.ByWeekday))
+	for i, w := range r.ByWeekday {
+		vals[i] = w.NetSales
 	}
 	return reportMax(vals...)
 }
@@ -123,9 +146,23 @@ func hourMax(r reporting.Report) string {
 func outletMax(r reporting.Report) string {
 	vals := make([]int64, len(r.ByOutlet))
 	for i, o := range r.ByOutlet {
-		vals[i] = o.Value
+		vals[i] = o.Net
 	}
 	return reportMax(vals...)
+}
+
+// reportMargin writes an em dash when there are no sales to divide by: a
+// margin over nothing is undefined, and "0,0%" reads as a bad day.
+func reportMargin(r reporting.Report) string {
+	margin, ok := r.GrossMargin()
+	if !ok {
+		return "—"
+	}
+	return reportPct(margin)
+}
+
+func groupLabel(g reporting.CategoryProducts) string {
+	return reporting.CategoryLabel(reporting.CategorySales{Key: g.CategoryKey, Name: g.CategoryName})
 }
 
 const reportProductLimit = 50
@@ -224,19 +261,53 @@ func scheduleOutlet(s reporting.Schedule) string {
 	return s.OutletName
 }
 
-func deltaLabel(today, yesterday int64) string {
-	if yesterday == 0 {
-		if today == 0 {
-			return "sama dengan kemarin"
+// deltaLabel compares against the previous period of the same length.
+//
+// A zero base is written as "—", never as a percentage: there is nothing to
+// compare against, and a made-up 100% turns a first day of trade into a
+// triumph and a first quiet day into a collapse.
+func deltaLabel(current, previous int64) string {
+	change, ok := reporting.Change(current, previous)
+	if !ok {
+		if current == 0 {
+			return "— tidak ada pembanding"
 		}
-		return "kemarin belum ada"
+		return "— periode sebelumnya kosong"
 	}
-	change := float64(today-yesterday) * 100 / float64(yesterday)
 	sign := "+"
 	if change < 0 {
 		sign = ""
 	}
-	return sign + strconv.FormatFloat(change, 'f', 1, 64) + "% dari kemarin"
+	return sign + strconv.FormatFloat(change, 'f', 1, 64) + "% dari periode sebelumnya"
+}
+
+// dashboardQuery keeps the chosen outlet when the period button changes: the
+// two filters are independent, and resetting one from the other is the kind of
+// small surprise that makes people stop trusting a dashboard.
+func dashboardQuery(v DashboardView, preset string) string {
+	q := url.Values{"period": {preset}}
+	setIf(q, "outlet", v.Filter.OutletID)
+	return "/backoffice/dashboard?" + q.Encode()
+}
+
+// dashboardTilesQuery is the refresh URL, carrying the resolved range rather
+// than the preset — otherwise "hari ini" would silently roll over at midnight
+// on a screen somebody left open, mid-comparison.
+func dashboardTilesQuery(v DashboardView) string {
+	q := url.Values{
+		"period": {reporting.PeriodCustom},
+		"from":   {DateValue(v.Filter.From)},
+		"to":     {DateValue(v.Filter.To)},
+	}
+	setIf(q, "outlet", v.Filter.OutletID)
+	return "/backoffice/dashboard/tiles?" + q.Encode()
+}
+
+func periodClass(active, preset string) string {
+	if active == preset {
+		return "button primary"
+	}
+	return "button"
 }
 
 templ reportStyles() {
@@ -333,17 +404,55 @@ templ reportTile(label, value, detail string) {
 // ReportBody is the report itself. The Backoffice page and the PDF render the
 // same component, so the two can never disagree about what a report shows.
 templ ReportBody(r reporting.Report) {
+	if r.Incomplete() {
+		<p class="notice">
+			{ reportCount(r.LegacySlices) } hari-outlet pada rentang ini masih memakai rumus lama, jadi
+			waterfall di bawah belum lengkap. Angka akan benar sendiri setelah perhitungan ulang selesai.
+		</p>
+	}
 	<div class="tiles">
-		@reportTile("Pendapatan", Rupiah(r.Revenue), reportPeriod(r))
+		@reportTile("Penjualan bersih", Rupiah(r.NetSales), reportPeriod(r))
+		@reportTile("Total penerimaan", Rupiah(r.Revenue), "termasuk pajak & service")
 		@reportTile("Order", reportCount(r.OrderCount), "")
-		@reportTile("Rata-rata per order", Rupiah(r.AverageOrder), "")
-		@reportTile("Item terjual", reportCount(r.ItemsSold), "")
-		@reportTile("Diskon", Rupiah(r.Discount), reportCount(r.DiscountedOrders)+" order berdiskon")
-		@reportTile("Pajak (PB1)", Rupiah(r.Tax), "")
-		@reportTile("Service charge", Rupiah(r.ServiceCharge), "")
+		@reportTile("Rata-rata penjualan", Rupiah(r.AverageOrder), "per order")
 		@reportTile("Laba kotor", Rupiah(r.GrossProfit), "HPP "+Rupiah(r.CostOfGoods))
-		@reportTile("Dibatalkan", Rupiah(r.CancelledAmount), reportCount(r.CancelledCount)+" order")
-		@reportTile("Refund", Rupiah(r.RefundedAmount), reportCount(r.RefundedCount)+" order")
+		@reportTile("Margin kotor", reportMargin(r), "atas penjualan bersih")
+	</div>
+	// The waterfall is a table rather than tiles on purpose: these figures are
+	// read down a column, each one produced from the line above it, and tiles
+	// say nothing about that order.
+	<div class="card">
+		<h2>Waterfall penjualan</h2>
+		<p class="sub">
+			Penjualan kotor mencakup transaksi yang kemudian direfund; refund muncul sebagai retur,
+			bukan sebagai hari yang menyusut. Pajak dan service charge menaikkan penerimaan, bukan laba.
+		</p>
+		<table>
+			<tbody>
+				<tr><td>Penjualan kotor</td><td class="num">{ Rupiah(r.GrossSales) }</td></tr>
+				<tr>
+					<td>Diskon</td>
+					<td class="num">−{ Rupiah(r.AllDiscount) }</td>
+				</tr>
+				<tr><td>Retur penjualan</td><td class="num">−{ Rupiah(r.SalesReturns) }</td></tr>
+				<tr><td><strong>Penjualan bersih</strong></td><td class="num"><strong>{ Rupiah(r.NetSales) }</strong></td></tr>
+				<tr><td>Pajak (PB1)</td><td class="num">+{ Rupiah(r.Tax) }</td></tr>
+				<tr><td>Service charge</td><td class="num">+{ Rupiah(r.ServiceCharge) }</td></tr>
+				<tr><td><strong>Total penerimaan penjualan</strong></td><td class="num"><strong>{ Rupiah(r.Revenue) }</strong></td></tr>
+				<tr><td>HPP</td><td class="num">−{ Rupiah(r.CostOfGoods) }</td></tr>
+				<tr><td><strong>Laba kotor</strong></td><td class="num"><strong>{ Rupiah(r.GrossProfit) }</strong></td></tr>
+			</tbody>
+		</table>
+		<p class="hint">
+			Dibatalkan { Rupiah(r.CancelledAmount) } ({ reportCount(r.CancelledCount) } order) ditampilkan terpisah
+			dan tidak dikurangkan lagi. Uang refund yang dikembalikan { Rupiah(r.RefundedAmount) }
+			({ reportCount(r.RefundedCount) } order) berbeda dari retur penjualan karena pajak ikut dikembalikan.
+			Order berdiskon { reportCount(r.DiscountedOrders) }.
+			if r.AnomalyCount > 0 {
+				{ reportCount(r.AnomalyCount) } order punya nominal yang tidak konsisten; lihat
+				<code>justclick diagnostics reports</code>.
+			}
+		</p>
 	</div>
 	if r.CostCoverageLow() {
 		<p class="notice">
@@ -355,14 +464,14 @@ templ ReportBody(r reporting.Report) {
 		<div class="card">
 			<h2>Harian</h2>
 			<table>
-				<thead><tr><th>Tanggal</th><th class="num">Pendapatan</th><th class="num">Order</th><th></th></tr></thead>
+				<thead><tr><th>Tanggal</th><th class="num">Penjualan bersih</th><th class="num">Order</th><th></th></tr></thead>
 				<tbody>
 					for _, d := range r.Daily {
 						<tr>
 							<td>{ DateValue(d.Date) }</td>
-							<td class="num">{ Rupiah(d.Revenue) }</td>
+							<td class="num">{ Rupiah(d.NetSales) }</td>
 							<td class="num">{ reportCount(d.Orders) }</td>
-							<td><progress class="share" max={ dailyMax(r) } value={ reportCount(d.Revenue) }></progress></td>
+							<td><progress class="share" max={ dailyMax(r) } value={ reportCount(d.NetSales) }></progress></td>
 						</tr>
 					}
 					if len(r.Daily) == 0 {
@@ -372,20 +481,46 @@ templ ReportBody(r reporting.Report) {
 			</table>
 		</div>
 		<div class="card">
-			<h2>Per outlet</h2>
+			<h2>Hari dalam minggu</h2>
+			<p class="sub">
+				Diturunkan dari tanggal bisnis, bukan dari jam server, sehingga penjualan lewat tengah malam
+				tetap milik hari dagangnya. Kolom hari menyebut berapa kali hari itu benar-benar berdagang.
+			</p>
 			<table>
-				<thead><tr><th>Outlet</th><th class="num">Pendapatan</th><th class="num">Order</th><th></th></tr></thead>
+				<thead><tr><th>Hari</th><th class="num">Penjualan bersih</th><th class="num">Order</th><th class="num">Hari</th><th></th></tr></thead>
+				<tbody>
+					for _, w := range r.ByWeekday {
+						<tr>
+							<td>{ reporting.Weekdays[w.Weekday] }</td>
+							<td class="num">{ Rupiah(w.NetSales) }</td>
+							<td class="num">{ reportCount(w.Orders) }</td>
+							<td class="num">{ reportCount(w.Days) }</td>
+							<td><progress class="share" max={ weekdayMax(r) } value={ reportCount(w.NetSales) }></progress></td>
+						</tr>
+					}
+					if len(r.ByWeekday) == 0 {
+						<tr><td colspan="5" class="sub">Belum ada penjualan.</td></tr>
+					}
+				</tbody>
+			</table>
+		</div>
+		<div class="card">
+			<h2>Per outlet</h2>
+			<p class="sub">Diurutkan menurut penjualan bersih: cabang yang memungut service charge tidak otomatis unggul.</p>
+			<table>
+				<thead><tr><th>Outlet</th><th class="num">Penjualan bersih</th><th class="num">Penerimaan</th><th class="num">Order</th><th></th></tr></thead>
 				<tbody>
 					for _, o := range r.ByOutlet {
 						<tr>
 							<td>{ o.Label }</td>
+							<td class="num">{ Rupiah(o.Net) }</td>
 							<td class="num">{ Rupiah(o.Value) }</td>
 							<td class="num">{ reportCount(o.Count) }</td>
-							<td><progress class="share" max={ outletMax(r) } value={ reportCount(o.Value) }></progress></td>
+							<td><progress class="share" max={ outletMax(r) } value={ reportCount(o.Net) }></progress></td>
 						</tr>
 					}
 					if len(r.ByOutlet) == 0 {
-						<tr><td colspan="4" class="sub">Belum ada penjualan.</td></tr>
+						<tr><td colspan="5" class="sub">Belum ada penjualan.</td></tr>
 					}
 				</tbody>
 			</table>
@@ -433,32 +568,34 @@ templ ReportBody(r reporting.Report) {
 		<div class="card">
 			<h2>Per kasir</h2>
 			<table>
-				<thead><tr><th>Kasir</th><th class="num">Pendapatan</th><th class="num">Order</th></tr></thead>
+				<thead><tr><th>Kasir</th><th class="num">Penjualan bersih</th><th class="num">Penerimaan</th><th class="num">Order</th></tr></thead>
 				<tbody>
 					for _, c := range r.ByCashier {
 						<tr>
 							<td>{ c.Label }</td>
+							<td class="num">{ Rupiah(c.Net) }</td>
 							<td class="num">{ Rupiah(c.Value) }</td>
 							<td class="num">{ reportCount(c.Count) }</td>
 						</tr>
 					}
 					if len(r.ByCashier) == 0 {
-						<tr><td colspan="3" class="sub">Belum ada penjualan.</td></tr>
+						<tr><td colspan="4" class="sub">Belum ada penjualan.</td></tr>
 					}
 				</tbody>
 			</table>
 		</div>
 		<div class="card">
 			<h2>Per jam</h2>
+			<p class="sub">Jam mengikuti zona waktu merchant ({ r.Timezone }).</p>
 			<table>
-				<thead><tr><th>Jam</th><th class="num">Pendapatan</th><th class="num">Order</th><th></th></tr></thead>
+				<thead><tr><th>Jam</th><th class="num">Penjualan bersih</th><th class="num">Order</th><th></th></tr></thead>
 				<tbody>
 					for _, h := range r.ByHour {
 						<tr>
 							<td>{ fmt.Sprintf("%02d:00", h.Hour) }</td>
-							<td class="num">{ Rupiah(h.Revenue) }</td>
+							<td class="num">{ Rupiah(h.NetSales) }</td>
 							<td class="num">{ reportCount(h.Orders) }</td>
-							<td><progress class="share" max={ hourMax(r) } value={ reportCount(h.Revenue) }></progress></td>
+							<td><progress class="share" max={ hourMax(r) } value={ reportCount(h.NetSales) }></progress></td>
 						</tr>
 					}
 					if len(r.ByHour) == 0 {
@@ -474,23 +611,52 @@ templ ReportBody(r reporting.Report) {
 			<p class="sub">{ reportCount(int64(reportProductLimit)) } produk teratas dari { reportCount(int64(len(r.ByProduct))) }. Daftar lengkap ada di ekspor.</p>
 		}
 		<table>
-			<thead><tr><th>Produk</th><th class="num">Qty</th><th class="num">Penjualan</th><th class="num">HPP</th><th class="num">Cakupan HPP</th></tr></thead>
+			<thead><tr><th>Produk</th><th class="num">Qty</th><th class="num">Kotor</th><th class="num">Bersih</th><th class="num">HPP</th><th class="num">Cakupan HPP</th></tr></thead>
 			<tbody>
 				for _, p := range reportProducts(r) {
 					<tr>
 						<td>{ p.Name }</td>
 						<td class="num">{ reportCount(p.Quantity) }</td>
 						<td class="num">{ Rupiah(p.Revenue) }</td>
+						<td class="num">{ Rupiah(p.NetSales) }</td>
 						<td class="num">{ Rupiah(p.CostOfGoods) }</td>
 						<td class="num">{ reportPct(p.Coverage() * 100) }</td>
 					</tr>
 				}
 				if len(r.ByProduct) == 0 {
-					<tr><td colspan="5" class="sub">Belum ada penjualan.</td></tr>
+					<tr><td colspan="6" class="sub">Belum ada penjualan.</td></tr>
 				}
 			</tbody>
 		</table>
 	</div>
+	if len(r.ByProductInCategory) > 0 {
+		<div class="card">
+			<h2>Item teratas per kategori</h2>
+			<p class="sub">
+				Jumlah item dalam satu kategori selalu sama dengan penjualan bersih kategori itu:
+				keduanya berasal dari satu alokasi diskon, bukan dua pembulatan terpisah.
+			</p>
+			<table>
+				<thead><tr><th>Kategori</th><th>Produk</th><th class="num">Qty</th><th class="num">Penjualan bersih</th></tr></thead>
+				<tbody>
+					for _, g := range r.ByProductInCategory {
+						for i, p := range g.Products {
+							<tr>
+								<td>
+									if i == 0 {
+										{ groupLabel(g) }
+									}
+								</td>
+								<td>{ p.Name }</td>
+								<td class="num">{ reportCount(p.Quantity) }</td>
+								<td class="num">{ Rupiah(p.NetSales) }</td>
+							</tr>
+						}
+					}
+				</tbody>
+			</table>
+		</div>
+	}
 	<div class="card">
 		<h2>Audit diskon &amp; void</h2>
 		<table>
@@ -642,46 +808,198 @@ templ DashboardPage(s Session, v DashboardView) {
 	@Shell("Dashboard", s) {
 		@reportStyles()
 		<h1>Dashboard</h1>
-		<p class="sub">Hari ini dibanding kemarin, dari rollup yang sama dengan laporan. Diperbarui otomatis tiap 30 detik.</p>
+		<p class="sub">
+			Dari rollup yang sama dengan laporan. Pembanding selalu memakai jumlah hari yang sama persis
+			sebelum periode ini, bukan "bulan lalu" — Februari tidak boleh terlihat anjlok hanya karena
+			lebih pendek.
+		</p>
+		<div class="card">
+			<div class="filters">
+				for _, p := range reporting.Periods {
+					<a
+						class={ periodClass(v.Preset, p) }
+						href={ templ.SafeURL(dashboardQuery(v, p)) }
+					>{ reporting.PeriodLabel(p) }</a>
+				}
+			</div>
+			<form method="get" action="/backoffice/dashboard" class="filters">
+				<input type="hidden" name="period" value="custom"/>
+				@Field(v.Form, "Dari", "from", "date", templ.Attributes{"required": true})
+				@Field(v.Form, "Sampai", "to", "date", templ.Attributes{"required": true})
+				@Select(v.Form, "Outlet", "outlet", WithAllOutlets(v.Outlets))
+				<button type="submit" class="primary">Rentang khusus</button>
+			</form>
+		</div>
 		@DashboardTiles(v)
 	}
 }
 
 templ DashboardTiles(v DashboardView) {
-	<div id="dashboard" hx-get="/backoffice/dashboard/tiles" hx-trigger="every 30s" hx-swap="outerHTML">
-		<div class="tiles">
-			@reportTile("Omzet hari ini", Rupiah(v.Today.Revenue), deltaLabel(v.Today.Revenue, v.Yesterday.Revenue))
-			@reportTile("Order hari ini", reportCount(v.Today.OrderCount), deltaLabel(v.Today.OrderCount, v.Yesterday.OrderCount))
-			@reportTile("Rata-rata struk", Rupiah(v.Today.AverageOrder), "kemarin "+Rupiah(v.Yesterday.AverageOrder))
-			@reportTile("Item terjual", reportCount(v.Today.ItemsSold), "")
-		</div>
-		<div class="card">
-			<h2>Outlet teratas hari ini</h2>
-			<table>
-				<thead><tr><th>Outlet</th><th class="num">Omzet</th><th class="num">Order</th><th></th></tr></thead>
-				<tbody>
-					for i, o := range v.Today.ByOutlet {
-						if i < 5 {
-							<tr>
-								<td>{ o.Label }</td>
-								<td class="num">{ Rupiah(o.Value) }</td>
-								<td class="num">{ reportCount(o.Count) }</td>
-								<td><progress class="share" max={ outletMax(v.Today) } value={ reportCount(o.Value) }></progress></td>
-							</tr>
-						}
-					}
-					if len(v.Today.ByOutlet) == 0 {
-						<tr><td colspan="4" class="sub">Belum ada penjualan hari ini.</td></tr>
-					}
-				</tbody>
-			</table>
+	// The auto-refresh carries the current period with it; without that the
+	// poll would quietly drag the page back to today every thirty seconds.
+	<div id="dashboard" hx-get={ dashboardTilesQuery(v) } hx-trigger="every 30s" hx-swap="outerHTML">
+		if !v.HasReport {
+			<div class="card"><p class="sub">Pilih periode dan outlet yang valid untuk melihat angkanya.</p></div>
+		} else {
 			<p class="hint">
-				Data per { reportComputed(v.Today) }.
-				if v.Today.PendingSlices > 0 {
-					{ reportCount(v.Today.PendingSlices) } outlet sedang diperbarui.
+				{ reportPeriod(v.Current) } · { reportOutlet(v.Current) } · dibandingkan dengan
+				{ reportPeriod(v.Previous) }.
+			</p>
+			<div class="tiles">
+				@reportTile("Penjualan bersih", Rupiah(v.Current.NetSales), deltaLabel(v.Current.NetSales, v.Previous.NetSales))
+				@reportTile("Total penerimaan", Rupiah(v.Current.Revenue), deltaLabel(v.Current.Revenue, v.Previous.Revenue))
+				@reportTile("Order", reportCount(v.Current.OrderCount), deltaLabel(v.Current.OrderCount, v.Previous.OrderCount))
+				@reportTile("Rata-rata penjualan", Rupiah(v.Current.AverageOrder), deltaLabel(v.Current.AverageOrder, v.Previous.AverageOrder))
+				@reportTile("Item terjual", reportCount(v.Current.ItemsSold), deltaLabel(v.Current.ItemsSold, v.Previous.ItemsSold))
+				if v.ShowCosts {
+					@reportTile("Laba kotor", Rupiah(v.Current.GrossProfit), deltaLabel(v.Current.GrossProfit, v.Previous.GrossProfit))
+					@reportTile("Margin kotor", reportMargin(v.Current), "atas penjualan bersih")
+				}
+			</div>
+			if v.Current.Incomplete() {
+				<p class="notice">
+					{ reportCount(v.Current.LegacySlices) } hari-outlet masih memakai rumus lama; waterfall
+					belum lengkap sampai perhitungan ulang selesai.
+				</p>
+			}
+			<div class="card">
+				<h2>Waterfall penjualan</h2>
+				<table>
+					<tbody>
+						<tr><td>Penjualan kotor</td><td class="num">{ Rupiah(v.Current.GrossSales) }</td></tr>
+						<tr><td>Diskon</td><td class="num">−{ Rupiah(v.Current.AllDiscount) }</td></tr>
+						<tr><td>Retur penjualan</td><td class="num">−{ Rupiah(v.Current.SalesReturns) }</td></tr>
+						<tr><td><strong>Penjualan bersih</strong></td><td class="num"><strong>{ Rupiah(v.Current.NetSales) }</strong></td></tr>
+						<tr><td>Pajak &amp; service</td><td class="num">+{ Rupiah(v.Current.Tax + v.Current.ServiceCharge) }</td></tr>
+						<tr><td><strong>Total penerimaan</strong></td><td class="num"><strong>{ Rupiah(v.Current.Revenue) }</strong></td></tr>
+					</tbody>
+				</table>
+			</div>
+			<div class="report-grid">
+				<div class="card">
+					<h2>Perbandingan outlet</h2>
+					<p class="sub">Periode yang sama untuk setiap cabang, diurutkan menurut penjualan bersih.</p>
+					<table>
+						<thead><tr><th>Outlet</th><th class="num">Penjualan bersih</th><th class="num">Order</th><th></th></tr></thead>
+						<tbody>
+							for _, o := range v.Current.ByOutlet {
+								<tr>
+									<td>{ o.Label }</td>
+									<td class="num">{ Rupiah(o.Net) }</td>
+									<td class="num">{ reportCount(o.Count) }</td>
+									<td><progress class="share" max={ outletMax(v.Current) } value={ reportCount(o.Net) }></progress></td>
+								</tr>
+							}
+							if len(v.Current.ByOutlet) == 0 {
+								<tr><td colspan="4" class="sub">Belum ada penjualan pada periode ini.</td></tr>
+							}
+						</tbody>
+					</table>
+				</div>
+				<div class="card">
+					<h2>Harian</h2>
+					<table>
+						<thead><tr><th>Tanggal</th><th class="num">Penjualan bersih</th><th class="num">Order</th><th></th></tr></thead>
+						<tbody>
+							for _, d := range v.Current.Daily {
+								<tr>
+									<td>{ DateValue(d.Date) }</td>
+									<td class="num">{ Rupiah(d.NetSales) }</td>
+									<td class="num">{ reportCount(d.Orders) }</td>
+									<td><progress class="share" max={ dailyMax(v.Current) } value={ reportCount(d.NetSales) }></progress></td>
+								</tr>
+							}
+							if len(v.Current.Daily) == 0 {
+								<tr><td colspan="4" class="sub">Belum ada penjualan.</td></tr>
+							}
+						</tbody>
+					</table>
+				</div>
+				<div class="card">
+					<h2>Per jam</h2>
+					<table>
+						<thead><tr><th>Jam</th><th class="num">Penjualan bersih</th><th class="num">Order</th><th></th></tr></thead>
+						<tbody>
+							for _, h := range v.Current.ByHour {
+								<tr>
+									<td>{ fmt.Sprintf("%02d:00", h.Hour) }</td>
+									<td class="num">{ Rupiah(h.NetSales) }</td>
+									<td class="num">{ reportCount(h.Orders) }</td>
+									<td><progress class="share" max={ hourMax(v.Current) } value={ reportCount(h.NetSales) }></progress></td>
+								</tr>
+							}
+							if len(v.Current.ByHour) == 0 {
+								<tr><td colspan="4" class="sub">Belum ada penjualan.</td></tr>
+							}
+						</tbody>
+					</table>
+				</div>
+				<div class="card">
+					<h2>Hari dalam minggu</h2>
+					<table>
+						<thead><tr><th>Hari</th><th class="num">Penjualan bersih</th><th class="num">Order</th><th class="num">Hari</th></tr></thead>
+						<tbody>
+							for _, w := range v.Current.ByWeekday {
+								<tr>
+									<td>{ reporting.Weekdays[w.Weekday] }</td>
+									<td class="num">{ Rupiah(w.NetSales) }</td>
+									<td class="num">{ reportCount(w.Orders) }</td>
+									<td class="num">{ reportCount(w.Days) }</td>
+								</tr>
+							}
+							if len(v.Current.ByWeekday) == 0 {
+								<tr><td colspan="4" class="sub">Belum ada penjualan.</td></tr>
+							}
+						</tbody>
+					</table>
+				</div>
+				<div class="card">
+					<h2>Item teratas</h2>
+					<table>
+						<thead><tr><th>Produk</th><th class="num">Qty</th><th class="num">Penjualan bersih</th></tr></thead>
+						<tbody>
+							for i, p := range v.Current.ByProduct {
+								if i < 10 {
+									<tr>
+										<td>{ p.Name }</td>
+										<td class="num">{ reportCount(p.Quantity) }</td>
+										<td class="num">{ Rupiah(p.NetSales) }</td>
+									</tr>
+								}
+							}
+							if len(v.Current.ByProduct) == 0 {
+								<tr><td colspan="3" class="sub">Belum ada penjualan.</td></tr>
+							}
+						</tbody>
+					</table>
+				</div>
+				<div class="card">
+					<h2>Kategori</h2>
+					<table>
+						<thead><tr><th>Kategori</th><th class="num">Penjualan bersih</th><th class="num">Item</th><th class="num">Kontribusi</th></tr></thead>
+						<tbody>
+							for _, c := range v.Current.ByCategory {
+								<tr>
+									<td>{ reporting.CategoryLabel(c) }</td>
+									<td class="num">{ Rupiah(c.Net) }</td>
+									<td class="num">{ reportCount(c.Items) }</td>
+									<td class="num">{ reportPct(c.ContributionPercent) }</td>
+								</tr>
+							}
+							if len(v.Current.ByCategory) == 0 {
+								<tr><td colspan="4" class="sub">Belum ada penjualan.</td></tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			</div>
+			<p class="hint">
+				Data per { reportComputed(v.Current) }.
+				if v.Current.PendingSlices > 0 {
+					{ reportCount(v.Current.PendingSlices) } hari-outlet sedang diperbarui.
 				}
 			</p>
-		</div>
+		}
 	</div>
 }
 

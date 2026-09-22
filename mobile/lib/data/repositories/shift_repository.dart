@@ -2,6 +2,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
 import '../device/till_binding.dart';
+import '../device/till_coordinator.dart';
 
 import '../database/app_database.dart';
 import '../models/enums.dart';
@@ -136,6 +137,9 @@ class ShiftRepository {
       openingCash: openingCash,
     );
 
+    final coordinator = TillCoordinator.current;
+    if (coordinator != null) return coordinator.open(shift);
+
     await db.transaction((txn) async {
       final held = await txn.query(
         'shifts',
@@ -261,6 +265,10 @@ class ShiftRepository {
         whereArgs: [shift.id],
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
+      if (TillCoordinator.current != null) {
+        await txn.update('_till_sessions', {'state': 'closing_pending'},
+            where: 'id = ?', whereArgs: [shift.id]);
+      }
       await OutboxStore.enqueueWithin(txn, SessionPush.entity, shift.id);
     });
 

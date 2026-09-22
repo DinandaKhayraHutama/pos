@@ -5,6 +5,8 @@ import '../data/models/enums.dart';
 import '../data/models/order.dart';
 import '../data/models/table.dart';
 import '../data/repositories/order_repository.dart';
+import '../data/repositories/remote_order_repository.dart';
+import '../data/device/till_coordinator.dart';
 import '../data/repositories/table_repository.dart';
 import 'cart_provider.dart';
 import 'catalog_provider.dart';
@@ -43,8 +45,40 @@ class OrdersNotifier
     OrderStatus? status,
     SettingsState? settings,
     String? outletId,
-  ) {
+  ) async {
     final seesEverything = settings?.can(AppPermission.viewAllOrders) ?? true;
+    if (TillCoordinator.current != null && settings != null) {
+      // ONE page, for today. This provider feeds the dashboard's recent list
+      // and the void/refund actions, both of which are about the current day;
+      // paging the whole period belongs to orderHistoryProvider, which the
+      // history screen uses. The old code looped until the server ran out of
+      // pages, which on a busy month froze the app for minutes before showing
+      // anything.
+      final remote = await RemoteOrderRepository.page(
+        settings.employeeId,
+        RemoteOrderFilter.today(),
+      );
+      final now = DateTime.now();
+      final local = await OrderRepository.instance.recent(
+        status: status,
+        cashierId: seesEverything ? null : settings.employeeId,
+        since: seesEverything
+            ? null
+            : DateTime(now.year, now.month, now.day),
+        outletId: outletId,
+      );
+      // Local wins on a shared id: a status this device changed is newer than
+      // the server's copy of it, and a sale still in the outbox exists here
+      // and nowhere else.
+      final combined = {
+        for (final order in remote.orders) order.id: order,
+        for (final order in local) order.id: order,
+      };
+      return combined.values
+          .where((o) => status == null || o.status == status)
+          .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    }
     if (seesEverything) {
       return OrderRepository.instance.recent(
         status: status,
@@ -365,6 +399,7 @@ final topProductsProvider =
 final orderDetailProvider = FutureProvider.autoDispose.family<Order?, String>((
   ref,
   id,
-) {
-  return OrderRepository.instance.byId(id);
+) async {
+  final employee=ref.watch(settingsProvider).valueOrNull?.employeeId ?? '';
+  return await OrderRepository.instance.byId(id) ?? await RemoteOrderRepository.byId(id,employee);
 });

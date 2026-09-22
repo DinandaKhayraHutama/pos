@@ -1,19 +1,40 @@
 # CLAUDE.md — backend-go
 
 Guidance for the Go backend. The Flutter till lives in `../mobile/` and has its
-own `CLAUDE.md`; the Laravel backend in `../backend/` is being replaced by this
-one and stays only as a reference until the pilot gate.
+own `CLAUDE.md`. The Laravel backend this replaced has been deleted; what it
+taught lives in the invariants below and in `../plan.md`.
 
 ## What this is
 
-**Current work (2026-09-15): Fase 0–7 done; Fase 8 platform admin implemented** —
-super admins with TOTP, onboarding, suspension, plan limits and module switches,
-audited impersonation, audit log and ops page. See
+**Current work (2026-09-22): the MokaPOS feature-parity roadmap has started,
+and its numbering is its own.** `../docs/RENCANA_PARITAS_FITUR_MOKAPOS.md` runs
+F0 → F10; **its Fase 0 is done on the code and on every automated gate** (see
+`../docs/FASE_0_VERIFICATION.md` for the evidence and for the two things that
+still need a machine with Visual Studio). Do not confuse it with the original
+Fase 0–9 below: that roadmap is finished, and the two numbering schemes overlap.
+What paritas F0 added here is till recovery — controlled takeover, quarantine of
+a late sale, and a manager's decision with an audit trail. Its invariants are in
+"Till recovery (Fase 0 paritas)" further down.
+
+**Fase 0–9 of the original roadmap are done; Fase 10 was postponed by the
+product owner. Fase 9.5 was a local stabilisation pass** — the platform panel refused
+its own sign-in, and the fix plus an end-to-end proof that Backoffice, platform
+and till are genuinely wired to each other is in `docs/PHASE_9_5_VERIFICATION.md`,
+with the click-through script in `../docs/MANUAL_TEST_LOKAL.md`.
+
+**Fase 9 (load test and hardening)** — a Go load harness with the plan's five scenarios, Prometheus
+metrics on their own listener, a Compose observability profile with alert rules
+and a provisioned Grafana dashboard, explicit pool sizing, PostgreSQL tuning and
+a `pg_monitor`-only credential for the exporter. See
 `docs/PHASE_0_2_VERIFICATION.md`, `docs/PHASE_3_VERIFICATION.md`,
 `../mobile/docs/PHASE_4_VERIFICATION.md`, `docs/PHASE_5_VERIFICATION.md`,
-`docs/PHASE_6_VERIFICATION.md`, `docs/PHASE_7_VERIFICATION.md` and
-`docs/PHASE_8_VERIFICATION.md` for evidence and production-readiness limits. The
-pilot gate still needs hardware UAT and the scaled load test.
+`docs/PHASE_6_VERIFICATION.md`, `docs/PHASE_7_VERIFICATION.md`,
+`docs/PHASE_8_VERIFICATION.md`, `docs/PHASE_9_VERIFICATION.md` and
+`docs/PHASE_9_5_VERIFICATION.md` for evidence
+and production-readiness limits. The pilot gate still needs hardware UAT and a
+load run on the pilot VPS with the generator on a separate box — every number
+recorded so far comes from one laptop that was also running the database, the
+cache and the generator.
 
 **JustClick POS backend**, second edition — one Go binary serving:
 
@@ -29,8 +50,8 @@ gorilla/csrf · go-redis v9 · PostgreSQL 18 · Redis 8 · Caddy.
 **The rewrite is not "PHP was slow."** It exists to remove four defects that
 were verified in the Laravel code and would have hit a wall long before language
 choice mattered — chiefly that every pushed order took `SELECT … FOR UPDATE` on
-the *tenant row*, so all 5,000 outlets serialised behind one lock. See
-`../backend/app/Domain/Sync/OrderIngest.php` lines 76-79 for the original.
+the *tenant row*, so all 5,000 outlets serialised behind one lock. That tree is
+gone; `../plan.md` records the four defects and the evidence for each.
 
 ## Commands
 
@@ -45,6 +66,7 @@ go run ./cmd/justclick tenant create --name … --slug … --owner-name … --ow
 go run ./cmd/justclick platform admin create --name … --email …   # prints the password once; TOTP enrols at first sign-in
 go run ./cmd/justclick platform admin reset-totp --email …        # lost phone and spent recovery codes
 go run ./cmd/justclick platform admin deactivate --email …        # also ends that admin's impersonations
+go run ./cmd/justclick diagnostics till --tenant …                # read-only: conflicts, orphan stock effects, open recoveries
 go run ./cmd/justclick serve               # API + Backoffice + /platform on :9000
 templ generate                             # after editing any .templ
 go test ./... -count=1                     # needs real Postgres AND Redis
@@ -56,9 +78,25 @@ go run ./scripts/verify-push               # 200 receipts x3 through HTTP; isola
 go run ./cmd/justclick worker              # River: partitions, stock reconcile, report rollups/exports/schedules
 go run ./scripts/verify-reports            # Fase 7 gate: 30-day seed, rollup == raw, < 200 ms, exports
 go run ./scripts/verify-platform           # Fase 8: TOTP, onboarding, limits, modules, impersonation, suspension
+go run ./scripts/verify-recovery           # Fase 0 paritas: the manager's takeover and late-sale path, through the browser
 go generate ./api ./internal/store         # pinned OpenAPI + SQL generators
-go run ./scripts/verify-sync-load          # disposable 2000-device k6 fleet against Compose
+go run ./scripts/verify-sync-load          # Fase 2A gate: disposable 2000-device k6 fleet
+docker compose --profile observability up -d   # Prometheus, Grafana, exporters
+go run ./scripts/loadtest smoke            # Fase 9 harness: full device lifecycle in seconds
+go run ./scripts/loadtest changes --rate 2000 --duration 60s
+go run ./scripts/loadtest orders --orders-per-second 200 --duration 60s --devices 600 --workers 300
+go run ./scripts/loadtest rush --devices 15000 --spread both
+go run ./scripts/loadtest fanout --devices 15000
+go run ./scripts/loadtest datascale --orders 2000000 --days 30
 ```
+
+**Measure through the container, not through a host `justclick serve`.** Add
+`--base-url https://localhost:8443 --insecure-tls`. A host process reaches
+Redis and PostgreSQL through Docker Desktop's published-port proxy, and that
+path degrades under sustained load: in one session the same 2,000 rps run swung
+from p99 5.9 ms to 227 ms on the host path while the containerised API, measured
+at the same moment, stayed at a 5.5 ms mean. Stop the observability profile
+before taking a gate number on a single box — its scrapes take the same CPU.
 
 `https://localhost:8443` is the same server behind Caddy with a local CA
 certificate. The verification scripts accept `VERIFY_BASE_URL` and, for that
@@ -311,6 +349,30 @@ fleet offline over a cache outage.
 
 ## Backoffice (templ + HTMX)
 
+**One panel, one door.** A browser cookie ignores the port, so `localhost:8443`
+and `localhost:9000` share one jar under the same host name — a CSRF token
+minted behind TLS is sent to the plain-HTTP door, where the scheme no longer
+matches and every POST is refused as `origin invalid`. `HTTP_ADDR` and
+`METRICS_ADDR` therefore default to `127.0.0.1` outside Compose, and
+`TRUST_PROXY` is documented in `.env.example` with what happens when it is
+wrong: unset behind TLS, the browser sends an https Origin while the server
+compares it against http, and the panel refuses its own login.
+
+**`Referrer-Policy` on a panel is a functional decision, not only a privacy
+one.** gorilla/csrf falls back to the Referer header when a browser sends no
+Origin on a form POST, and the platform panel shipped with `no-referrer` —
+instructing browsers to withhold exactly that fallback. It refused its own
+sign-in with "referer not supplied" for six days. `same-origin` keeps the
+property that mattered (no other site learns these URLs, and several pages here
+show a credential once) and leaves the panel able to identify itself.
+
+**A CSRF refusal must say what decided it.** `web.CSRFFailure` logs the reason,
+`Origin`, `Referer`, `Host`, `X-Forwarded-Proto` and the scheme the server
+concluded — the last of which no browser can show you — and renders a page a
+person can act on. Four very different causes used to share one bare line of
+text: a real cross-site POST, an expired token, a browser told to withhold both
+headers, and a proxy misconfiguration.
+
 **`gorilla/csrf` assumes the panel is served over TLS** and validates `Origin`
 against an `https` scheme. Behind Caddy this process always sees plain HTTP even
 when the browser used HTTPS, so `declareRequestScheme` decides per request from
@@ -529,6 +591,13 @@ because their Redis-reset checks share the verification environment.
 
 ## Not built yet
 
+Not built for Fase 9's observability: an Alertmanager (rules fire in Prometheus
+and are visible there and nowhere else), a backup-age metric (pgBackRest is not
+deployed) and a certificate-expiry probe (Caddy exports none; blackbox_exporter
+is the intended shape). Not measured: a run on the pilot VPS with the generator
+on a separate box, and a 30-million-order history — it needs about 36 GB, and
+this machine has 34 GB free.
+
 Platform admin (Fase 8), reporting (Fase 7) and the stock ledger (Fase 5) are
 built; each has its section below. Not built for the platform panel: QR codes at
 TOTP enrolment (the secret is typed), admin management in the panel (CLI only),
@@ -670,6 +739,210 @@ reads `goose_db_version` (granted to the unscoped role), River's job table,
 
 `TestUnscopedImportersAreCountable` holds the list of packages that import
 `internal/store/unscoped`; adding one is a security review.
+
+## Coordinated tills — what must stay true
+
+`internal/domain/ingest/till.go` owns the online half: cashier sign-in, claiming
+a drawer, handover, current status and receipt history. `sale.go` owns the money
+half. Migration 020 holds `till_access`, `till_claims` and `till_operators`.
+`scripts/verify-till` drives all of it over HTTP.
+
+**Online coordination is deliberately separate from offline ingest, and there is
+no heartbeat.** A till keeps its drawer through a network outage; nothing
+expires a claim because the holder went quiet. The first device may still be
+selling, and handing its drawer to a second device because a ping stopped is how
+one shift becomes two sets of books.
+
+**One active selling assignment per cashier, and it follows the ASSIGNMENT, not
+the opener.** `till_one_active_cashier` is a partial unique index on
+`(tenant_id, active_employee_id)`. Handover moves the assignment; closing clears
+it. Keying it on whoever opened the session would forbid the handover the
+product already supports.
+
+**Lock order is register, then session/claim — and never the tenant row.** Open,
+handover and close all take `pos_registers … FOR UPDATE` first, so two devices
+racing one till serialise on the register they are both claiming.
+
+**The session UUID is the idempotency key, and the client stores it before it
+asks.** A replay with the same id and the same opening snapshot returns the same
+claim; a replay whose snapshot differs is `idempotency_conflict`. A lost reply
+therefore costs a retry, never a second drawer.
+
+**`pos_registers.coordinated_sessions` is a one-way gate.** Once a register has
+been claimed online, a session arriving through the legacy push path is refused
+with `register_busy`. Without it a downgraded client would quietly reopen the
+very hole this closes.
+
+**Closing waits for the receipts.** A claimed session closes only when its
+`order_count` matches the receipts the server actually holds; otherwise the
+device is told `dependency_pending` and keeps them. Closing is also what clears
+the cashier assignment, so a cashier who never closes can never sell elsewhere —
+that is the intent, not an oversight.
+
+**A receipt and its stock effects commit in ONE transaction** (`ingestSale`).
+Effects bind to `ref_id = the order's id`, never to the human-readable receipt
+number, which repeats across installations. A later revision may not omit an
+effect that already committed, and quantities are bounded by the receipt's own
+lines.
+
+**History is newest-first, and its scope comes from the token.** The cursor
+carries `placed_at_ms:uuid` because a v4 UUID sorts at random — paging by id
+alone was stable and meaningless. A cashier sees their own receipts; anything
+wider is resolved from the employee the cashier token names, never from a query
+parameter. `TestHistoryIsNewestFirstAndPagesInThatOrder` guards both halves.
+
+**A cashier token carries the PIN hash it was minted against**, so changing a
+PIN revokes every till sign-in that used the old one. The rows are pruned by the
+hourly maintenance job; nothing else deletes them.
+
+**Receipt numbers come from a server-allocated block of 100,000 per claim.** A
+device numbers offline from its own block, and exhausting it falls back to a
+UUID label rather than reusing a number. Two installations can no longer print
+the same receipt number.
+
+## Till recovery (Fase 0 paritas) — what must stay true
+
+Coordination above has no heartbeat, on purpose. That leaves exactly one way a
+lost tablet's drawer can be closed: **a human decides, and the decision is
+audited.** `internal/domain/ingest/recovery.go` owns it, migration 021 holds
+`till_recoveries`, `till_recovery_items` and `till_recovery_events`, the manager
+reaches it from `/backoffice/devices`, and `scripts/verify-recovery` drives the
+whole path through the browser. Evidence and the gaps that remain are in
+`../docs/FASE_0_VERIFICATION.md`.
+
+**Nothing is ever repaired automatically, and no evidence is deleted.** There is
+no database reset, no bulk requeue of a conflict, no takeover triggered by a
+missed ping, and no late receipt accepted without a manager. The quarantined
+payload is the byte-for-byte one the till sent, kept permanently even after the
+`ingest_log` partition it was received in has been retired — which is why
+`till_recovery_items` keeps `source_ingest_date` / `source_ingest_id` as
+coordinates without a foreign key.
+
+**The typed register name is the confirmation, and it is the only thing between
+a mistyped click and someone else's open drawer.** `ForceTakeover` refuses with
+`register_confirmation_mismatch` before it touches anything. `operation_id` is
+generated per page render, so resubmitting the same rendered form is one
+takeover, not two.
+
+**One transaction closes the drawer, revokes the tablet and opens the case.**
+Close as `close_kind='forced'` with `forced_recovery_id`, clear the active
+cashier, drop `till_access`, null the device token, cancel live activation codes,
+write the `takeover` event. The cache is told afterwards through
+`CachedAuthenticator.InvalidateRevoked`, because the revocation was committed by
+another domain's transaction.
+
+**The closed session's `till_claims` row is deliberately KEPT.** `ingestSale`
+only enforces the session guards when the session is *claimed*; deleting the
+claim would let every late receipt through with no guard at all instead of
+holding it. Only `active_employee_id` is nulled — `till_one_active_cashier`
+forbids one cashier holding two claims, and that cashier has to be able to open
+the replacement drawer.
+
+**The manager's cash count sits BESIDE the snapshot, never instead of it.** The
+case stores `expected_cash_at_takeover` (opening cash plus the session's cash
+sales) and `order_count_at_takeover` as the server computed them, plus
+`counted_cash` if the manager entered one. A closed shift's own numbers stay
+immutable.
+
+**`recovery_id` is the only key that passes the `session_closed` refusal, and it
+passes nothing else.** `ingestSaleForRecovery` skips that one guard when the
+caller holds the matching case; tenant, device ownership, cashier assignment,
+amounts, idempotency and stock validation all still run on the same code path as
+a normal sale. A late receipt with no decision behind it is refused with
+`recovery_required` and its case id, so the till can explain itself.
+
+**An exact retry is one quarantined item.** The unique key is
+`(recovery_id, entity, entity_id, revision)`, while `ingest_log` stays an audit
+of every received attempt. Approval writes exactly one order, one set of stock
+effects and one dirty report slice; the till's own retry afterwards is a plain
+duplicate. Discarding writes no order and no stock movement at all.
+
+**A case cannot be closed while an item is pending**, so nothing is decided by
+omission, and closing twice does not restate the first close's basis. Re-opening
+an already-decided item is refused with `recovery_already_decided`.
+
+**`DiagnoseTill` is read-only and shared** by the Backoffice card and
+`justclick diagnostics till`. One caveat worth knowing before trusting it as
+coverage: `cashier_has_multiple_claims` cannot fire while
+`till_one_active_cashier` exists. It is defence in depth for the day that index
+is dropped, not a tested path.
+
+## Load testing and observability (Fase 9) — what must stay true
+
+`scripts/loadtest` is the harness, `internal/infra/metrics` is what it reads
+back, and `ops/` holds the Prometheus rules and the Grafana dashboard. See
+`docs/PHASE_9_VERIFICATION.md` for the measured numbers and the findings.
+
+**A load test that drops arrivals is telling you something; a load test that
+delays them is lying.** The driver is an open model: each arrival is due at its
+own time, and one that finds every worker busy is counted as dropped. A closed
+loop reports healthy latency for a server nobody could use, because the
+generator politely slows down with it. `fanout` is the one closed-loop
+scenario, and only because its question is "what did the database do" — every
+till must pull exactly once there.
+
+**The harness may take shortcuts in provisioning, never in the measured path.**
+Device rows are written directly with their token hashes, because activating
+15,000 tablets would measure the activation limiter. Every measured request
+carries a real bearer token through the real middleware, auth cache and
+per-device limiter. Activation itself is covered by `loadtest smoke` and
+`verify-activation`.
+
+**`startupSpread` is a port of the till's own function and must stay
+byte-identical.** The morning-rush scenario's claim — that the spread flattens
+the burst — is a claim about the distribution
+`mobile/lib/data/sync/sync_scheduler.dart` produces. Both sides pin the same
+vectors (`TestTheStartupSpreadMatchesTheFlutterTill` in Go, "startup spread
+matches the load harness on fixed vectors" in Dart); if one moves, the other
+fails, because a harness that spread devices some other way would prove nothing.
+
+**"No lock on the tenant row" cannot be checked by mode alone.** An INSERT into
+`orders` takes a RowShareLock on `tenants` while PostgreSQL checks the foreign
+key, and always will; a deliberate `SELECT … FOR UPDATE` takes the same mode.
+What separates them is the consequence, so the gate is **ungranted** locks
+(a transaction waiting for another) and anything RowExclusiveLock or stronger
+(something writing the table). The static half of the proof is the
+`no-tenant-lock` CI job over the source.
+
+**Metrics live on their own listener (`METRICS_ADDR`), never a route on the
+public server.** `/metrics` names every internal queue, and a route on :9000
+would be one Caddy rule away from being readable by anyone. Compose does not
+publish the port. Labels use chi's **routing pattern**, never the URL — a label
+a caller chooses grows a series per request until the process runs out of
+memory, and `page.Entity` rather than `?entity=` on the pull path is the same
+rule.
+
+**The fleet-wide gauges belong to the worker.** River queue depth, dead jobs,
+rollup staleness, devices seen and DEFAULT partition occupancy are
+cross-merchant reads; `internal/infra/jobs` is already on the `unscoped`
+allow-list and there is exactly one worker, so the gauges mean one thing.
+Publishing them from the API would add a package to that list, which is a
+security review.
+
+**A nil `*metrics.Metrics` instruments nothing and panics at nothing.** Every
+test, script and one-shot command builds the server's dependencies without a
+registry; making instrumentation optional is what keeps that true.
+
+**postgres_exporter connects as `justclick_metrics`** — `pg_monitor` and not one
+table grant (migration 019, guarded by
+`TestTheMetricsCredentialCanReadStatisticsAndNoMerchantData`). Its per-table
+collectors are switched off because they were measured at 78–100 ms per scrape
+on 86 relations, and this schema adds partitions every month.
+
+**An alert rule that cannot fire is worse than a missing one** — it looks like
+cover. `alerts.yml` therefore carries the two the plan asks for and nothing
+publishes yet (backup age, certificate expiry) as comments with the expression
+to use once pgBackRest and blackbox_exporter exist.
+
+**`synchronous_commit` is not configurable in Compose, on purpose.** Everything
+else in the PostgreSQL tuning block is an environment variable; this one is
+money, and a benchmark is exactly the situation where someone would loosen it.
+
+**Pool ceilings are sized against PostgreSQL's `max_connections`, not the
+container's CPU count.** pgx defaults to `max(4, NumCPU)`, which on a two-vCPU
+box is four connections for the whole API; the symptom is request latency with
+no slow query behind it, and `justclick_pgxpool_empty_acquires_total` is the
+only place it shows.
 
 ## Sales reports and exports (Fase 7) — what must stay true
 

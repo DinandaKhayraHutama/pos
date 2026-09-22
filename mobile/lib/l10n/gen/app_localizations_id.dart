@@ -9,6 +9,34 @@ class AppLocalizationsId extends AppLocalizations {
   AppLocalizationsId([String locale = 'id']) : super(locale);
 
   @override
+  String get remoteReceiptReadOnly =>
+      'Struk dari server — hanya dapat dibaca di perangkat ini.';
+
+  @override
+  String get tillOnlineRequired =>
+      'Hubungkan ke server untuk membuka atau memindahkan sesi. Coba lagi dengan kasir yang sama.';
+
+  @override
+  String get tillRegisterBusy =>
+      'Till ini masih memiliki sesi terbuka. Selesaikan dan sinkronkan dari perangkat asal terlebih dahulu.';
+
+  @override
+  String get tillCashierBusy =>
+      'Kasir ini masih bertugas di till lain. Akhiri atau serahkan penugasan tersebut terlebih dahulu.';
+
+  @override
+  String get tillSyncRequired =>
+      'Sinkronkan transaksi tertunda dan selesaikan data yang ditolak sebelum menyerahkan till.';
+
+  @override
+  String get tillLoginRequired =>
+      'Verifikasi PIN kembali saat online untuk melanjutkan.';
+
+  @override
+  String get tillSessionUnconfirmed =>
+      'Sesi belum disahkan untuk kasir dan perangkat ini. Buka sesi yang terkonfirmasi sebelum berjualan.';
+
+  @override
   String get connectedMasterDataNotice =>
       'Menu, modifier, promo, dan denah meja dikelola di Backoffice. Kasir ini menerima pembaruan otomatis.';
 
@@ -23,7 +51,7 @@ class AppLocalizationsId extends AppLocalizations {
   String get appTitle => 'JustClick POS';
 
   @override
-  String get appTagline => 'Kasir Restoran';
+  String get appTagline => 'Sistem Kasir & Manajemen Restoran';
 
   @override
   String get navPos => 'Transaksi';
@@ -1528,6 +1556,21 @@ class AppLocalizationsId extends AppLocalizations {
   String get sessionResume => 'Lanjutkan';
 
   @override
+  String get sessionNeedsRecovery => 'Tidak bisa dilanjutkan — perlu manager';
+
+  @override
+  String get sessionNeedsRecoveryHint =>
+      'Laci ini terbuka tetapi server tidak memegang klaimnya, sehingga tidak bisa dilanjutkan atau ditutup dari sini. Minta manager menutupnya dari Backoffice → Perangkat.';
+
+  @override
+  String get sessionReconciled =>
+      'Laci sudah sesuai dengan server dan dapat dilanjutkan.';
+
+  @override
+  String get sessionClosedForRecovery =>
+      'Laci lama sudah ditutup dari server. Periksa transaksi yang tertahan di Pusat pemulihan.';
+
+  @override
   String sessionInUse(String name) {
     return 'Dipakai $name';
   }
@@ -1724,4 +1767,245 @@ class AppLocalizationsId extends AppLocalizations {
 
   @override
   String get inventoryCountedQuantity => 'Jumlah dihitung';
+
+  @override
+  String get recoveryTitle => 'Pusat pemulihan';
+
+  @override
+  String get recoveryIntro =>
+      'Tidak ada bukti yang dihapus otomatis. Penjualan tetap diblokir pada laci yang memerlukan pemulihan.';
+
+  @override
+  String recoveryLocalStatus(String status) {
+    return 'Perangkat ini: $status';
+  }
+
+  @override
+  String get recoveryStatusHealthy => 'tidak ada yang tertahan';
+
+  @override
+  String get recoveryStatusPending => 'menunggu diunggah';
+
+  @override
+  String get recoveryStatusConflict => 'perlu investigasi';
+
+  @override
+  String get recoveryStatusRecoveryRequired => 'menunggu manager';
+
+  @override
+  String recoverySectionHeading(String label, int count) {
+    return '$label ($count)';
+  }
+
+  @override
+  String get recoverySectionQueued => 'Aman dicoba ulang oleh scheduler';
+
+  @override
+  String get recoverySectionQueuedEmpty => 'Antrean unggahan kosong.';
+
+  @override
+  String get recoverySectionManager => 'Menunggu manager';
+
+  @override
+  String get recoverySectionManagerEmpty => 'Tidak ada yang menunggu manager.';
+
+  @override
+  String get recoverySectionInvestigate =>
+      'Ditolak, dan tidak bisa dikirim dari sini';
+
+  @override
+  String get recoverySectionInvestigateEmpty =>
+      'Tidak ada payload yang perlu diinvestigasi.';
+
+  @override
+  String get recoverySectionDiagnostics => 'Temuan diagnostik';
+
+  @override
+  String recoveryQueuedDetail(String revision, int attempts) {
+    return 'revisi $revision · $attempts percobaan';
+  }
+
+  @override
+  String recoveryLetterDetail(String code, int revision) {
+    return '$code · revisi $revision';
+  }
+
+  @override
+  String get recoveryNoServerMessage => 'Server tidak mengirim pesan.';
+
+  @override
+  String recoveryCaseLine(String id) {
+    return 'Kasus $id';
+  }
+
+  @override
+  String recoveryCaseLineWithStatus(String id, String status) {
+    return 'Kasus $id · $status';
+  }
+
+  @override
+  String get recoveryRetry => 'Kirim ulang';
+
+  @override
+  String get recoveryRequeued => 'Dikembalikan ke antrean unggahan.';
+
+  @override
+  String get recoveryNotRetryable =>
+      'Belum bisa dikirim: baris lokalnya sudah tidak ada, atau manager belum menyetujuinya.';
+
+  @override
+  String get recoveryActionWaitForScheduler =>
+      'Serahkan ke scheduler, atau ketuk Sinkron sekarang.';
+
+  @override
+  String get recoveryActionWaitForManager =>
+      'Tunggu keputusan manager di Backoffice sebelum mengirim ini lagi.';
+
+  @override
+  String get recoveryActionIncompatible =>
+      'Server tidak dapat menerima payload ini. Simpan dan investigasi.';
+
+  @override
+  String get recoveryActionKeepSnapshot =>
+      'Pertahankan snapshot antrean dan periksa secara manual.';
+
+  @override
+  String get recoveryActionCheckTillMigration =>
+      'Pertahankan state dan periksa migrasi sesi lokal.';
+
+  @override
+  String get recoveryActionBlockedUntilDecided =>
+      'Penjualan tetap diblokir sampai pemulihan ini diputuskan di Backoffice.';
+
+  @override
+  String get recoveryActionMatchMovement =>
+      'Jangan hapus movement; cocokkan dengan payload struknya.';
+
+  @override
+  String get recoveryActionFinishDependencies =>
+      'Selesaikan penjualan dan penolakan yang tertahan sebelum penutupan dikirim.';
+
+  @override
+  String get recoveryActionReconcileBySigningIn =>
+      'Laci ini dibuat sebelum till terkoordinasi. Masuk dengan PIN saat online, server akan merekonsiliasinya.';
+
+  @override
+  String get historyPeriodToday => 'Hari ini';
+
+  @override
+  String get historyPeriodYesterday => 'Kemarin';
+
+  @override
+  String get historyPeriodLast7 => '7 hari';
+
+  @override
+  String get historyPeriodMonth => 'Bulan ini';
+
+  @override
+  String get historyPeriodCustom => 'Rentang khusus';
+
+  @override
+  String get historyReceiptSearch => 'Nomor struk';
+
+  @override
+  String get historyScopeRegister => 'Kasir ini';
+
+  @override
+  String get historyScopeOutlet => 'Seluruh outlet';
+
+  @override
+  String get historyScopeNarrowed =>
+      'Server hanya mengembalikan kasir ini; akun Anda tidak bisa membaca seluruh outlet.';
+
+  @override
+  String get historyLoadMore => 'Muat lagi';
+
+  @override
+  String get historyEndOfList => 'Akhir daftar untuk filter ini.';
+
+  @override
+  String historyOffline(String when) {
+    return 'Offline — menampilkan data yang diunduh $when.';
+  }
+
+  @override
+  String get historyOfflineMissing =>
+      'Belum pernah diunduh. Sambungkan ke server untuk memuat periode ini.';
+
+  @override
+  String get historyLocalOnly => 'Hanya transaksi perangkat ini.';
+
+  @override
+  String get historyRangeIncomplete =>
+      'Baru sebagian periode ini yang terunduh. Segarkan saat online untuk melengkapinya.';
+
+  @override
+  String get historyFilterApply => 'Terapkan';
+
+  @override
+  String get historyFilterReset => 'Atur ulang';
+
+  @override
+  String get historyFrom => 'Dari';
+
+  @override
+  String get historyTo => 'Sampai';
+
+  @override
+  String reportPeriodCompare(int days) {
+    return 'vs $days hari sebelumnya';
+  }
+
+  @override
+  String get reportNoComparison => 'tidak ada pembanding';
+
+  @override
+  String get reportSalesReturns => 'Retur penjualan';
+
+  @override
+  String get reportTotalReceipts => 'Total penerimaan penjualan';
+
+  @override
+  String get reportGrossMargin => 'Margin kotor';
+
+  @override
+  String get reportWaterfall => 'Waterfall penjualan';
+
+  @override
+  String reportSourceServer(String when) {
+    return 'Total outlet dari server, dihitung $when.';
+  }
+
+  @override
+  String reportSourceCache(String when) {
+    return 'Offline — total server diunduh $when.';
+  }
+
+  @override
+  String get reportSourceUnavailable =>
+      'Total outlet belum tersedia offline. Sambungkan sekali untuk mengunduhnya.';
+
+  @override
+  String get reportSourceLocal => 'Transaksi perangkat ini saja.';
+
+  @override
+  String reportUnsyncedNotice(int count) {
+    return '$count transaksi di perangkat ini belum sampai ke server dan belum termasuk dalam angka di atas.';
+  }
+
+  @override
+  String get reportIncomplete =>
+      'Sebagian hari pada periode ini masih dihitung ulang; waterfall belum final.';
+
+  @override
+  String get reportByWeekday => 'Hari dalam minggu';
+
+  @override
+  String get reportTopItemsInCategory => 'Item teratas per kategori';
+
+  @override
+  String get reportOutletComparison => 'Perbandingan outlet';
+
+  @override
+  String get reportNotPermitted => 'Akun Anda tidak bisa membuka laporan ini.';
 }

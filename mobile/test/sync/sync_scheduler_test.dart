@@ -96,6 +96,24 @@ void main() {
     },
   );
 
+  // Shared with backend-go/scripts/loadtest (TestTheStartupSpreadMatchesTheFlutterTill).
+  //
+  // The Fase 9 morning-rush scenario claims the spread flattens fifteen
+  // thousand tills to under 50 requests a second. That is a claim about the
+  // distribution THIS function produces, so the harness ports it byte for
+  // byte; these vectors are what keeps the two implementations honest. If this
+  // test has to change, the Go one changes in the same commit — otherwise the
+  // load test is measuring a fleet that does not exist.
+  test('startup spread matches the load harness on fixed vectors', () {
+    expect(startupSpreadFor('device-7'), const Duration(seconds: 261));
+    expect(
+      startupSpreadFor('0f2b6c1e-0000-4000-8000-000000000001'),
+      const Duration(seconds: 289),
+    );
+    expect(startupSpreadFor('till-jakarta-01'), const Duration(seconds: 44));
+    expect(startupSpreadFor(''), const Duration(seconds: 162));
+  });
+
   test('polls at the server-controlled interval with ±20% jitter', () {
     final s = scheduler();
     const outcome = SyncOutcome(nextPoll: Duration(seconds: 90));

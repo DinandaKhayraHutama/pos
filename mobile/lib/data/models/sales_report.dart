@@ -20,6 +20,9 @@ class SalesReport {
     required this.revenue,
     required this.subtotal,
     required this.discount,
+    required this.grossSales,
+    required this.allDiscount,
+    required this.salesReturns,
     required this.tax,
     required this.serviceCharge,
     required this.orderCount,
@@ -40,9 +43,24 @@ class SalesReport {
   final DateTime from;
   final DateTime to;
 
+  /// Money collected on the sales that counted: net sales plus PB1 plus
+  /// service charge. The field name is the old one and its meaning has not
+  /// changed; what changed is that it is no longer the basis of profit.
   final int revenue;
   final int subtotal;
   final int discount;
+
+  /// The waterfall, read top to bottom.
+  ///
+  /// [grossSales] keeps a transaction that was later refunded IN, and
+  /// [salesReturns] takes it out again, so a refund is visible as a return
+  /// rather than the day quietly shrinking. Identically:
+  /// grossSales − allDiscount − salesReturns == subtotal − discount over the
+  /// transactions revenue already counts. The same definitions the server
+  /// uses, so a demo and a connected till compute the same figures.
+  final int grossSales;
+  final int allDiscount;
+  final int salesReturns;
 
   /// PB1 amount — field name unchanged, meaning narrowed to PB1 only now
   /// that Service Charge is tracked separately.
@@ -73,13 +91,27 @@ class SalesReport {
   /// the profit so the number is read with the right amount of trust.
   final double costCoverage;
 
-  /// Revenue minus cost of goods. Note this is gross profit: rent, wages and
-  /// utilities are not in this app, so it must never be presented as net.
-  int get grossProfit => revenue - costOfGoods;
+  /// Net sales, the figure the waterfall produces.
+  int get netSales => subtotal - discount;
 
-  /// Gross margin as a percentage of revenue.
-  double get grossMarginPercent =>
-      revenue == 0 ? 0 : (grossProfit * 100) / revenue;
+  /// NET SALES minus cost of goods — not revenue minus cost of goods.
+  ///
+  /// PB1 and service charge are collected on somebody else's behalf. Counting
+  /// them into the basis of profit inflated every margin in the app by
+  /// whatever the tariff happened to be, which is the correction F1 exists
+  /// for. Still GROSS profit: rent, wages and utilities are not in this app,
+  /// so it must never be presented as net.
+  int get grossProfit => netSales - costOfGoods;
+
+  /// Gross margin as a percentage of net sales, and whether it means
+  /// anything. A margin over no sales is undefined rather than zero, and
+  /// rendering it as 0% invites reading an empty period as a bad one.
+  (double, bool) get grossMargin =>
+      netSales == 0 ? (0, false) : ((grossProfit * 100) / netSales, true);
+
+  /// Gross margin as a percentage of net sales, zero when undefined. Prefer
+  /// [grossMargin], which says which of the two it is.
+  double get grossMarginPercent => grossMargin.$1;
 
   /// Whether the profit figure rests on enough data to be worth showing
   /// without a caveat. Two thirds is a judgement call, not a standard.
@@ -107,7 +139,10 @@ class SalesReport {
   /// Revenue per local calendar day. Sparse: days with no sales are absent.
   final Map<DateTime, int> perDay;
 
-  int get averageOrder => orderCount == 0 ? 0 : revenue ~/ orderCount;
+  /// Average SALE per transaction — net sales over the transactions that
+  /// counted, not takings over them. Two outlets on different tariffs are
+  /// otherwise not comparable.
+  int get averageOrder => orderCount == 0 ? 0 : netSales ~/ orderCount;
 
   bool get isEmpty => orderCount == 0;
 }

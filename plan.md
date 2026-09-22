@@ -13,6 +13,23 @@
 > dan email SMTP belum diuji live (registry image tidak terjangkau). Lihat
 > [PHASE_7_VERIFICATION.md](backend-go/docs/PHASE_7_VERIFICATION.md).
 >
+> Fase 9 (uji beban & pengerasan) selesai: harness Go `scripts/loadtest` dengan
+> kelima skenario rencana, metrik Prometheus di listener terpisah, profil
+> observability (Prometheus + Grafana + exporter) dengan 14 aturan alert, ukuran
+> pool eksplisit, tuning PostgreSQL dan kredensial `pg_monitor` untuk exporter.
+> Terukur di satu laptop: `/sync/changes` 2.000 rps dengan p50 2,6–5,1 ms (p99
+> berayun 5,9–30 ms karena stall host); 200 order/s p99 266 ms tanpa satu pun
+> transaksi menunggu di baris tenant dan tanpa kehilangan baris; serbuan 15.000
+> till diratakan 3,9× oleh sebar-startup (288 → 73 rps puncak); satu produk
+> diubah = tepat 15.000 index-only scan, nol blok dibaca dari disk; 2 juta order
+> → laporan sebulan p95 100,9 ms tanpa menyentuh tabel mentah; dengan Redis mati
+> satu instance menahan ±500 rps. **Belum**: run di VPS pilot dengan generator
+> terpisah (itu yang menentukan kapasitas), seed 30 juta order (butuh ±36 GB),
+> Alertmanager, alert backup/sertifikat. Tiga temuan dicatat: kontensi baris
+> `report_dirty_slices` per outlet, TTL cache auth sama panjang dengan jendela
+> sebar-startup, dan biaya collector per-tabel postgres_exporter. Lihat
+> [PHASE_9_VERIFICATION.md](backend-go/docs/PHASE_9_VERIFICATION.md).
+>
 > Fase 8 (admin platform) selesai: panel `/platform` dengan login password +
 > TOTP, onboarding perusahaan + Owner (tautan setel kata sandi sekali pakai),
 > suspend/reaktivasi yang langsung menghentikan till, batas outlet/till/perangkat
@@ -38,10 +55,13 @@ diselamatkan.
 Alasan rewrite bukan "PHP lambat". Alasannya adalah **empat cacat skala yang sudah diverifikasi
 langsung di kode**, yang akan menabrak tembok jauh sebelum pilihan bahasa jadi relevan:
 
+> Pohon Laravel sudah dihapus dari repositori. Kutipan berkas di bawah adalah
+> catatan tempat bukti itu ditemukan ketika keputusan diambil, bukan tautan.
+
 | # | Cacat | Bukti |
 |---|---|---|
-| 1 | Setiap order yang di-push mengunci **baris tenant** (`SELECT … FOR UPDATE`). Satu perusahaan = satu tenant, jadi seluruh transaksi dari 5.000 outlet berebut satu baris yang sama. | [OrderIngest.php:76-79](backend/app/Domain/Sync/OrderIngest.php#L76-L79) |
-| 2 | `tenant_sync_counters` hanya **satu baris per tenant**, dialokasikan di dalam transaksi penulis. Desainnya benar (mencegah lost-update terdokumentasi), tapi menserialkan seluruh penulisan katalog+staf se-perusahaan. | [SyncCursor.php:49-56](backend/app/Domain/Sync/SyncCursor.php#L49-L56) |
+| 1 | Setiap order yang di-push mengunci **baris tenant** (`SELECT … FOR UPDATE`). Satu perusahaan = satu tenant, jadi seluruh transaksi dari 5.000 outlet berebut satu baris yang sama. | `OrderIngest.php:76-79` |
+| 2 | `tenant_sync_counters` hanya **satu baris per tenant**, dialokasikan di dalam transaksi penulis. Desainnya benar (mencegah lost-update terdokumentasi), tapi menserialkan seluruh penulisan katalog+staf se-perusahaan. | `SyncCursor.php:49-56` |
 | 3 | Balasan 2xx yang **bukan objek JSON** dan **HTTP 422** sama-sama dipetakan ke `SyncFailure.malformed`, dan `malformed` **menghapus permanen** antrean penjualan di perangkat. | [sync_client.dart:82-96](mobile/lib/data/sync/sync_client.dart#L82-L96) → [order_push.dart:64-65](mobile/lib/data/sync/order_push.dart#L64-L65) |
 | 4 | Stok 100% lokal di perangkat (`outlet_stock`, `stock_movements` tidak punya padanan server). Dua kasir di satu outlet menyimpang permanen; pusat tidak bisa melihat stok sama sekali. | Tidak ada migration/endpoint stok di `backend/` |
 
@@ -141,7 +161,7 @@ bukan lock tenant.
 
 ### Pecah counter sync, pertahankan buktinya
 Desain lock-held-to-commit di `SyncCursor` **benar dan harus bertahan** — itu satu-satunya penghalang
-lost-update yang didokumentasikan di [SyncCursor.php:13-35](backend/app/Domain/Sync/SyncCursor.php#L13-L35).
+lost-update yang didokumentasikan di `SyncCursor.php:13-35`.
 Jangan ganti dengan `SEQUENCE` biasa (`nextval` tidak menahan lock sampai commit).
 
 Pecah sepanjang sumbu yang sudah dipakai perangkat (cursor-nya sudah per-entity):
@@ -353,7 +373,7 @@ Tiap run = satu `INSERT … SELECT … ON CONFLICT DO UPDATE` atas satu irisan p
 recompute 3 hari terakhir tiap malam (menangkap push offline yang telat dan enqueue yang terlewat) dan
 pemeriksaan konsistensi tersampel mingguan yang membandingkan rollup dengan order mentah lalu alert bila
 tidak cocok. Pembagian kategori memport largest-remainder dari
-[CategorySalesAggregator.php](backend/app/Domain/Reporting/CategorySalesAggregator.php) — **port unit
+`CategorySalesAggregator.php` — **port unit
 test-nya lebih dulu**, termasuk dua bug Dart yang ia jaga. Laporan hanya membaca rollup dan menampilkan
 "per <timestamp>"; jalur tabel mentah hanya ada di balik tombol "hitung ulang". Ekspor: baris
 `report_exports` + River job; CSV via `encoding/csv`, XLSX via `excelize`, PDF dengan merender templ
@@ -517,18 +537,36 @@ replika. Rencanakan ±300–600 GB/tahun data order, arsipkan partisi yang di-de
 
 ---
 
+## Cara Verifikasi Keseluruhan
+
+Tiap fase punya kriteria selesai + verifikasi sendiri di atas. Tiga pemeriksaan yang berlaku menyeluruh:
+
+1. **Uang tidak pernah ganda atau hilang.** Untuk setiap endpoint tulis: kirim payload identik tiga kali
+   → database identik dengan sekali kirim. Untuk klien: mock server membalas `[]`, `"ok"`, 422, 500 →
+   baris outbox tetap utuh di keempatnya.
+2. **Tidak ada kontensi global.** Selama uji beban order, `SELECT * FROM pg_locks WHERE relation = 'tenants'::regclass`
+   harus selalu kosong.
+3. **Isolasi tenant utuh.** Setiap entity baru menambah kasus di suite isolasi sebelum dianggap selesai —
+   aturan yang sama dengan `tests/Feature/TenantIsolationTest.php` hari ini.
 ## File Rujukan Utama
 
-Dibaca sebagai sumber invariant, **bukan untuk diterjemahkan baris per baris**:
+Pohon Laravel **sudah dihapus** dari repositori. Bagian ini disimpan sebagai
+catatan dari mana tiap invariant berasal, dan ke mana ia pindah — bukan lagi
+daftar berkas untuk dibaca.
 
-- [backend/app/Domain/Sync/SyncCursor.php](backend/app/Domain/Sync/SyncCursor.php) — bukti lost-update yang harus bertahan setelah counter di-shard
-- [backend/app/Domain/Sync/OrderIngest.php](backend/app/Domain/Sync/OrderIngest.php) — tiga jaminan uang yang diubah jadi predikat SQL; **dan lock tenant di baris 76-79 yang harus hilang**
-- [backend/app/Domain/Sync/SyncRegistry.php](backend/app/Domain/Sync/SyncRegistry.php) — allow-list kolom + urutan aman-FK untuk manifest v2
-- [backend/app/Domain/Reporting/CategorySalesAggregator.php](backend/app/Domain/Reporting/CategorySalesAggregator.php) — largest-remainder; port test-nya lebih dulu
-- [backend/app/Domain/Reporting/SalesReporter.php](backend/app/Domain/Reporting/SalesReporter.php) — aturan "jangan pernah join `order_items` dalam total"
+| Invariant asal (Laravel, sudah dihapus) | Sekarang hidup di |
+|---|---|
+| `SyncCursor.php` — bukti lost-update yang harus bertahan setelah counter di-shard | `backend-go/internal/domain/syncfeed/counters.go`, dijaga `TestTheCounterLockIsHeldUntilTheWriterCommits` |
+| `OrderIngest.php` — tiga jaminan uang, **dan lock baris tenant yang menyebabkan rewrite ini** | `backend-go/internal/domain/ingest/orders.go`; ketiadaan lock dijaga job CI `no-tenant-lock` dan sampel `pg_locks` di `scripts/loadtest` |
+| `SyncRegistry.php` — allow-list kolom + urutan aman-FK | `backend-go/internal/domain/syncfeed/registry.go` |
+| `CategorySalesAggregator.php` — largest-remainder | `backend-go/internal/domain/reporting/allocate.go`, test-nya diport lebih dulu |
+| `SalesReporter.php` — "jangan pernah join `order_items` dalam total" | `backend-go/internal/domain/reporting/report.go` |
+| `backend/CLAUDE.md` — catatan invariant | `backend-go/CLAUDE.md`, penerusnya |
+
+Dua berkas till yang melahirkan cacat #3 masih ada dan masih relevan:
+
 - [mobile/lib/data/sync/sync_client.dart](mobile/lib/data/sync/sync_client.dart) — tempat `malformed` lahir
-- [mobile/lib/data/sync/order_push.dart](mobile/lib/data/sync/order_push.dart) — tempat `malformed` menghapus penjualan
-- [backend/CLAUDE.md](backend/CLAUDE.md) — catatan invariant; dokumen Go nanti adalah penerusnya
+- [mobile/lib/data/sync/order_push.dart](mobile/lib/data/sync/order_push.dart) — tempat `malformed` dulu menghapus penjualan
 
 ## Cara Verifikasi Keseluruhan
 

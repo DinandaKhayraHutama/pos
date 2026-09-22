@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: JustClick Device API
-  version: 2.3.0
+  version: 2.5.0
   description: |
     Frozen baseline for Flutter v2, extended additively in 2.1.0 with the stock
     ledger (Fase 5): the outlet-scoped feeds outlet_stock and stock_movements,
@@ -14,6 +14,20 @@ info:
     and does not consume the code; the same code works once a device is revoked.
     A suspended business answers 401 unauthenticated on every authenticated
     route, exactly as a revoked device does.
+    2.5.0 extends transaction visibility and reporting (Fase 1 paritas),
+    additively: GET /till/orders keeps day and before and gains from, to,
+    status, receipt_number, cashier_id and scope, and echoes the scope and
+    range it actually applied; day combined with from/to is refused as
+    ambiguous_range rather than resolved. Two read-only report endpoints are
+    added, GET /till/reports/summary for viewDailySummary and
+    GET /till/reports/sales for viewFinancialReports; both take the cashier
+    token, both answer Cache-Control no-store, and cost and profit are absent
+    from the summary body rather than zeroed. A report body carries the period,
+    scope, timezone, calculation version, computation time and how many
+    day-outlet slices are still being recomputed, so a cached copy can say what
+    it is. Net sales are gross sales minus discounts minus sales returns; tax
+    and service charge raise revenue and never profit. The master-data feed
+    schema is unchanged and remains version 1.
     Outlet-scoped feeds page and count per bound outlet only.
     All successful responses are JSON objects.
     Timestamps are epoch milliseconds, money is integer rupiah. Identity comes
@@ -60,6 +74,177 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/MeResponse'}
         default: {$ref: '#/components/responses/Error'}
+  /till/login:
+    post:
+      operationId: tillLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TillLoginRequest'}
+      responses:
+        '200':
+          description: Short-lived cashier credential. Cache-Control no-store.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TillLoginResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /till/sessions/open:
+    post:
+      operationId: openTillSession
+      parameters: [{$ref: '#/components/parameters/CashierToken'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Session'}
+      responses:
+        '200':
+          description: Claimed session and receipt range. Cache-Control no-store.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TillSessionResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /till/sessions/handover:
+    post:
+      operationId: handoverTillSession
+      parameters: [{$ref: '#/components/parameters/CashierToken'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TillHandoverRequest'}
+      responses:
+        '200':
+          description: Session with the new active cashier. Cache-Control no-store.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TillSessionResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /till/sessions/current:
+    get:
+      operationId: currentTillSession
+      parameters:
+        - {$ref: '#/components/parameters/CashierToken'}
+        - {name: local_session_id, in: query, schema: {$ref: '#/components/schemas/UUID'}, description: Locally active session used only to discover a matching forced recovery.}
+      responses:
+        '200':
+          description: Current claim, or data null when this cashier has none. Cache-Control no-store.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TillCurrentResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /till/orders:
+    get:
+      operationId: tillOrderHistory
+      parameters:
+        - {$ref: '#/components/parameters/CashierToken'}
+        - {name: day, in: query, schema: {type: string, pattern: '^\d{4}-\d{2}-\d{2}$'}, description: One business date. Omitting every date filter means the current business date on the merchant's clock. Combining day with from or to is refused as ambiguous_range.}
+        - {name: from, in: query, schema: {type: string, pattern: '^\d{4}-\d{2}-\d{2}$'}, description: First business date of a range; at most 366 days with to.}
+        - {name: to, in: query, schema: {type: string, pattern: '^\d{4}-\d{2}-\d{2}$'}, description: Last business date of a range.}
+        - {name: scope, in: query, schema: {type: string, enum: [register, outlet]}, description: Defaults to register. outlet needs viewAllOrders and is refused with forbidden_scope otherwise.}
+        - {name: status, in: query, schema: {type: string, enum: [sales, pending, preparing, ready, served, paid, cancelled, refunded]}, description: sales is every receipt that was not cancelled or refunded.}
+        - {name: receipt_number, in: query, schema: {type: string, maxLength: 64}, description: Case-insensitive prefix of the printed receipt number.}
+        - {name: cashier_id, in: query, schema: {$ref: '#/components/schemas/UUID'}, description: A cashier may only name themselves; anything else needs viewAllOrders and is refused with forbidden_cashier.}
+        - {name: before, in: query, schema: {type: string, minLength: 1, maxLength: 256}, description: Opaque cursor returned by the previous page. Bound to the filter it was issued for; a cursor from an older contract is refused with invalid_cursor.}
+      responses:
+        '200':
+          description: >-
+            Receipt history for the scope the SERVER resolved, newest first, at most 100 rows.
+            The body echoes scope, from and to, because a cashier who asked for a wider scope
+            is given their own and has to be able to say so. Cache-Control no-store.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TillHistoryResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /till/reports/summary:
+    get:
+      operationId: tillReportSummary
+      description: >-
+        The sales summary a manager already sees on the till, for any period.
+        Needs viewDailySummary. Cost of goods, gross profit, margin and the
+        per-cashier, per-category and per-product breakdowns are ABSENT from
+        this body — not zeroed — because a manager may run the floor without
+        seeing what the merchant pays for stock.
+      parameters:
+        - {$ref: '#/components/parameters/CashierToken'}
+        - {$ref: '#/components/parameters/ReportPeriod'}
+        - {$ref: '#/components/parameters/ReportFrom'}
+        - {$ref: '#/components/parameters/ReportTo'}
+        - {$ref: '#/components/parameters/ReportOutlet'}
+      responses:
+        '200':
+          description: Sales summary for the resolved period and scope. Cache-Control no-store.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TillReportResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /till/reports/sales:
+    get:
+      operationId: tillReportSales
+      description: >-
+        The full financial report, including cost of goods, gross profit,
+        margin and every breakdown. Needs viewFinancialReports.
+      parameters:
+        - {$ref: '#/components/parameters/CashierToken'}
+        - {$ref: '#/components/parameters/ReportPeriod'}
+        - {$ref: '#/components/parameters/ReportFrom'}
+        - {$ref: '#/components/parameters/ReportTo'}
+        - {$ref: '#/components/parameters/ReportOutlet'}
+      responses:
+        '200':
+          description: Full sales report for the resolved period and scope. Cache-Control no-store.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TillReportResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /till/recoveries/{recovery_id}:
+    get:
+      operationId: getTillRecovery
+      parameters:
+        - {$ref: '#/components/parameters/CashierToken'}
+        - {name: recovery_id, in: path, required: true, schema: {$ref: '#/components/schemas/UUID'}}
+      responses:
+        '200':
+          description: Recovery status for this device and its force-closed session. Cache-Control no-store.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TillRecoveryResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
   /sync/manifest:
     get:
       operationId: getManifest
@@ -160,12 +345,44 @@ components:
   securitySchemes:
     deviceToken: {type: http, scheme: bearer}
   parameters:
+    CashierToken:
+      name: X-Cashier-Token
+      in: header
+      required: true
+      schema: {type: string, minLength: 32, maxLength: 256}
+      description: Short-lived cashier credential returned by POST /till/login.
     SchemaVersion:
       name: X-Schema-Version
       in: header
       required: true
       schema: {type: integer, minimum: 1}
       description: Missing/obsolete returns 409 device_schema_outdated; invalid returns 400.
+    ReportPeriod:
+      name: period
+      in: query
+      schema: {type: string, enum: [today, yesterday, last7, month, custom]}
+      description: >-
+        Resolved on the merchant's clock. Omitted with from and to present
+        means custom; omitted entirely means today. An unknown value falls back
+        to today rather than failing, because a dashboard is a glance.
+    ReportFrom:
+      name: from
+      in: query
+      schema: {type: string, pattern: '^\d{4}-\d{2}-\d{2}$'}
+      description: First business date; used only with period=custom. At most 366 days with to.
+    ReportTo:
+      name: to
+      in: query
+      schema: {type: string, pattern: '^\d{4}-\d{2}-\d{2}$'}
+      description: Last business date; used only with period=custom.
+    ReportOutlet:
+      name: outlet_id
+      in: query
+      schema: {type: string, maxLength: 64}
+      description: >-
+        The device's own outlet when omitted. Another outlet, or the literal
+        "all" for every outlet, needs manageOutlets; otherwise the request is
+        refused rather than narrowed, so a total is never quietly one branch.
   responses:
     Error:
       description: Request failed; retain all queued rows. 429/503 include Retry-After seconds.
@@ -307,6 +524,184 @@ components:
         service: {type: string}
         database: {type: string}
         cache: {type: string}
+    TillLoginRequest:
+      type: object
+      additionalProperties: false
+      required: [employee_id, pin]
+      properties:
+        employee_id: {$ref: '#/components/schemas/UUID'}
+        pin: {type: string, pattern: '^\d{4}$'}
+    TillLoginData:
+      type: object
+      required: [token, expires_at_ms]
+      properties:
+        token: {type: string}
+        expires_at_ms: {$ref: '#/components/schemas/Millis'}
+    TillLoginResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/TillLoginData'}
+    TillHandoverRequest:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+    TillSessionData:
+      type: object
+      required: [session, receipt_start, receipt_end]
+      properties:
+        session: {$ref: '#/components/schemas/Session'}
+        receipt_start: {type: integer, format: int64, minimum: 1}
+        receipt_end: {type: integer, format: int64, minimum: 1}
+        current_employee_id: {allOf: [{$ref: '#/components/schemas/UUID'}], nullable: true}
+    TillSessionResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/TillSessionData'}
+    TillCurrentResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {allOf: [{$ref: '#/components/schemas/TillSessionData'}], nullable: true}
+        recovery: {allOf: [{$ref: '#/components/schemas/TillRecoveryPointer'}], nullable: true}
+    TillRecoveryPointer:
+      type: object
+      required: [id, session_id, forced_at_ms]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        session_id: {$ref: '#/components/schemas/UUID'}
+        forced_at_ms: {$ref: '#/components/schemas/Millis'}
+    TillHistoryPage:
+      type: object
+      required: [rows, next, server_time_ms, scope, from, to]
+      properties:
+        rows: {type: array, items: {type: object, additionalProperties: true}}
+        next: {type: string, maxLength: 256}
+        server_time_ms: {$ref: '#/components/schemas/Millis'}
+        scope: {type: string, enum: [register, outlet], description: 'What the server applied, which may be narrower than what was asked for.'}
+        from: {type: string, pattern: '^\d{4}-\d{2}-\d{2}$'}
+        to: {type: string, pattern: '^\d{4}-\d{2}-\d{2}$'}
+    TillHistoryResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/TillHistoryPage'}
+    TillReportPeriod:
+      type: object
+      required: [from, to, days]
+      properties:
+        from: {type: string, pattern: '^\d{4}-\d{2}-\d{2}$'}
+        to: {type: string, pattern: '^\d{4}-\d{2}-\d{2}$'}
+        days: {type: integer, minimum: 1}
+    TillReportScope:
+      type: object
+      required: [outlet_id, outlet_name, all_outlets]
+      properties:
+        outlet_id: {type: string}
+        outlet_name: {type: string}
+        all_outlets: {type: boolean}
+    TillReportSales:
+      type: object
+      description: >-
+        The waterfall, read top to bottom. net_sales = gross_sales - discounts
+        - sales_returns; revenue = net_sales + tax + service_charge. gross_sales
+        includes a receipt that was later refunded, and sales_returns takes it
+        out again, so a refund is visible rather than the day silently
+        shrinking. refunded_amount is the money handed back, which includes tax
+        and is therefore not the same number as sales_returns. cancelled_amount
+        is shown separately and is never subtracted from the waterfall.
+      required: [gross_sales, discounts, sales_returns, net_sales, tax, service_charge, revenue, order_count, average_sale, items_sold]
+      properties:
+        gross_sales: {$ref: '#/components/schemas/Money'}
+        discounts: {$ref: '#/components/schemas/Money'}
+        sales_returns: {$ref: '#/components/schemas/Money'}
+        net_sales: {$ref: '#/components/schemas/Money'}
+        tax: {$ref: '#/components/schemas/Money'}
+        service_charge: {$ref: '#/components/schemas/Money'}
+        revenue: {$ref: '#/components/schemas/Money'}
+        order_count: {type: integer, format: int64}
+        average_sale: {$ref: '#/components/schemas/Money'}
+        items_sold: {type: integer, format: int64}
+        discounted: {type: integer, format: int64}
+        cancelled_count: {type: integer, format: int64}
+        cancelled_amount: {$ref: '#/components/schemas/Money'}
+        refunded_count: {type: integer, format: int64}
+        refunded_amount: {$ref: '#/components/schemas/Money'}
+    TillReportProfit:
+      type: object
+      description: Present only on /till/reports/sales. margin is null when there are no net sales to divide by.
+      required: [cost_of_goods, gross_profit, cost_coverage]
+      properties:
+        cost_of_goods: {$ref: '#/components/schemas/Money'}
+        gross_profit: {type: integer, format: int64}
+        cost_coverage: {type: number, format: double, minimum: 0, maximum: 1}
+        margin: {type: number, format: double, nullable: true}
+    TillReport:
+      type: object
+      required: [period, scope, timezone, calculation_version, pending_slices, incomplete, server_time_ms, sales]
+      properties:
+        period: {$ref: '#/components/schemas/TillReportPeriod'}
+        scope: {$ref: '#/components/schemas/TillReportScope'}
+        timezone: {type: string}
+        calculation_version: {type: integer, description: Which rules produced these figures. 2 is the Fase 1 waterfall.}
+        computed_at_ms: {type: integer, format: int64, nullable: true, description: Null when the range holds no computed rollup at all.}
+        pending_slices: {type: integer, format: int64, description: Day-outlet slices in range with changes not yet rolled up.}
+        incomplete: {type: boolean, description: True while some day in range is still computed under the old rules; the waterfall columns are not final.}
+        anomaly_count: {type: integer, format: int64, description: 'Receipts whose own arithmetic does not close. Reported, never repaired.'}
+        server_time_ms: {$ref: '#/components/schemas/Millis'}
+        sales: {$ref: '#/components/schemas/TillReportSales'}
+        profit: {$ref: '#/components/schemas/TillReportProfit'}
+        by_hour: {type: array, items: {type: object, additionalProperties: true}}
+        by_weekday: {type: array, items: {type: object, additionalProperties: true}, description: 'Derived from the business date, so a sale after midnight belongs to its trading day. weekday is 0 for Sunday.'}
+        by_day: {type: array, items: {type: object, additionalProperties: true}}
+        by_outlet: {type: array, items: {type: object, additionalProperties: true}}
+        by_payment: {type: array, items: {type: object, additionalProperties: true}}
+        by_cashier: {type: array, items: {type: object, additionalProperties: true}}
+        by_category: {type: array, items: {type: object, additionalProperties: true}}
+        by_product: {type: array, items: {type: object, additionalProperties: true}}
+        by_product_in_category: {type: array, items: {type: object, additionalProperties: true}}
+        adjustments: {type: array, items: {type: object, additionalProperties: true}}
+    TillReportResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/TillReport'}
+    TillRecoveryItem:
+      type: object
+      required: [id, entity, entity_id, revision, status, created_at_ms]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        entity: {type: string}
+        entity_id: {$ref: '#/components/schemas/UUID'}
+        revision: {type: integer, format: int64, minimum: 1}
+        status:
+          type: string
+          enum: [pending, accepted, discarded]
+          x-enum-varnames: [RecoveryItemPending, RecoveryItemAccepted, RecoveryItemDiscarded]
+        decision_reason: {type: string, nullable: true}
+        created_at_ms: {$ref: '#/components/schemas/Millis'}
+        decided_at_ms: {allOf: [{$ref: '#/components/schemas/Millis'}], nullable: true}
+    TillRecovery:
+      type: object
+      required: [id, session_id, status, forced_at_ms, items]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        session_id: {$ref: '#/components/schemas/UUID'}
+        status:
+          type: string
+          enum: [open, reconciled]
+          x-enum-varnames: [RecoveryOpen, RecoveryReconciled]
+        forced_at_ms: {$ref: '#/components/schemas/Millis'}
+        reconciliation_basis: {type: string, nullable: true, enum: [device_checked, device_unavailable]}
+        items: {type: array, items: {$ref: '#/components/schemas/TillRecoveryItem'}}
+    TillRecoveryResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/TillRecovery'}
     PushRequest:
       type: object
       additionalProperties: false
@@ -349,8 +744,9 @@ components:
         status: {type: string, enum: [accepted, rejected, retry]}
         code:
           type: string
-          enum: [duplicate, settled, session_closed, unknown_entity, schema_rejected, stale_revision, register_busy, dependency_pending, server_unavailable, archived]
+          enum: [duplicate, settled, session_closed, recovery_required, unknown_entity, schema_rejected, stale_revision, register_busy, dependency_pending, server_unavailable, archived]
         message: {type: string}
+        recovery_id: {allOf: [{$ref: '#/components/schemas/UUID'}], nullable: true}
         inserted: {type: boolean}
         business_date: {type: string, pattern: '^\d{4}-\d{2}-\d{2}$'}
         holder_session_id: {type: string}
@@ -376,6 +772,7 @@ components:
       additionalProperties: false
       required: [id, revision, employee_name, opened_at_ms, opening_cash]
       properties:
+        order_count: {type: integer, format: int64, minimum: 0, description: Required when closing an online-claimed session. Number of durably recorded receipts in the drawer.}
         id: {$ref: '#/components/schemas/UUID'}
         revision: {type: integer, format: int64, minimum: 1}
         employee_id: {type: string, nullable: true}
@@ -395,6 +792,7 @@ components:
       additionalProperties: false
       required: [id, revision, business_date, number, placed_at_ms, type, status, pos_session_id, subtotal, discount, tax, service_charge_amount, total, amount_paid, payment_method, cashier_name, items]
       properties:
+        stock_movements: {type: array, maxItems: 400, items: {$ref: '#/components/schemas/StockMovement'}, description: Complete immutable sale and optional return movements committed atomically with this receipt.}
         id: {$ref: '#/components/schemas/UUID'}
         revision: {type: integer, format: int64, minimum: 1}
         business_date: {type: string, pattern: '^\d{4}-\d{2}-\d{2}$'}

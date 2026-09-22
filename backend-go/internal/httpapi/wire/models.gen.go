@@ -45,31 +45,31 @@ func (e ManifestEntityScope) Valid() bool {
 
 // Defines values for OrderStatus.
 const (
-	Cancelled OrderStatus = "cancelled"
-	Paid      OrderStatus = "paid"
-	Pending   OrderStatus = "pending"
-	Preparing OrderStatus = "preparing"
-	Ready     OrderStatus = "ready"
-	Refunded  OrderStatus = "refunded"
-	Served    OrderStatus = "served"
+	OrderStatusCancelled OrderStatus = "cancelled"
+	OrderStatusPaid      OrderStatus = "paid"
+	OrderStatusPending   OrderStatus = "pending"
+	OrderStatusPreparing OrderStatus = "preparing"
+	OrderStatusReady     OrderStatus = "ready"
+	OrderStatusRefunded  OrderStatus = "refunded"
+	OrderStatusServed    OrderStatus = "served"
 )
 
 // Valid indicates whether the value is a known member of the OrderStatus enum.
 func (e OrderStatus) Valid() bool {
 	switch e {
-	case Cancelled:
+	case OrderStatusCancelled:
 		return true
-	case Paid:
+	case OrderStatusPaid:
 		return true
-	case Pending:
+	case OrderStatusPending:
 		return true
-	case Preparing:
+	case OrderStatusPreparing:
 		return true
-	case Ready:
+	case OrderStatusReady:
 		return true
-	case Refunded:
+	case OrderStatusRefunded:
 		return true
-	case Served:
+	case OrderStatusServed:
 		return true
 	default:
 		return false
@@ -81,6 +81,7 @@ const (
 	Archived          PushResultCode = "archived"
 	DependencyPending PushResultCode = "dependency_pending"
 	Duplicate         PushResultCode = "duplicate"
+	RecoveryRequired  PushResultCode = "recovery_required"
 	RegisterBusy      PushResultCode = "register_busy"
 	SchemaRejected    PushResultCode = "schema_rejected"
 	ServerUnavailable PushResultCode = "server_unavailable"
@@ -98,6 +99,8 @@ func (e PushResultCode) Valid() bool {
 	case DependencyPending:
 		return true
 	case Duplicate:
+		return true
+	case RecoveryRequired:
 		return true
 	case RegisterBusy:
 		return true
@@ -205,6 +208,216 @@ func (e TableStatusEventStatus) Valid() bool {
 	case Occupied:
 		return true
 	case Reserved:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TillHistoryPageScope.
+const (
+	TillHistoryPageScopeOutlet   TillHistoryPageScope = "outlet"
+	TillHistoryPageScopeRegister TillHistoryPageScope = "register"
+)
+
+// Valid indicates whether the value is a known member of the TillHistoryPageScope enum.
+func (e TillHistoryPageScope) Valid() bool {
+	switch e {
+	case TillHistoryPageScopeOutlet:
+		return true
+	case TillHistoryPageScopeRegister:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TillRecoveryReconciliationBasis.
+const (
+	DeviceChecked     TillRecoveryReconciliationBasis = "device_checked"
+	DeviceUnavailable TillRecoveryReconciliationBasis = "device_unavailable"
+)
+
+// Valid indicates whether the value is a known member of the TillRecoveryReconciliationBasis enum.
+func (e TillRecoveryReconciliationBasis) Valid() bool {
+	switch e {
+	case DeviceChecked:
+		return true
+	case DeviceUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TillRecoveryStatus.
+const (
+	RecoveryOpen       TillRecoveryStatus = "open"
+	RecoveryReconciled TillRecoveryStatus = "reconciled"
+)
+
+// Valid indicates whether the value is a known member of the TillRecoveryStatus enum.
+func (e TillRecoveryStatus) Valid() bool {
+	switch e {
+	case RecoveryOpen:
+		return true
+	case RecoveryReconciled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TillRecoveryItemStatus.
+const (
+	RecoveryItemAccepted  TillRecoveryItemStatus = "accepted"
+	RecoveryItemDiscarded TillRecoveryItemStatus = "discarded"
+	RecoveryItemPending   TillRecoveryItemStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the TillRecoveryItemStatus enum.
+func (e TillRecoveryItemStatus) Valid() bool {
+	switch e {
+	case RecoveryItemAccepted:
+		return true
+	case RecoveryItemDiscarded:
+		return true
+	case RecoveryItemPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReportPeriod.
+const (
+	ReportPeriodCustom    ReportPeriod = "custom"
+	ReportPeriodLast7     ReportPeriod = "last7"
+	ReportPeriodMonth     ReportPeriod = "month"
+	ReportPeriodToday     ReportPeriod = "today"
+	ReportPeriodYesterday ReportPeriod = "yesterday"
+)
+
+// Valid indicates whether the value is a known member of the ReportPeriod enum.
+func (e ReportPeriod) Valid() bool {
+	switch e {
+	case ReportPeriodCustom:
+		return true
+	case ReportPeriodLast7:
+		return true
+	case ReportPeriodMonth:
+		return true
+	case ReportPeriodToday:
+		return true
+	case ReportPeriodYesterday:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TillOrderHistoryParamsScope.
+const (
+	TillOrderHistoryParamsScopeOutlet   TillOrderHistoryParamsScope = "outlet"
+	TillOrderHistoryParamsScopeRegister TillOrderHistoryParamsScope = "register"
+)
+
+// Valid indicates whether the value is a known member of the TillOrderHistoryParamsScope enum.
+func (e TillOrderHistoryParamsScope) Valid() bool {
+	switch e {
+	case TillOrderHistoryParamsScopeOutlet:
+		return true
+	case TillOrderHistoryParamsScopeRegister:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TillOrderHistoryParamsStatus.
+const (
+	TillOrderHistoryParamsStatusCancelled TillOrderHistoryParamsStatus = "cancelled"
+	TillOrderHistoryParamsStatusPaid      TillOrderHistoryParamsStatus = "paid"
+	TillOrderHistoryParamsStatusPending   TillOrderHistoryParamsStatus = "pending"
+	TillOrderHistoryParamsStatusPreparing TillOrderHistoryParamsStatus = "preparing"
+	TillOrderHistoryParamsStatusReady     TillOrderHistoryParamsStatus = "ready"
+	TillOrderHistoryParamsStatusRefunded  TillOrderHistoryParamsStatus = "refunded"
+	TillOrderHistoryParamsStatusSales     TillOrderHistoryParamsStatus = "sales"
+	TillOrderHistoryParamsStatusServed    TillOrderHistoryParamsStatus = "served"
+)
+
+// Valid indicates whether the value is a known member of the TillOrderHistoryParamsStatus enum.
+func (e TillOrderHistoryParamsStatus) Valid() bool {
+	switch e {
+	case TillOrderHistoryParamsStatusCancelled:
+		return true
+	case TillOrderHistoryParamsStatusPaid:
+		return true
+	case TillOrderHistoryParamsStatusPending:
+		return true
+	case TillOrderHistoryParamsStatusPreparing:
+		return true
+	case TillOrderHistoryParamsStatusReady:
+		return true
+	case TillOrderHistoryParamsStatusRefunded:
+		return true
+	case TillOrderHistoryParamsStatusSales:
+		return true
+	case TillOrderHistoryParamsStatusServed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TillReportSalesParamsPeriod.
+const (
+	TillReportSalesParamsPeriodCustom    TillReportSalesParamsPeriod = "custom"
+	TillReportSalesParamsPeriodLast7     TillReportSalesParamsPeriod = "last7"
+	TillReportSalesParamsPeriodMonth     TillReportSalesParamsPeriod = "month"
+	TillReportSalesParamsPeriodToday     TillReportSalesParamsPeriod = "today"
+	TillReportSalesParamsPeriodYesterday TillReportSalesParamsPeriod = "yesterday"
+)
+
+// Valid indicates whether the value is a known member of the TillReportSalesParamsPeriod enum.
+func (e TillReportSalesParamsPeriod) Valid() bool {
+	switch e {
+	case TillReportSalesParamsPeriodCustom:
+		return true
+	case TillReportSalesParamsPeriodLast7:
+		return true
+	case TillReportSalesParamsPeriodMonth:
+		return true
+	case TillReportSalesParamsPeriodToday:
+		return true
+	case TillReportSalesParamsPeriodYesterday:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TillReportSummaryParamsPeriod.
+const (
+	TillReportSummaryParamsPeriodCustom    TillReportSummaryParamsPeriod = "custom"
+	TillReportSummaryParamsPeriodLast7     TillReportSummaryParamsPeriod = "last7"
+	TillReportSummaryParamsPeriodMonth     TillReportSummaryParamsPeriod = "month"
+	TillReportSummaryParamsPeriodToday     TillReportSummaryParamsPeriod = "today"
+	TillReportSummaryParamsPeriodYesterday TillReportSummaryParamsPeriod = "yesterday"
+)
+
+// Valid indicates whether the value is a known member of the TillReportSummaryParamsPeriod enum.
+func (e TillReportSummaryParamsPeriod) Valid() bool {
+	switch e {
+	case TillReportSummaryParamsPeriodCustom:
+		return true
+	case TillReportSummaryParamsPeriodLast7:
+		return true
+	case TillReportSummaryParamsPeriodMonth:
+		return true
+	case TillReportSummaryParamsPeriodToday:
+		return true
+	case TillReportSummaryParamsPeriodYesterday:
 		return true
 	default:
 		return false
@@ -385,13 +598,16 @@ type Order struct {
 	ServiceChargeAmount Money       `json:"service_charge_amount"`
 	ServiceChargeRate   *float64    `json:"service_charge_rate,omitempty"`
 	Status              OrderStatus `json:"status"`
-	Subtotal            Money       `json:"subtotal"`
-	TableId             *string     `json:"table_id,omitempty"`
-	TableName           *string     `json:"table_name,omitempty"`
-	Tax                 Money       `json:"tax"`
-	Total               Money       `json:"total"`
-	Type                string      `json:"type"`
-	VoidReason          *string     `json:"void_reason,omitempty"`
+
+	// StockMovements Complete immutable sale and optional return movements committed atomically with this receipt.
+	StockMovements *[]StockMovement `json:"stock_movements,omitempty"`
+	Subtotal       Money            `json:"subtotal"`
+	TableId        *string          `json:"table_id,omitempty"`
+	TableName      *string          `json:"table_name,omitempty"`
+	Tax            Money            `json:"tax"`
+	Total          Money            `json:"total"`
+	Type           string           `json:"type"`
+	VoidReason     *string          `json:"void_reason,omitempty"`
 }
 
 // OrderStatus defines model for Order.Status.
@@ -548,10 +764,11 @@ type PushResult struct {
 	Message            *string         `json:"message,omitempty"`
 
 	// Outcome For an accepted table status event, whether the table took its status (applied) or kept a later change by another till (superseded).
-	Outcome  *PushResultOutcome `json:"outcome,omitempty"`
-	Revision *int64             `json:"revision,omitempty"`
-	RowIndex int                `json:"row_index"`
-	Status   PushResultStatus   `json:"status"`
+	Outcome    *PushResultOutcome `json:"outcome,omitempty"`
+	RecoveryId *UUID              `json:"recovery_id,omitempty"`
+	Revision   *int64             `json:"revision,omitempty"`
+	RowIndex   int                `json:"row_index"`
+	Status     PushResultStatus   `json:"status"`
 
 	// StatusSeq For an accepted table status event, the table_status sync_seq it was recorded at. A snapshot at or past it already reflects the event.
 	StatusSeq *int64 `json:"status_seq,omitempty"`
@@ -607,9 +824,12 @@ type Session struct {
 	Note         *string `json:"note,omitempty"`
 	OpenedAtMs   Millis  `json:"opened_at_ms"`
 	OpeningCash  Money   `json:"opening_cash"`
-	OutletName   *string `json:"outlet_name,omitempty"`
-	PosName      *string `json:"pos_name,omitempty"`
-	Revision     int64   `json:"revision"`
+
+	// OrderCount Required when closing an online-claimed session. Number of durably recorded receipts in the drawer.
+	OrderCount *int64  `json:"order_count,omitempty"`
+	OutletName *string `json:"outlet_name,omitempty"`
+	PosName    *string `json:"pos_name,omitempty"`
+	Revision   int64   `json:"revision"`
 }
 
 // StockMovement One immutable ledger movement, applied at the token's outlet. delta_qty
@@ -717,6 +937,197 @@ type Tenant struct {
 	Name string `json:"name"`
 }
 
+// TillCurrentResponse defines model for TillCurrentResponse.
+type TillCurrentResponse struct {
+	Data     *TillSessionData     `json:"data"`
+	Recovery *TillRecoveryPointer `json:"recovery,omitempty"`
+}
+
+// TillHandoverRequest defines model for TillHandoverRequest.
+type TillHandoverRequest struct {
+	Id UUID `json:"id"`
+}
+
+// TillHistoryPage defines model for TillHistoryPage.
+type TillHistoryPage struct {
+	From string                   `json:"from"`
+	Next string                   `json:"next"`
+	Rows []map[string]interface{} `json:"rows"`
+
+	// Scope What the server applied, which may be narrower than what was asked for.
+	Scope        TillHistoryPageScope `json:"scope"`
+	ServerTimeMs Millis               `json:"server_time_ms"`
+	To           string               `json:"to"`
+}
+
+// TillHistoryPageScope What the server applied, which may be narrower than what was asked for.
+type TillHistoryPageScope string
+
+// TillHistoryResponse defines model for TillHistoryResponse.
+type TillHistoryResponse struct {
+	Data TillHistoryPage `json:"data"`
+}
+
+// TillLoginData defines model for TillLoginData.
+type TillLoginData struct {
+	ExpiresAtMs Millis `json:"expires_at_ms"`
+	Token       string `json:"token"`
+}
+
+// TillLoginRequest defines model for TillLoginRequest.
+type TillLoginRequest struct {
+	EmployeeId UUID   `json:"employee_id"`
+	Pin        string `json:"pin"`
+}
+
+// TillLoginResponse defines model for TillLoginResponse.
+type TillLoginResponse struct {
+	Data TillLoginData `json:"data"`
+}
+
+// TillRecovery defines model for TillRecovery.
+type TillRecovery struct {
+	ForcedAtMs          Millis                           `json:"forced_at_ms"`
+	Id                  UUID                             `json:"id"`
+	Items               []TillRecoveryItem               `json:"items"`
+	ReconciliationBasis *TillRecoveryReconciliationBasis `json:"reconciliation_basis,omitempty"`
+	SessionId           UUID                             `json:"session_id"`
+	Status              TillRecoveryStatus               `json:"status"`
+}
+
+// TillRecoveryReconciliationBasis defines model for TillRecovery.ReconciliationBasis.
+type TillRecoveryReconciliationBasis string
+
+// TillRecoveryStatus defines model for TillRecovery.Status.
+type TillRecoveryStatus string
+
+// TillRecoveryItem defines model for TillRecoveryItem.
+type TillRecoveryItem struct {
+	CreatedAtMs    Millis                 `json:"created_at_ms"`
+	DecidedAtMs    *Millis                `json:"decided_at_ms,omitempty"`
+	DecisionReason *string                `json:"decision_reason,omitempty"`
+	Entity         string                 `json:"entity"`
+	EntityId       UUID                   `json:"entity_id"`
+	Id             UUID                   `json:"id"`
+	Revision       int64                  `json:"revision"`
+	Status         TillRecoveryItemStatus `json:"status"`
+}
+
+// TillRecoveryItemStatus defines model for TillRecoveryItem.Status.
+type TillRecoveryItemStatus string
+
+// TillRecoveryPointer defines model for TillRecoveryPointer.
+type TillRecoveryPointer struct {
+	ForcedAtMs Millis `json:"forced_at_ms"`
+	Id         UUID   `json:"id"`
+	SessionId  UUID   `json:"session_id"`
+}
+
+// TillRecoveryResponse defines model for TillRecoveryResponse.
+type TillRecoveryResponse struct {
+	Data TillRecovery `json:"data"`
+}
+
+// TillReport defines model for TillReport.
+type TillReport struct {
+	Adjustments *[]map[string]interface{} `json:"adjustments,omitempty"`
+
+	// AnomalyCount Receipts whose own arithmetic does not close. Reported, never repaired.
+	AnomalyCount        *int64                    `json:"anomaly_count,omitempty"`
+	ByCashier           *[]map[string]interface{} `json:"by_cashier,omitempty"`
+	ByCategory          *[]map[string]interface{} `json:"by_category,omitempty"`
+	ByDay               *[]map[string]interface{} `json:"by_day,omitempty"`
+	ByHour              *[]map[string]interface{} `json:"by_hour,omitempty"`
+	ByOutlet            *[]map[string]interface{} `json:"by_outlet,omitempty"`
+	ByPayment           *[]map[string]interface{} `json:"by_payment,omitempty"`
+	ByProduct           *[]map[string]interface{} `json:"by_product,omitempty"`
+	ByProductInCategory *[]map[string]interface{} `json:"by_product_in_category,omitempty"`
+
+	// ByWeekday Derived from the business date, so a sale after midnight belongs to its trading day. weekday is 0 for Sunday.
+	ByWeekday *[]map[string]interface{} `json:"by_weekday,omitempty"`
+
+	// CalculationVersion Which rules produced these figures. 2 is the Fase 1 waterfall.
+	CalculationVersion int `json:"calculation_version"`
+
+	// ComputedAtMs Null when the range holds no computed rollup at all.
+	ComputedAtMs *int64 `json:"computed_at_ms,omitempty"`
+
+	// Incomplete True while some day in range is still computed under the old rules; the waterfall columns are not final.
+	Incomplete bool `json:"incomplete"`
+
+	// PendingSlices Day-outlet slices in range with changes not yet rolled up.
+	PendingSlices int64            `json:"pending_slices"`
+	Period        TillReportPeriod `json:"period"`
+
+	// Profit Present only on /till/reports/sales. margin is null when there are no net sales to divide by.
+	Profit *TillReportProfit `json:"profit,omitempty"`
+
+	// Sales The waterfall, read top to bottom. net_sales = gross_sales - discounts - sales_returns; revenue = net_sales + tax + service_charge. gross_sales includes a receipt that was later refunded, and sales_returns takes it out again, so a refund is visible rather than the day silently shrinking. refunded_amount is the money handed back, which includes tax and is therefore not the same number as sales_returns. cancelled_amount is shown separately and is never subtracted from the waterfall.
+	Sales        TillReportSales `json:"sales"`
+	Scope        TillReportScope `json:"scope"`
+	ServerTimeMs Millis          `json:"server_time_ms"`
+	Timezone     string          `json:"timezone"`
+}
+
+// TillReportPeriod defines model for TillReportPeriod.
+type TillReportPeriod struct {
+	Days int    `json:"days"`
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+// TillReportProfit Present only on /till/reports/sales. margin is null when there are no net sales to divide by.
+type TillReportProfit struct {
+	CostCoverage float64  `json:"cost_coverage"`
+	CostOfGoods  Money    `json:"cost_of_goods"`
+	GrossProfit  int64    `json:"gross_profit"`
+	Margin       *float64 `json:"margin,omitempty"`
+}
+
+// TillReportResponse defines model for TillReportResponse.
+type TillReportResponse struct {
+	Data TillReport `json:"data"`
+}
+
+// TillReportSales The waterfall, read top to bottom. net_sales = gross_sales - discounts - sales_returns; revenue = net_sales + tax + service_charge. gross_sales includes a receipt that was later refunded, and sales_returns takes it out again, so a refund is visible rather than the day silently shrinking. refunded_amount is the money handed back, which includes tax and is therefore not the same number as sales_returns. cancelled_amount is shown separately and is never subtracted from the waterfall.
+type TillReportSales struct {
+	AverageSale     Money  `json:"average_sale"`
+	CancelledAmount *Money `json:"cancelled_amount,omitempty"`
+	CancelledCount  *int64 `json:"cancelled_count,omitempty"`
+	Discounted      *int64 `json:"discounted,omitempty"`
+	Discounts       Money  `json:"discounts"`
+	GrossSales      Money  `json:"gross_sales"`
+	ItemsSold       int64  `json:"items_sold"`
+	NetSales        Money  `json:"net_sales"`
+	OrderCount      int64  `json:"order_count"`
+	RefundedAmount  *Money `json:"refunded_amount,omitempty"`
+	RefundedCount   *int64 `json:"refunded_count,omitempty"`
+	Revenue         Money  `json:"revenue"`
+	SalesReturns    Money  `json:"sales_returns"`
+	ServiceCharge   Money  `json:"service_charge"`
+	Tax             Money  `json:"tax"`
+}
+
+// TillReportScope defines model for TillReportScope.
+type TillReportScope struct {
+	AllOutlets bool   `json:"all_outlets"`
+	OutletId   string `json:"outlet_id"`
+	OutletName string `json:"outlet_name"`
+}
+
+// TillSessionData defines model for TillSessionData.
+type TillSessionData struct {
+	CurrentEmployeeId *UUID   `json:"current_employee_id,omitempty"`
+	ReceiptEnd        int64   `json:"receipt_end"`
+	ReceiptStart      int64   `json:"receipt_start"`
+	Session           Session `json:"session"`
+}
+
+// TillSessionResponse defines model for TillSessionResponse.
+type TillSessionResponse struct {
+	Data TillSessionData `json:"data"`
+}
+
 // UUID defines model for UUID.
 type UUID = string
 
@@ -730,6 +1141,21 @@ type VariantRow struct {
 	SortOrder   int64  `json:"sort_order"`
 	SyncSeq     int64  `json:"sync_seq"`
 }
+
+// CashierToken defines model for CashierToken.
+type CashierToken = string
+
+// ReportFrom defines model for ReportFrom.
+type ReportFrom = string
+
+// ReportOutlet defines model for ReportOutlet.
+type ReportOutlet = string
+
+// ReportPeriod defines model for ReportPeriod.
+type ReportPeriod string
+
+// ReportTo defines model for ReportTo.
+type ReportTo = string
 
 // SchemaVersion defines model for SchemaVersion.
 type SchemaVersion = int
@@ -765,8 +1191,122 @@ type PushChangesParams struct {
 	XSchemaVersion SchemaVersion `json:"X-Schema-Version"`
 }
 
+// TillOrderHistoryParams defines parameters for TillOrderHistory.
+type TillOrderHistoryParams struct {
+	// Day One business date. Omitting every date filter means the current business date on the merchant's clock. Combining day with from or to is refused as ambiguous_range.
+	Day *string `form:"day,omitempty" json:"day,omitempty"`
+
+	// From First business date of a range; at most 366 days with to.
+	From *string `form:"from,omitempty" json:"from,omitempty"`
+
+	// To Last business date of a range.
+	To *string `form:"to,omitempty" json:"to,omitempty"`
+
+	// Scope Defaults to register. outlet needs viewAllOrders and is refused with forbidden_scope otherwise.
+	Scope *TillOrderHistoryParamsScope `form:"scope,omitempty" json:"scope,omitempty"`
+
+	// Status sales is every receipt that was not cancelled or refunded.
+	Status *TillOrderHistoryParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+
+	// ReceiptNumber Case-insensitive prefix of the printed receipt number.
+	ReceiptNumber *string `form:"receipt_number,omitempty" json:"receipt_number,omitempty"`
+
+	// CashierId A cashier may only name themselves; anything else needs viewAllOrders and is refused with forbidden_cashier.
+	CashierId *UUID `form:"cashier_id,omitempty" json:"cashier_id,omitempty"`
+
+	// Before Opaque cursor returned by the previous page. Bound to the filter it was issued for; a cursor from an older contract is refused with invalid_cursor.
+	Before *string `form:"before,omitempty" json:"before,omitempty"`
+
+	// XCashierToken Short-lived cashier credential returned by POST /till/login.
+	XCashierToken CashierToken `json:"X-Cashier-Token"`
+}
+
+// TillOrderHistoryParamsScope defines parameters for TillOrderHistory.
+type TillOrderHistoryParamsScope string
+
+// TillOrderHistoryParamsStatus defines parameters for TillOrderHistory.
+type TillOrderHistoryParamsStatus string
+
+// GetTillRecoveryParams defines parameters for GetTillRecovery.
+type GetTillRecoveryParams struct {
+	// XCashierToken Short-lived cashier credential returned by POST /till/login.
+	XCashierToken CashierToken `json:"X-Cashier-Token"`
+}
+
+// TillReportSalesParams defines parameters for TillReportSales.
+type TillReportSalesParams struct {
+	// Period Resolved on the merchant's clock. Omitted with from and to present means custom; omitted entirely means today. An unknown value falls back to today rather than failing, because a dashboard is a glance.
+	Period *TillReportSalesParamsPeriod `form:"period,omitempty" json:"period,omitempty"`
+
+	// From First business date; used only with period=custom. At most 366 days with to.
+	From *ReportFrom `form:"from,omitempty" json:"from,omitempty"`
+
+	// To Last business date; used only with period=custom.
+	To *ReportTo `form:"to,omitempty" json:"to,omitempty"`
+
+	// OutletId The device's own outlet when omitted. Another outlet, or the literal "all" for every outlet, needs manageOutlets; otherwise the request is refused rather than narrowed, so a total is never quietly one branch.
+	OutletId *ReportOutlet `form:"outlet_id,omitempty" json:"outlet_id,omitempty"`
+
+	// XCashierToken Short-lived cashier credential returned by POST /till/login.
+	XCashierToken CashierToken `json:"X-Cashier-Token"`
+}
+
+// TillReportSalesParamsPeriod defines parameters for TillReportSales.
+type TillReportSalesParamsPeriod string
+
+// TillReportSummaryParams defines parameters for TillReportSummary.
+type TillReportSummaryParams struct {
+	// Period Resolved on the merchant's clock. Omitted with from and to present means custom; omitted entirely means today. An unknown value falls back to today rather than failing, because a dashboard is a glance.
+	Period *TillReportSummaryParamsPeriod `form:"period,omitempty" json:"period,omitempty"`
+
+	// From First business date; used only with period=custom. At most 366 days with to.
+	From *ReportFrom `form:"from,omitempty" json:"from,omitempty"`
+
+	// To Last business date; used only with period=custom.
+	To *ReportTo `form:"to,omitempty" json:"to,omitempty"`
+
+	// OutletId The device's own outlet when omitted. Another outlet, or the literal "all" for every outlet, needs manageOutlets; otherwise the request is refused rather than narrowed, so a total is never quietly one branch.
+	OutletId *ReportOutlet `form:"outlet_id,omitempty" json:"outlet_id,omitempty"`
+
+	// XCashierToken Short-lived cashier credential returned by POST /till/login.
+	XCashierToken CashierToken `json:"X-Cashier-Token"`
+}
+
+// TillReportSummaryParamsPeriod defines parameters for TillReportSummary.
+type TillReportSummaryParamsPeriod string
+
+// CurrentTillSessionParams defines parameters for CurrentTillSession.
+type CurrentTillSessionParams struct {
+	// LocalSessionId Locally active session used only to discover a matching forced recovery.
+	LocalSessionId *UUID `form:"local_session_id,omitempty" json:"local_session_id,omitempty"`
+
+	// XCashierToken Short-lived cashier credential returned by POST /till/login.
+	XCashierToken CashierToken `json:"X-Cashier-Token"`
+}
+
+// HandoverTillSessionParams defines parameters for HandoverTillSession.
+type HandoverTillSessionParams struct {
+	// XCashierToken Short-lived cashier credential returned by POST /till/login.
+	XCashierToken CashierToken `json:"X-Cashier-Token"`
+}
+
+// OpenTillSessionParams defines parameters for OpenTillSession.
+type OpenTillSessionParams struct {
+	// XCashierToken Short-lived cashier credential returned by POST /till/login.
+	XCashierToken CashierToken `json:"X-Cashier-Token"`
+}
+
 // ActivateDeviceJSONRequestBody defines body for ActivateDevice for application/json ContentType.
 type ActivateDeviceJSONRequestBody = ActivateRequest
 
 // PushChangesJSONRequestBody defines body for PushChanges for application/json ContentType.
 type PushChangesJSONRequestBody = PushRequest
+
+// TillLoginJSONRequestBody defines body for TillLogin for application/json ContentType.
+type TillLoginJSONRequestBody = TillLoginRequest
+
+// HandoverTillSessionJSONRequestBody defines body for HandoverTillSession for application/json ContentType.
+type HandoverTillSessionJSONRequestBody = TillHandoverRequest
+
+// OpenTillSessionJSONRequestBody defines body for OpenTillSession for application/json ContentType.
+type OpenTillSessionJSONRequestBody = Session

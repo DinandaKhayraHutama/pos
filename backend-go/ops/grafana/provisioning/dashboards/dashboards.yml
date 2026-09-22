@@ -1,0 +1,12 @@
+apiVersion: 1
+
+providers:
+  # Dashboards are files in the repository, not clicks in a UI that nobody can
+  # review: a panel that lies is a change like any other.
+  - name: justclick
+    type: file
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

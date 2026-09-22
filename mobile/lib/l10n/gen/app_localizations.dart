@@ -98,6 +98,48 @@ abstract class AppLocalizations {
     Locale('id'),
   ];
 
+  /// No description provided for @remoteReceiptReadOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Server receipt — read only on this device.'**
+  String get remoteReceiptReadOnly;
+
+  /// No description provided for @tillOnlineRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect to the server to open or transfer a session. Try again with the same cashier.'**
+  String get tillOnlineRequired;
+
+  /// No description provided for @tillRegisterBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'This till already has an open session. Finish and sync it on the original device first.'**
+  String get tillRegisterBusy;
+
+  /// No description provided for @tillCashierBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'This cashier is already assigned to another till. End or hand over that assignment first.'**
+  String get tillCashierBusy;
+
+  /// No description provided for @tillSyncRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync pending transactions and resolve rejected entries before handing over this till.'**
+  String get tillSyncRequired;
+
+  /// No description provided for @tillLoginRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Verify your PIN again while online to continue.'**
+  String get tillLoginRequired;
+
+  /// No description provided for @tillSessionUnconfirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'This session is not confirmed for this cashier and device. Open a confirmed session before selling.'**
+  String get tillSessionUnconfirmed;
+
   /// No description provided for @connectedMasterDataNotice.
   ///
   /// In en, this message translates to:
@@ -125,7 +167,7 @@ abstract class AppLocalizations {
   /// No description provided for @appTagline.
   ///
   /// In en, this message translates to:
-  /// **'Restaurant Point of Sale'**
+  /// **'Restaurant Point of Sale & Management System'**
   String get appTagline;
 
   /// No description provided for @navPos.
@@ -2918,6 +2960,30 @@ abstract class AppLocalizations {
   /// **'Resume'**
   String get sessionResume;
 
+  /// No description provided for @sessionNeedsRecovery.
+  ///
+  /// In en, this message translates to:
+  /// **'Cannot be resumed — needs a manager'**
+  String get sessionNeedsRecovery;
+
+  /// No description provided for @sessionNeedsRecoveryHint.
+  ///
+  /// In en, this message translates to:
+  /// **'This drawer is open but the server holds no claim for it, so it cannot be resumed or closed here. Ask a manager to close it from Backoffice → Devices.'**
+  String get sessionNeedsRecoveryHint;
+
+  /// No description provided for @sessionReconciled.
+  ///
+  /// In en, this message translates to:
+  /// **'The drawer now matches the server and can be resumed.'**
+  String get sessionReconciled;
+
+  /// No description provided for @sessionClosedForRecovery.
+  ///
+  /// In en, this message translates to:
+  /// **'The old drawer was closed from the server. Review any held transactions in the Recovery centre.'**
+  String get sessionClosedForRecovery;
+
   /// No description provided for @sessionInUse.
   ///
   /// In en, this message translates to:
@@ -3229,6 +3295,408 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Counted quantity'**
   String get inventoryCountedQuantity;
+
+  /// No description provided for @recoveryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Recovery centre'**
+  String get recoveryTitle;
+
+  /// No description provided for @recoveryIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'No evidence is ever removed automatically. Selling stays blocked on a drawer that needs recovery.'**
+  String get recoveryIntro;
+
+  /// No description provided for @recoveryLocalStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'This device: {status}'**
+  String recoveryLocalStatus(String status);
+
+  /// No description provided for @recoveryStatusHealthy.
+  ///
+  /// In en, this message translates to:
+  /// **'nothing outstanding'**
+  String get recoveryStatusHealthy;
+
+  /// No description provided for @recoveryStatusPending.
+  ///
+  /// In en, this message translates to:
+  /// **'waiting to upload'**
+  String get recoveryStatusPending;
+
+  /// No description provided for @recoveryStatusConflict.
+  ///
+  /// In en, this message translates to:
+  /// **'needs investigation'**
+  String get recoveryStatusConflict;
+
+  /// No description provided for @recoveryStatusRecoveryRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'waiting for a manager'**
+  String get recoveryStatusRecoveryRequired;
+
+  /// No description provided for @recoverySectionHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'{label} ({count})'**
+  String recoverySectionHeading(String label, int count);
+
+  /// No description provided for @recoverySectionQueued.
+  ///
+  /// In en, this message translates to:
+  /// **'Safe for the scheduler to retry'**
+  String get recoverySectionQueued;
+
+  /// No description provided for @recoverySectionQueuedEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'The upload queue is empty.'**
+  String get recoverySectionQueuedEmpty;
+
+  /// No description provided for @recoverySectionManager.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for a manager'**
+  String get recoverySectionManager;
+
+  /// No description provided for @recoverySectionManagerEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing is waiting for a manager.'**
+  String get recoverySectionManagerEmpty;
+
+  /// No description provided for @recoverySectionInvestigate.
+  ///
+  /// In en, this message translates to:
+  /// **'Refused, and not sendable from here'**
+  String get recoverySectionInvestigate;
+
+  /// No description provided for @recoverySectionInvestigateEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No payload needs investigating.'**
+  String get recoverySectionInvestigateEmpty;
+
+  /// No description provided for @recoverySectionDiagnostics.
+  ///
+  /// In en, this message translates to:
+  /// **'Diagnostic findings'**
+  String get recoverySectionDiagnostics;
+
+  /// No description provided for @recoveryQueuedDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'revision {revision} · {attempts} attempts'**
+  String recoveryQueuedDetail(String revision, int attempts);
+
+  /// No description provided for @recoveryLetterDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'{code} · revision {revision}'**
+  String recoveryLetterDetail(String code, int revision);
+
+  /// No description provided for @recoveryNoServerMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'The server sent no message.'**
+  String get recoveryNoServerMessage;
+
+  /// No description provided for @recoveryCaseLine.
+  ///
+  /// In en, this message translates to:
+  /// **'Case {id}'**
+  String recoveryCaseLine(String id);
+
+  /// No description provided for @recoveryCaseLineWithStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Case {id} · {status}'**
+  String recoveryCaseLineWithStatus(String id, String status);
+
+  /// No description provided for @recoveryRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Send again'**
+  String get recoveryRetry;
+
+  /// No description provided for @recoveryRequeued.
+  ///
+  /// In en, this message translates to:
+  /// **'Returned to the upload queue.'**
+  String get recoveryRequeued;
+
+  /// No description provided for @recoveryNotRetryable.
+  ///
+  /// In en, this message translates to:
+  /// **'Not sendable yet: its local row is gone, or a manager has not approved it.'**
+  String get recoveryNotRetryable;
+
+  /// No description provided for @recoveryActionWaitForScheduler.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave it to the scheduler, or tap Sync now.'**
+  String get recoveryActionWaitForScheduler;
+
+  /// No description provided for @recoveryActionWaitForManager.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait for the manager\'s decision in the Backoffice before sending this one again.'**
+  String get recoveryActionWaitForManager;
+
+  /// No description provided for @recoveryActionIncompatible.
+  ///
+  /// In en, this message translates to:
+  /// **'The server cannot accept this payload. Keep it and investigate.'**
+  String get recoveryActionIncompatible;
+
+  /// No description provided for @recoveryActionKeepSnapshot.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep the queued snapshot and inspect it by hand.'**
+  String get recoveryActionKeepSnapshot;
+
+  /// No description provided for @recoveryActionCheckTillMigration.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep the state and check the local session migration.'**
+  String get recoveryActionCheckTillMigration;
+
+  /// No description provided for @recoveryActionBlockedUntilDecided.
+  ///
+  /// In en, this message translates to:
+  /// **'Selling stays blocked until this recovery is decided in the Backoffice.'**
+  String get recoveryActionBlockedUntilDecided;
+
+  /// No description provided for @recoveryActionMatchMovement.
+  ///
+  /// In en, this message translates to:
+  /// **'Do not delete the movement; match it against its receipt payload.'**
+  String get recoveryActionMatchMovement;
+
+  /// No description provided for @recoveryActionFinishDependencies.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish the pending sales and refusals before the close is sent.'**
+  String get recoveryActionFinishDependencies;
+
+  /// No description provided for @recoveryActionReconcileBySigningIn.
+  ///
+  /// In en, this message translates to:
+  /// **'This drawer predates coordinated tills. Sign in with a PIN while online and the server will reconcile it.'**
+  String get recoveryActionReconcileBySigningIn;
+
+  /// No description provided for @historyPeriodToday.
+  ///
+  /// In en, this message translates to:
+  /// **'Today'**
+  String get historyPeriodToday;
+
+  /// No description provided for @historyPeriodYesterday.
+  ///
+  /// In en, this message translates to:
+  /// **'Yesterday'**
+  String get historyPeriodYesterday;
+
+  /// No description provided for @historyPeriodLast7.
+  ///
+  /// In en, this message translates to:
+  /// **'7 days'**
+  String get historyPeriodLast7;
+
+  /// No description provided for @historyPeriodMonth.
+  ///
+  /// In en, this message translates to:
+  /// **'This month'**
+  String get historyPeriodMonth;
+
+  /// No description provided for @historyPeriodCustom.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom range'**
+  String get historyPeriodCustom;
+
+  /// No description provided for @historyReceiptSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Receipt number'**
+  String get historyReceiptSearch;
+
+  /// No description provided for @historyScopeRegister.
+  ///
+  /// In en, this message translates to:
+  /// **'This till'**
+  String get historyScopeRegister;
+
+  /// No description provided for @historyScopeOutlet.
+  ///
+  /// In en, this message translates to:
+  /// **'Whole outlet'**
+  String get historyScopeOutlet;
+
+  /// No description provided for @historyScopeNarrowed.
+  ///
+  /// In en, this message translates to:
+  /// **'The server returned this till only; your account cannot read the whole outlet.'**
+  String get historyScopeNarrowed;
+
+  /// No description provided for @historyLoadMore.
+  ///
+  /// In en, this message translates to:
+  /// **'Load more'**
+  String get historyLoadMore;
+
+  /// No description provided for @historyEndOfList.
+  ///
+  /// In en, this message translates to:
+  /// **'End of the list for this filter.'**
+  String get historyEndOfList;
+
+  /// No description provided for @historyOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline — showing what was downloaded {when}.'**
+  String historyOffline(String when);
+
+  /// No description provided for @historyOfflineMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'Not downloaded yet. Connect to load this period.'**
+  String get historyOfflineMissing;
+
+  /// No description provided for @historyLocalOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'This device\'s own transactions only.'**
+  String get historyLocalOnly;
+
+  /// No description provided for @historyRangeIncomplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Only part of this period was downloaded. Refresh while online to complete it.'**
+  String get historyRangeIncomplete;
+
+  /// No description provided for @historyFilterApply.
+  ///
+  /// In en, this message translates to:
+  /// **'Apply'**
+  String get historyFilterApply;
+
+  /// No description provided for @historyFilterReset.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset'**
+  String get historyFilterReset;
+
+  /// No description provided for @historyFrom.
+  ///
+  /// In en, this message translates to:
+  /// **'From'**
+  String get historyFrom;
+
+  /// No description provided for @historyTo.
+  ///
+  /// In en, this message translates to:
+  /// **'To'**
+  String get historyTo;
+
+  /// No description provided for @reportPeriodCompare.
+  ///
+  /// In en, this message translates to:
+  /// **'vs previous {days} days'**
+  String reportPeriodCompare(int days);
+
+  /// No description provided for @reportNoComparison.
+  ///
+  /// In en, this message translates to:
+  /// **'no comparison'**
+  String get reportNoComparison;
+
+  /// No description provided for @reportSalesReturns.
+  ///
+  /// In en, this message translates to:
+  /// **'Sales returns'**
+  String get reportSalesReturns;
+
+  /// No description provided for @reportTotalReceipts.
+  ///
+  /// In en, this message translates to:
+  /// **'Total sales receipts'**
+  String get reportTotalReceipts;
+
+  /// No description provided for @reportGrossMargin.
+  ///
+  /// In en, this message translates to:
+  /// **'Gross margin'**
+  String get reportGrossMargin;
+
+  /// No description provided for @reportWaterfall.
+  ///
+  /// In en, this message translates to:
+  /// **'Sales waterfall'**
+  String get reportWaterfall;
+
+  /// No description provided for @reportSourceServer.
+  ///
+  /// In en, this message translates to:
+  /// **'Outlet totals from the server, computed {when}.'**
+  String reportSourceServer(String when);
+
+  /// No description provided for @reportSourceCache.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline — server totals downloaded {when}.'**
+  String reportSourceCache(String when);
+
+  /// No description provided for @reportSourceUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Outlet totals are not available offline yet. Connect once to download them.'**
+  String get reportSourceUnavailable;
+
+  /// No description provided for @reportSourceLocal.
+  ///
+  /// In en, this message translates to:
+  /// **'This device\'s own transactions.'**
+  String get reportSourceLocal;
+
+  /// No description provided for @reportUnsyncedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} transactions on this device have not reached the server and are not in the totals above.'**
+  String reportUnsyncedNotice(int count);
+
+  /// No description provided for @reportIncomplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Some days in this period are still being recalculated; the waterfall is not final yet.'**
+  String get reportIncomplete;
+
+  /// No description provided for @reportByWeekday.
+  ///
+  /// In en, this message translates to:
+  /// **'Day of week'**
+  String get reportByWeekday;
+
+  /// No description provided for @reportTopItemsInCategory.
+  ///
+  /// In en, this message translates to:
+  /// **'Top items per category'**
+  String get reportTopItemsInCategory;
+
+  /// No description provided for @reportOutletComparison.
+  ///
+  /// In en, this message translates to:
+  /// **'Outlet comparison'**
+  String get reportOutletComparison;
+
+  /// No description provided for @reportNotPermitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Your account cannot open this report.'**
+  String get reportNotPermitted;
 }
 
 class _AppLocalizationsDelegate

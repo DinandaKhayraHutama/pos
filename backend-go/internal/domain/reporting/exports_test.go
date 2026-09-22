@@ -96,8 +96,10 @@ func TestExportsAreRenderedStoredAndServedToTheirMerchantOnly(t *testing.T) {
 	data, err := os.ReadFile(file.Path)
 	require.NoError(t, err)
 	require.True(t, bytes.HasPrefix(data, []byte{0xEF, 0xBB, 0xBF}))
-	require.Contains(t, string(data), "Pendapatan,77450")
+	require.Contains(t, string(data), "Total penerimaan penjualan,77450")
+	require.Contains(t, string(data), "Penjualan bersih,69500")
 	require.Contains(t, string(data), "Minuman Dingin,45000,42000,3,")
+	require.Contains(t, string(data), "Versi perhitungan,2", "an export says which rules produced it")
 
 	before, err := os.Stat(file.Path)
 	require.NoError(t, err)
@@ -118,7 +120,8 @@ func TestExportsAreRenderedStoredAndServedToTheirMerchantOnly(t *testing.T) {
 	require.NoError(t, err)
 	var summary string
 	for _, part := range zr.File {
-		if part.Name == "xl/worksheets/sheet1.xml" {
+		// Sheet 1 is the scope block; the figures start on sheet 2.
+		if part.Name == "xl/worksheets/sheet2.xml" {
 			rc, err := part.Open()
 			require.NoError(t, err)
 			b, _ := io.ReadAll(rc)

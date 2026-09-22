@@ -5,7 +5,8 @@ import 'package:nti_pos/data/database/app_database.dart';
 /// Initializes `sqflite_common_ffi` and installs it as the global
 /// [databaseFactory]. Call once per test (idempotent — re-init is a no-op).
 ///
-/// This MUST stay in `test/` so production never pulls in the FFI runtime.
+/// Tests install the FFI factory explicitly; production selects it only on
+/// Windows/Linux through `db_platform_io.dart`.
 Future<void> initFfi() async {
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
@@ -22,8 +23,5 @@ Future<void> initFfi() async {
 /// during `_onCreate`; false yields an empty schema-only DB.
 Future<Database> openInMemoryAppDb({bool seed = false}) async {
   await initFfi();
-  return AppDatabase.openForTest(
-    path: inMemoryDatabasePath,
-    seed: seed,
-  );
+  return AppDatabase.openForTest(path: inMemoryDatabasePath, seed: seed);
 }

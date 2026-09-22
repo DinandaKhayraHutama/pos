@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/database/app_database.dart';
 import '../data/device/till_binding.dart';
+import '../data/device/till_coordinator.dart';
 import '../data/models/pos_register.dart';
 import '../data/models/shift.dart';
 import '../data/repositories/pos_register_repository.dart';
@@ -47,12 +49,21 @@ class PosRegistersNotifier
 
 /// A till at the active branch, with whoever is currently signed on to it.
 ///
-/// [session] is what the picker turns into its three states: none means the
-/// till is free, one belonging to the signed-in cashier means resume, and one
+/// [session] is what the picker turns into its states: none means the till is
+/// free, one belonging to the signed-in cashier means resume, and one
 /// belonging to anybody else means taken — named, rather than merely disabled,
 /// because "why can I not open this" is the question a greyed-out row leaves
 /// unanswered.
-typedef RegisterSlot = ({PosRegister register, Shift? session});
+///
+/// [resumable] is the fourth state, and it exists because the first three were
+/// a lie on a coordinated till: an open `shifts` row is not permission to sell
+/// into it. When the server holds no confirmed claim for this device and
+/// cashier — a session pushed through the legacy path, a force-closed drawer,
+/// one handed to someone else — the drawer is the signed-in cashier's own and
+/// still cannot be resumed here. The picker used to offer Resume anyway, and
+/// the tap resolved straight back to "no session": nothing happened, nothing
+/// was said, and there was no way off the screen.
+typedef RegisterSlot = ({PosRegister register, Shift? session, bool resumable});
 
 /// The tills a cashier can choose between right now.
 ///
@@ -70,16 +81,29 @@ final registerSlotsProvider = FutureProvider.autoDispose<List<RegisterSlot>>((
   final outlet = ref.watch(activeOutletProvider).valueOrNull;
   if (outlet == null) return const [];
   final binding = TillBinding.current;
+  // Narrowed with `select`: the permit answer depends on WHO is signed in and
+  // nothing else, so a theme or locale change must not re-run these queries.
+  final me = ref.watch(
+    settingsProvider.select((s) => s.valueOrNull?.employeeId ?? ''),
+  );
   final registers = await PosRegisterRepository.instance.byOutlet(
     outlet.id,
     onlyActive: true,
   );
-  return [
-    for (final r in registers)
-      if (binding == null || r.id == binding.registerId)
-        (
-          register: r,
-          session: await ShiftRepository.instance.openSessionForRegister(r.id),
-        ),
-  ];
+  final db = await AppDatabase.instance.db;
+  final slots = <RegisterSlot>[];
+  for (final r in registers) {
+    if (binding != null && r.id != binding.registerId) continue;
+    final session = await ShiftRepository.instance.openSessionForRegister(r.id);
+    slots.add((
+      register: r,
+      session: session,
+      // Asked of the same helper the resolver uses, so the tile cannot offer
+      // an action that resolves back to nothing.
+      resumable:
+          session == null ||
+          await TillCoordinator.holdsPermit(db, session.id, me),
+    ));
+  }
+  return slots;
 });

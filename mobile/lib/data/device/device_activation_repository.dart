@@ -81,6 +81,15 @@ class DeviceActivationRepository {
   String get _key => 'device_binding_${sha256.convert(utf8.encode(baseUrl))}';
   void close() => _client.close();
 
+  Future<void> _bestEffortForget() async {
+    try {
+      await _store.delete(_key);
+    } catch (_) {
+      // Revocation must still reach the app. Its handler performs the durable
+      // retry and reports a storage failure while activation remains blocked.
+    }
+  }
+
   Future<DeviceRegistration?> load() async {
     try {
       final raw = await _store.read(_key);
@@ -94,6 +103,33 @@ class DeviceActivationRepository {
       }
       return binding;
     } catch (_) {
+      throw const DeviceActivationException(ActivationFailure.storage);
+    }
+  }
+
+  /// Drops the stored binding once the server has refused this device's token.
+  ///
+  /// [verify] already does this on its own 401, but a revocation is far more
+  /// likely to surface as a 401 on an ordinary sync, which reaches the app
+  /// through `onUnauthorized` and never touches this repository. Leaving the
+  /// binding in secure storage there made the revoke look like it had not
+  /// taken: the next launch read it back, opened the connected store
+  /// offline-first, let the cashier in, and only fell back to the activation
+  /// screen when the first sync 401'd again — one to five minutes later, on
+  /// every launch, forever.
+  ///
+  /// **The installation uuid is deliberately KEPT.** Re-activating with the
+  /// same uuid re-binds to the same `devices` row, which is what lets a till
+  /// recovery case still recognise this installation and accept its late
+  /// sales. Clearing it would hand the server a new installation and orphan
+  /// the case.
+  Future<void> forget() async {
+    try {
+      await _store.delete(_key);
+    } catch (_) {
+      // The activation screen may only claim the revoke is durable after the
+      // binding is gone. Propagating this lets it keep activation disabled and
+      // offer an honest storage error instead of reviving the token next launch.
       throw const DeviceActivationException(ActivationFailure.storage);
     }
   }
@@ -174,7 +210,10 @@ class DeviceActivationRepository {
     RetryGate? gate,
   }) async {
     if (!binding.expiresAt.isAfter(_clock())) {
-      await _store.delete(_key);
+      // Still report revocation when secure storage is temporarily unavailable.
+      // The app's revocation handler retries the durable delete and keeps the
+      // activation screen blocked until that attempt finishes.
+      await _bestEffortForget();
       throw const DeviceActivationException(ActivationFailure.revoked);
     }
     if (gate != null && gate.isBlocked) {
@@ -188,7 +227,7 @@ class DeviceActivationRepository {
         }),
     );
     if (response.statusCode == 401 || response.statusCode == 403) {
-      await _store.delete(_key);
+      await _bestEffortForget();
       throw const DeviceActivationException(ActivationFailure.revoked);
     }
     final wait = parseRetryAfter(response.headers['retry-after']);
@@ -210,7 +249,7 @@ class DeviceActivationRepository {
       throw const DeviceActivationException(ActivationFailure.network);
     }
     if (refreshed.storageScope != binding.storageScope) {
-      await _store.delete(_key);
+      await _bestEffortForget();
       throw const DeviceActivationException(ActivationFailure.revoked);
     }
     try {

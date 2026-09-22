@@ -49,6 +49,18 @@ func Maintain(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) erro
 		if removed > 0 {
 			logger.Info("expired ingest audit partitions removed", "partitions", removed, "retention_days", 90)
 		}
+
+		// Every cashier sign-in at a till writes a row here, and nothing else
+		// ever deletes one: a busy outlet mints a few a day per device and
+		// they would accumulate for the life of the deployment. An expired
+		// token already authenticates nobody, so the row is only weight.
+		tag, err := tx.Exec(ctx, "DELETE FROM till_access WHERE expires_at < now()")
+		if err != nil {
+			return err
+		}
+		if n := tag.RowsAffected(); n > 0 {
+			logger.Info("expired till sign-ins removed", "rows", n)
+		}
 		for _, table := range DefaultPartitions {
 			var occupied bool
 			if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM "+pgx.Identifier{table}.Sanitize()+" LIMIT 1)").Scan(&occupied); err != nil {

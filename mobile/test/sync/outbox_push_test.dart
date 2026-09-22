@@ -321,6 +321,73 @@ void main() {
     expect(letter.details['holder_employee_name'], 'Dani');
   });
 
+  test(
+    'late sale is quarantined once and marks its drawer for recovery',
+    () async {
+      final session = await openSession();
+      final order = await sell(session);
+      await db.insert('_till_sessions', {
+        'id': session,
+        'state': 'active_confirmed',
+        'employee_id': 'cashier-1',
+        'receipt_next': 1,
+        'receipt_end': 100,
+      });
+      const recovery = '00000000-0000-4000-8000-000000000099';
+      final server = _PushServer()
+        ..respond = (body) => _PushServer.reply({
+          'results': _PushServer.resultsFor(
+            body,
+            (_, entity) => entity == OrderPush.entity
+                ? {
+                    'status': 'rejected',
+                    'code': 'recovery_required',
+                    'message': 'Manager review is required.',
+                    'recovery_id': recovery,
+                  }
+                : {'status': 'accepted'},
+          ),
+        });
+
+      await pusher(server).run();
+
+      final letter = (await DeadLetterStore.instance.all()).single;
+      expect(letter.entityId, order.id);
+      expect(letter.recoveryId, recovery);
+      expect(letter.details['recovery_id'], recovery);
+      final till = (await db.query(
+        '_till_sessions',
+        where: 'id = ?',
+        whereArgs: [session],
+      )).single;
+      expect(till['state'], 'recovery_required');
+      expect(till['recovery_id'], recovery);
+    },
+  );
+
+  test(
+    'incompatible refusal cannot be requeued by the recovery action',
+    () async {
+      final session = await openSession();
+      await sell(session);
+      final orderEntry = (await OutboxStore.instance.pending(
+        entity: OrderPush.entity,
+      )).single;
+      await DeadLetterStore.instance.moveFromOutbox(
+        orderEntry,
+        code: 'schema_rejected',
+      );
+
+      final letter = (await DeadLetterStore.instance.all()).single;
+      expect(await DeadLetterStore.instance.requeue(letter.id), isFalse);
+      expect(await DeadLetterStore.instance.count(), 1);
+      expect(
+        await OutboxStore.instance.pending(entity: OrderPush.entity),
+        isEmpty,
+      );
+    },
+  );
+
   test('retry keeps the row and records why', () async {
     final session = await openSession();
     await sell(session);

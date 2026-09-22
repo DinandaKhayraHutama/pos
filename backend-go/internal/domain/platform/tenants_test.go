@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -25,6 +27,7 @@ import (
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/mailer"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/pgtest"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/redisx"
+	"github.com/daniryckidinata/nti_pos/backend-go/migrations"
 )
 
 const ownerPassword = "owner-password-12345"
@@ -506,7 +509,33 @@ func TestTheOpsReportSeesThisSchemaAsCurrent(t *testing.T) {
 	require.Equal(t, "ok", r.Redis)
 	require.Empty(t, r.Migrations.Pending, "the test template ran every embedded migration")
 	require.Empty(t, r.Migrations.Unknown)
-	require.EqualValues(t, 20260917000018, r.Migrations.Latest)
+	// Derived, not written down. A literal here made every new migration fail
+	// a test about the ops page, which teaches people to edit the assertion
+	// rather than read it.
+	require.EqualValues(t, newestEmbeddedMigration(t), r.Migrations.Latest)
 	require.Empty(t, r.OccupiedDefaultPartitions)
 	require.WithinDuration(t, time.Now(), r.CheckedAt, time.Minute)
+}
+
+// newestEmbeddedMigration is the highest version this binary would apply: the
+// numeric prefix of the last SQL file, or a Go step if one is newer.
+func newestEmbeddedMigration(t *testing.T) int64 {
+	t.Helper()
+
+	names, err := fs.Glob(migrations.FS, "*.sql")
+	require.NoError(t, err)
+
+	var newest int64
+	for _, name := range names {
+		prefix, _, ok := strings.Cut(name, "_")
+		require.True(t, ok, "migration %s has no version prefix", name)
+		version, err := strconv.ParseInt(prefix, 10, 64)
+		require.NoError(t, err)
+		newest = max(newest, version)
+	}
+	for _, m := range migrations.GoMigrations() {
+		newest = max(newest, m.Version)
+	}
+	require.Positive(t, newest, "no embedded migrations were found")
+	return newest
 }

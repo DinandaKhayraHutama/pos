@@ -51,6 +51,10 @@ func Shell(title string, s Session) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
+		templ_7745c5c3_Err = bo.RailPreference().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
 		templ_7745c5c3_Err = bo.Styles().Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -59,33 +63,49 @@ func Shell(title string, s Session) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</head><body><header class=\"topbar platform\"><div class=\"brand\">JustClick <span class=\"env-tag\">PLATFORM</span></div><nav><a href=\"/platform/tenants\">Perusahaan</a> <a href=\"/platform/audit\">Log audit</a> <a href=\"/platform/ops\">Ops</a></nav><div class=\"who\"><span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</head><body class=\"app\"><div class=\"layout\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = bo.Sidebar("JustClick", "/platform/tenants", true, navFor(s)).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div class=\"pane\"><header class=\"topbar\"><button type=\"button\" class=\"rail-toggle\" aria-label=\"Buka atau tutup menu\" aria-expanded=\"true\" onclick=\"toggleRail()\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = bo.NavIcon("menu").Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</button><div class=\"crumb\">Administrasi platform</div><div class=\"who\"><span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(s.AdminName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/platform/views/layout.templ`, Line: 28, Col: 24}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/platform/views/layout.templ`, Line: 36, Col: 26}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</span><form method=\"post\" action=\"/platform/logout\"><input type=\"hidden\" name=\"gorilla.csrf.Token\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</span><form method=\"post\" action=\"/platform/logout\"><input type=\"hidden\" name=\"gorilla.csrf.Token\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(s.CSRFToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/platform/views/layout.templ`, Line: 30, Col: 72}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/platform/views/layout.templ`, Line: 38, Col: 74}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"> <button type=\"submit\" class=\"link\">Keluar</button></form></div></header><main>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\"> <button type=\"submit\" class=\"link\">Keluar</button></form></div></header><main>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -93,7 +113,15 @@ func Shell(title string, s Session) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</main></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</main></div></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = bo.RailScript().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -134,33 +162,33 @@ func MessagePage(s Session, title, message string) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<h1>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<h1>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/platform/views/layout.templ`, Line: 44, Col: 13}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/platform/views/layout.templ`, Line: 55, Col: 13}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</h1><div class=\"card\"><p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</h1><div class=\"card\"><p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(message)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/platform/views/layout.templ`, Line: 45, Col: 32}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/platform/views/layout.templ`, Line: 56, Col: 32}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</p></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</p></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -195,12 +223,32 @@ func platformStyles() templ.Component {
 			templ_7745c5c3_Var9 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<style>\n\t\t.topbar.platform { background:#101828; border-bottom:0; }\n\t\t.topbar.platform .brand, .topbar.platform nav a, .topbar.platform .who, .topbar.platform button.link { color:#fff; }\n\t\t.topbar.platform nav a:hover { background:#1d2939; }\n\t\t.env-tag { font-size:11px; letter-spacing:.08em; background:var(--danger); color:#fff; padding:2px 8px; border-radius:999px; vertical-align:middle; }\n\t\t.secret { font:600 20px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace; letter-spacing:.06em; }\n\t\t.mono { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; word-break:break-all; }\n\t\t.tiles { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:12px; }\n\t\t.tile { border:1px solid var(--line); border-radius:8px; padding:10px 12px; }\n\t\t.tile .label { font-size:12px; color:var(--muted); }\n\t\t.tile .value { font-size:20px; font-weight:650; }\n\t\t.flash { background:#ecfdf3; border:1px solid #abefc6; border-radius:8px; padding:10px 14px; margin-bottom:16px; }\n\t\t.bad { color:var(--danger); }\n\t\tul.codes { columns:2; font:600 16px/1.9 ui-monospace,SFMono-Regular,Consolas,monospace; padding-left:20px; }\n\t\tinput.link-field { width:100%; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:13px; }\n\t\tform.stack.wide { width:auto; max-width:560px; }\n\t</style>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<style>\n\t\t/* The platform sidebar is dark and tagged, so nobody mistakes a panel\n\t\t   that reaches every merchant for one that reaches only their own. */\n\t\t.side.platform { background:#101828; border-right-color:#1d2939; }\n\t\t.side.platform .side-head { border-bottom-color:#1d2939; }\n\t\t.side.platform .brand, .side.platform .nav-link, .side.platform .nav-group > summary { color:#fff; }\n\t\t.side.platform .nav-group > summary { color:#98a2b3; }\n\t\t.side.platform .nav-link:hover, .side.platform .nav-group > summary:hover { background:#1d2939; }\n\t\t.side.platform .nav-link.is-active { background:#1d2939; color:#fff; }\n\t\t.env-tag { font-size:11px; letter-spacing:.08em; background:var(--danger); color:#fff; padding:2px 8px; border-radius:999px; vertical-align:middle; }\n\t\t.secret { font:600 20px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace; letter-spacing:.06em; }\n\t\t.mono { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; word-break:break-all; }\n\t\t.tiles { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:12px; }\n\t\t.tile { border:1px solid var(--line); border-radius:8px; padding:10px 12px; }\n\t\t.tile .label { font-size:12px; color:var(--muted); }\n\t\t.tile .value { font-size:20px; font-weight:650; }\n\t\t.flash { background:#ecfdf3; border:1px solid #abefc6; border-radius:8px; padding:10px 14px; margin-bottom:16px; }\n\t\t.bad { color:var(--danger); }\n\t\tul.codes { columns:2; font:600 16px/1.9 ui-monospace,SFMono-Regular,Consolas,monospace; padding-left:20px; }\n\t\tinput.link-field { width:100%; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:13px; }\n\t\tform.stack.wide { width:auto; max-width:560px; }\n\t</style>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		return nil
 	})
+}
+
+// navFor is the platform panel's own menu, rendered by the Backoffice's
+// sidebar so support staff move between the two panels without relearning
+// where anything is. Grouped even though each group holds one destination:
+// the shape is what makes the two panels recognisably the same product, and
+// the platform panel is the one that will grow more sections.
+func navFor(s Session) bo.NavView {
+	groups := []bo.NavGroup{
+		{Label: "Merchant", Icon: "building", Items: []bo.NavItem{
+			{Label: "Perusahaan", Href: "/platform/tenants"},
+		}},
+		{Label: "Jejak", Icon: "log", Items: []bo.NavItem{
+			{Label: "Log audit", Href: "/platform/audit"},
+		}},
+		{Label: "Operasi", Icon: "pulse", Items: []bo.NavItem{
+			{Label: "Ops", Href: "/platform/ops"},
+		}},
+	}
+	return bo.NavView{Groups: groups, Active: bo.ActiveHref(groups, s.Path)}
 }
 
 var _ = templruntime.GeneratedTemplate

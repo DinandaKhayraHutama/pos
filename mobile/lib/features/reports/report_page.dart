@@ -36,9 +36,9 @@ class ReportPage extends ConsumerWidget {
             actions: [
               IconButton(
                 tooltip: l10n.reportExport,
-                onPressed: report.valueOrNull == null
+                onPressed: report.valueOrNull?.presentable == null
                     ? null
-                    : () => _export(context, report.value!),
+                    : () => _export(context, report.value!.presentable!),
                 icon: const Icon(Icons.download_rounded),
               ),
             ],
@@ -51,15 +51,7 @@ class ReportPage extends ConsumerWidget {
               report.when(
                 loading: () => const LoadingIndicator(),
                 error: (e, _) => Text('$e'),
-                data: (r) => r.isEmpty
-                    ? GlassCard.solid(
-                        child: Text(
-                          l10n.reportEmpty,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: context.design.textMedium),
-                        ),
-                      )
-                    : _ReportBody(report: r),
+                data: (view) => _ReportView(view: view),
               ),
             ],
           ),
@@ -180,33 +172,169 @@ class _RangePicker extends ConsumerWidget {
   }
 }
 
-class _ReportBody extends StatelessWidget {
-  const _ReportBody({required this.report});
-  final SalesReport report;
+/// Draws whichever report this install actually has, always under a line that
+/// says where it came from.
+///
+/// The label is not decoration. A server report covers every register in the
+/// outlet; a local one covers this device. They look identical on screen, so
+/// without the label an owner comparing two tablets is comparing two different
+/// questions and does not know it.
+class _ReportView extends StatelessWidget {
+  const _ReportView({required this.view});
+  final ReportView view;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final design = context.design;
+
+    if (view.source == ReportSource.forbidden) {
+      return GlassCard.solid(
+        child: Text(
+          l10n.reportNotPermitted,
+          textAlign: TextAlign.center,
+          style: TextStyle(color: design.textMedium),
+        ),
+      );
+    }
+    final report = view.presentable;
+    if (report == null) {
+      return GlassCard.solid(
+        child: Text(
+          l10n.reportSourceUnavailable,
+          textAlign: TextAlign.center,
+          style: TextStyle(color: design.textMedium),
+        ),
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _HeadlineTiles(report: report),
+        _SourceBanner(view: view),
+        const SizedBox(height: AppDimensions.space12),
+        if (report.isEmpty && view.unsyncedCount == 0)
+          GlassCard.solid(
+            child: Text(
+              l10n.reportEmpty,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: design.textMedium),
+            ),
+          )
+        else
+          _ReportBody(report: report, view: view),
+      ],
+    );
+  }
+}
+
+/// Where these figures came from, how fresh they are, and what is missing.
+class _SourceBanner extends StatelessWidget {
+  const _SourceBanner({required this.view});
+  final ReportView view;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final design = context.design;
+    final lines = <String>[
+      switch (view.source) {
+        ReportSource.server => l10n.reportSourceServer(
+          view.server?.computedAt == null
+              ? '—'
+              : DateFormatter.dateTime(view.server!.computedAt!),
+        ),
+        ReportSource.cache => l10n.reportSourceCache(
+          view.cachedAt == null
+              ? '—'
+              : DateFormatter.dateTime(view.cachedAt!),
+        ),
+        ReportSource.unavailable => l10n.reportSourceUnavailable,
+        ReportSource.local => l10n.reportSourceLocal,
+        ReportSource.forbidden => l10n.reportNotPermitted,
+      },
+      if (view.server?.incomplete ?? false) l10n.reportIncomplete,
+      // Named beside the totals, never added to them: the server figure is
+      // what the outlet sold as the server knows it, and quietly topping it up
+      // with one device's queue produces a number that matches nothing.
+      if (view.unsyncedCount > 0)
+        l10n.reportUnsyncedNotice(view.unsyncedCount),
+    ];
+
+    return GlassCard.solid(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final line in lines)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 14,
+                    color: design.textMedium,
+                  ),
+                  const SizedBox(width: AppDimensions.space8),
+                  Expanded(
+                    child: Text(
+                      line,
+                      style: TextStyle(fontSize: 12, color: design.textMedium),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReportBody extends StatelessWidget {
+  const _ReportBody({required this.report, required this.view});
+  final SalesReport report;
+  final ReportView view;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final server = view.server;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _HeadlineTiles(report: report, view: view),
         const SizedBox(height: AppDimensions.space16),
         _Section(
-          title: l10n.reportSummary,
+          title: l10n.reportWaterfall,
           child: Column(
             children: [
-              _MoneyRow(label: l10n.reportSubtotal, value: report.subtotal),
-              _MoneyRow(label: l10n.reportDiscount, value: -report.discount),
+              // Read top to bottom: each line is produced from the one above
+              // it. Tiles would say nothing about that order, which is the
+              // whole point of showing it this way.
+              _MoneyRow(label: l10n.reportGrossSales, value: report.grossSales),
+              _MoneyRow(label: l10n.reportDiscount, value: -report.allDiscount),
+              _MoneyRow(
+                label: l10n.reportSalesReturns,
+                value: -report.salesReturns,
+              ),
+              const Divider(height: AppDimensions.space20),
+              _MoneyRow(
+                label: l10n.reportNetSales,
+                value: report.netSales,
+                bold: true,
+              ),
+              _MoneyRow(label: l10n.reportTax, value: report.tax),
               _MoneyRow(
                 label: l10n.reportServiceCharge,
                 value: report.serviceCharge,
               ),
-              _MoneyRow(label: l10n.reportTax, value: report.tax),
               const Divider(height: AppDimensions.space20),
               _MoneyRow(
-                label: l10n.reportRevenue,
+                label: l10n.reportTotalReceipts,
                 value: report.revenue,
                 bold: true,
               ),
@@ -232,8 +360,13 @@ class _ReportBody extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: AppDimensions.space12),
-        _ProfitSection(report: report),
+        // The profit half is drawn only when the account may see it. When the
+        // server withheld it the figures are ABSENT from the response, not
+        // zero, so there is nothing here to accidentally render as free money.
+        if (server == null || server.hasCostData) ...[
+          const SizedBox(height: AppDimensions.space12),
+          _ProfitSection(report: report),
+        ],
         const SizedBox(height: AppDimensions.space12),
         _BucketSection(
           title: l10n.reportByPayment,
@@ -245,25 +378,42 @@ class _ReportBody extends StatelessWidget {
           },
           total: report.revenue,
         ),
-        const SizedBox(height: AppDimensions.space12),
-        _BucketSection(
-          title: l10n.reportByType,
-          buckets: report.byOrderType,
-          labelFor: (k) => switch (OrderTypeX.fromWire(k)) {
-            OrderType.dineIn => l10n.posDineIn,
-            OrderType.takeaway => l10n.posTakeaway,
-            OrderType.delivery => l10n.posDelivery,
-          },
-          total: report.revenue,
-        ),
+        // The server does not group by order type, so a connected till shows
+        // no section rather than an invented one.
+        if (report.byOrderType.isNotEmpty) ...[
+          const SizedBox(height: AppDimensions.space12),
+          _BucketSection(
+            title: l10n.reportByType,
+            buckets: report.byOrderType,
+            labelFor: (k) => switch (OrderTypeX.fromWire(k)) {
+              OrderType.dineIn => l10n.posDineIn,
+              OrderType.takeaway => l10n.posTakeaway,
+              OrderType.delivery => l10n.posDelivery,
+            },
+            total: report.revenue,
+          ),
+        ],
         const SizedBox(height: AppDimensions.space12),
         _CategorySection(report: report),
+        if (server != null && server.byProductInCategory.isNotEmpty) ...[
+          const SizedBox(height: AppDimensions.space12),
+          _TopItemsSection(groups: server.byProductInCategory),
+        ],
+        if (server != null && server.byWeekday.isNotEmpty) ...[
+          const SizedBox(height: AppDimensions.space12),
+          _WeekdaySection(lines: server.byWeekday),
+        ],
+        // Only worth a section when there is more than one branch to compare.
+        if (server != null && server.byOutlet.length > 1) ...[
+          const SizedBox(height: AppDimensions.space12),
+          _OutletSection(lines: server.byOutlet),
+        ],
         const SizedBox(height: AppDimensions.space12),
         _BucketSection(
           title: l10n.reportByCashier,
           buckets: report.byCashier,
           labelFor: (k) => k,
-          total: report.revenue,
+          total: report.netSales,
         ),
         const SizedBox(height: AppDimensions.space12),
         _DailySection(report: report),
@@ -361,13 +511,115 @@ class _ProfitSection extends StatelessWidget {
   }
 }
 
+/// Top items within each category.
+///
+/// The items in a group always sum to that category's own net sales: the
+/// server allocates the order discount across categories and then across the
+/// products inside each one, in a single pass, so the two breakdowns cannot
+/// round a rupiah apart.
+class _TopItemsSection extends StatelessWidget {
+  const _TopItemsSection({required this.groups});
+  final List<ServerCategoryProducts> groups;
+
+  @override
+  Widget build(BuildContext context) {
+    final design = context.design;
+    return _Section(
+      title: context.l10n.reportTopItemsInCategory,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final group in groups) ...[
+            Padding(
+              padding: const EdgeInsets.only(top: AppDimensions.space8),
+              child: Text(
+                group.label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                  color: design.textMedium,
+                ),
+              ),
+            ),
+            for (final item in group.items)
+              _PlainRow(
+                label: '${item.label} · ${item.quantity}',
+                value: MoneyFormatter.format(item.netSales),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Net sales by day of the week.
+///
+/// The weekday comes from the BUSINESS date on the server, not from a
+/// timestamp: a sale rung up after midnight belongs to the trading day it was
+/// part of. The day count says how many of each weekday actually traded, so a
+/// period that is not a whole number of weeks can be read honestly.
+class _WeekdaySection extends StatelessWidget {
+  const _WeekdaySection({required this.lines});
+  final List<ServerWeekdayLine> lines;
+
+  @override
+  Widget build(BuildContext context) => _Section(
+    title: context.l10n.reportByWeekday,
+    child: Column(
+      children: [
+        for (final line in lines)
+          _PlainRow(
+            label: '${line.label} · ${line.days}',
+            value: MoneyFormatter.format(line.netSales),
+          ),
+      ],
+    ),
+  );
+}
+
+/// Branches over the same period, ranked by net sales rather than takings: a
+/// branch that charges service would otherwise come out ahead on tariff alone.
+class _OutletSection extends StatelessWidget {
+  const _OutletSection({required this.lines});
+  final List<ServerLine> lines;
+
+  @override
+  Widget build(BuildContext context) => _Section(
+    title: context.l10n.reportOutletComparison,
+    child: Column(
+      children: [
+        for (final line in lines)
+          _PlainRow(
+            label: '${line.label} · ${line.count}',
+            value: MoneyFormatter.format(line.netSales),
+          ),
+      ],
+    ),
+  );
+}
+
 class _HeadlineTiles extends StatelessWidget {
-  const _HeadlineTiles({required this.report});
+  const _HeadlineTiles({required this.report, required this.view});
   final SalesReport report;
+  final ReportView view;
+
+  /// The movement against the comparison period, or a dash.
+  ///
+  /// A zero base is NOT a 100% rise: there is nothing to compare against, and
+  /// a made-up percentage turns a first day of trade into a triumph.
+  String _delta(BuildContext context, int current, int? previous) {
+    final l10n = context.l10n;
+    if (previous == null || previous == 0) return l10n.reportNoComparison;
+    final change = (current - previous) * 100 / previous;
+    final sign = change < 0 ? '' : '+';
+    return '$sign${change.toStringAsFixed(1)}%';
+  }
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final previous = view.previous;
     // IntrinsicHeight is required, not decorative: `stretch` asks children to
     // fill the cross axis, and inside a ListView the row's height is unbounded
     // — the tall tile then gets an infinite constraint and the whole page
@@ -379,8 +631,11 @@ class _HeadlineTiles extends StatelessWidget {
           Expanded(
             flex: 2,
             child: _Tile(
-              label: l10n.reportRevenue,
-              value: MoneyFormatter.format(report.revenue),
+              label: l10n.reportNetSales,
+              value: MoneyFormatter.format(report.netSales),
+              detail: previous == null
+                  ? null
+                  : _delta(context, report.netSales, previous.netSales),
               big: true,
             ),
           ),
@@ -388,7 +643,13 @@ class _HeadlineTiles extends StatelessWidget {
           Expanded(
             child: Column(
               children: [
-                _Tile(label: l10n.reportOrders, value: '${report.orderCount}'),
+                _Tile(
+                  label: l10n.reportOrders,
+                  value: '${report.orderCount}',
+                  detail: previous == null
+                      ? null
+                      : _delta(context, report.orderCount, previous.orderCount),
+                ),
                 const SizedBox(height: AppDimensions.space10),
                 _Tile(
                   label: l10n.reportAverage,
@@ -404,9 +665,18 @@ class _HeadlineTiles extends StatelessWidget {
 }
 
 class _Tile extends StatelessWidget {
-  const _Tile({required this.label, required this.value, this.big = false});
+  const _Tile({
+    required this.label,
+    required this.value,
+    this.detail,
+    this.big = false,
+  });
   final String label;
   final String value;
+
+  /// A second line under the value — the comparison against the previous
+  /// period. Null draws nothing rather than an empty row.
+  final String? detail;
   final bool big;
 
   @override

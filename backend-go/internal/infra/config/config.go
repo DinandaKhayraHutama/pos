@@ -22,6 +22,26 @@ type Config struct {
 	// Owns the schema and runs DDL. Never used to serve a request.
 	MigrateDatabaseURL string `env:"MIGRATE_DATABASE_URL"`
 	RedisURL           string `env:"REDIS_URL"`
+	// Where Prometheus scrapes this process. Its own listener, never a route
+	// on the public one: /metrics names every internal queue and would be one
+	// proxy rule away from the internet. Compose does not publish this port.
+	// Empty disables publishing.
+	MetricsAddr string `env:"METRICS_ADDR" envDefault:":9090"`
+	// The pgx pool ceiling per process.
+	//
+	// pgx defaults to max(4, NumCPU), which is a property of the container's
+	// CPU allowance rather than of the database — two vCPUs would cap the
+	// whole API at four connections and turn a busy minute into a queue no
+	// query trace explains. Size it against PostgreSQL's max_connections
+	// instead: instances x (PG_MAX_CONNS + PG_UNSCOPED_MAX_CONNS) must stay
+	// under it with room for the worker, migrations and a psql session.
+	PGMaxConns int32 `env:"PG_MAX_CONNS" envDefault:"25"`
+	// The unscoped pool serves device-token lookups only, so it needs far
+	// fewer — but not so few that a cold cache queues behind itself.
+	PGUnscopedMaxConns int32 `env:"PG_UNSCOPED_MAX_CONNS" envDefault:"10"`
+	// Connections kept warm. A morning rush starts with an empty pool
+	// otherwise, and every till pays the TLS and startup handshake at once.
+	PGMinConns int32 `env:"PG_MIN_CONNS" envDefault:"2"`
 	// How often a till should poll /sync/changes. Served to the fleet in every
 	// response rather than compiled into the app, so an incident can widen the
 	// interval without waiting on an app-store review.
@@ -94,6 +114,15 @@ func Load() (Config, error) {
 	}
 	if c.Environment != "local" && c.Environment != "test" && len(c.AppKey) < 32 {
 		return Config{}, fmt.Errorf("APP_KEY must contain at least 32 bytes outside local/test")
+	}
+	// Refused at boot rather than accepted and discovered under load: a pool
+	// of one serialises the whole process behind a single connection, and the
+	// symptom is latency with no slow query behind it.
+	if c.PGMaxConns < 2 || c.PGUnscopedMaxConns < 2 {
+		return Config{}, fmt.Errorf("PG_MAX_CONNS and PG_UNSCOPED_MAX_CONNS must each be at least 2")
+	}
+	if c.PGMinConns < 0 || c.PGMinConns > c.PGMaxConns || c.PGMinConns > c.PGUnscopedMaxConns {
+		return Config{}, fmt.Errorf("PG_MIN_CONNS must be between 0 and the smaller of the two pool ceilings")
 	}
 
 	return c, nil

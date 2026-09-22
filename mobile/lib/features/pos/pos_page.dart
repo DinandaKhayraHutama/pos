@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../../core/localization/till_error.dart';
+import '../../data/device/till_coordinator.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/auth/authorize_sheet.dart';
@@ -1003,9 +1005,12 @@ class _OnDutyChip extends ConsumerWidget {
     // name into the same drawer, and whoever counts it at close is recorded
     // separately. Signing in from the login screen does NOT keep it — that
     // path re-resolves, so nobody silently inherits somebody else's drawer.
-    await ref
-        .read(settingsProvider.notifier)
-        .signIn(employee, keepPosSession: true);
+    try {
+      await ref.read(settingsProvider.notifier).signIn(employee, keepPosSession: true);
+    } on TillOperationException catch(e) {
+      if(context.mounted)showAppSnackBar(context,tillErrorMessage(context,e),error:true);
+      return;
+    }
     if (!context.mounted) return;
     showAppSnackBar(
       context,

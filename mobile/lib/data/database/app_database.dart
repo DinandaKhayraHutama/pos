@@ -81,7 +81,7 @@ class AppDatabase {
 
   /// Schema version the app currently targets. Exposed so tests can open an
   /// in-memory DB at the same version via [openForTest].
-  static const int currentVersion = 27;
+  static const int currentVersion = 30;
 
   /// Seed image ids that no longer resolve (all 404; `1605478371 size_400`
   /// was malformed with a literal space). Cleared in the v3 migration so
@@ -585,6 +585,46 @@ class AppDatabase {
       await db.execute(_promoOutletsDdl);
       await db.execute(_tableStatusEventsDdl);
       await db.execute(_tableStatusSequenceIndex);
+    }
+
+    if (oldVersion < 28) {
+      await db.execute(_tillStateDdl);
+      await db.execute(_tillOpenDdl);
+      await db.execute(_remoteOrdersDdl);
+      if (await _tableExists(db, 'stock_movements')) {
+        await _addColumnIfMissing(db, 'stock_movements', 'order_id', 'TEXT');
+      }
+    }
+
+    if (oldVersion < 29) {
+      // v29: manager-mediated recovery. Existing queue rows and till state are
+      // preserved; the new identifiers only annotate evidence received from
+      // the server after a forced takeover.
+      await _addColumnIfMissing(db, '_dead_letter', 'recovery_id', 'TEXT');
+      await _addColumnIfMissing(db, '_till_sessions', 'recovery_id', 'TEXT');
+      await _addColumnIfMissing(
+        db,
+        '_till_sessions',
+        'recovery_detected_at',
+        'INTEGER',
+      );
+    }
+
+    if (oldVersion < 30) {
+      // v30 (paritas F1): transaction history gains periods, scopes and
+      // filters, and the report screens gain a server cache.
+      //
+      // Additive for everything that holds money or owes the server work —
+      // `_outbox`, `_dead_letter`, `_till_sessions`, `orders` and the stock
+      // ledger are not touched at all. The one table REBUILT is
+      // `_remote_orders`, and only because its primary key has to gain the
+      // viewer: a cache keyed by receipt alone let a manager's wider fetch
+      // overwrite a cashier's row. Its rows are copied across rather than
+      // dropped, and every one of them is re-fetchable from the server anyway
+      // — it is a read cache, never a source of truth.
+      await _rebuildRemoteOrders(db);
+      await db.execute(_remoteHistoryMetaDdl);
+      await db.execute(_remoteReportsDdl);
     }
 
     // ---- Deferred data steps -------------------------------------------
@@ -1904,6 +1944,7 @@ class AppDatabase {
       code TEXT NOT NULL,
       message TEXT,
       details TEXT,
+      recovery_id TEXT,
       rejected_at INTEGER NOT NULL
     )
   ''';
@@ -2200,7 +2241,119 @@ class AppDatabase {
     batch.execute(_indexOpenSessionPerRegisterSql);
     batch.execute(_indexOrderItemModifiersItemSql);
     batch.execute(_indexProductModifierOptionsProductSql);
+    batch.execute(_tillStateDdl);
+    batch.execute(_tillOpenDdl);
+    batch.execute(_remoteOrdersDdl);
+    batch.execute(_remoteOrdersIndexDdl);
+    batch.execute(_remoteHistoryMetaDdl);
+    batch.execute(_remoteReportsDdl);
+    batch.execute('ALTER TABLE stock_movements ADD COLUMN order_id TEXT');
   }
+
+  static const _tillStateDdl = '''
+    CREATE TABLE IF NOT EXISTS _till_sessions (
+      id TEXT PRIMARY KEY, state TEXT NOT NULL, employee_id TEXT NOT NULL,
+      receipt_next INTEGER NOT NULL, receipt_end INTEGER NOT NULL,
+      recovery_id TEXT, recovery_detected_at INTEGER)
+  ''';
+  static const _tillOpenDdl = '''
+    CREATE TABLE IF NOT EXISTS _till_open_requests (
+      register_id TEXT PRIMARY KEY, payload TEXT NOT NULL)
+  ''';
+  /// Server receipts this device has read, keyed by (receipt, VIEWER).
+  ///
+  /// The viewer is part of the key because the scope of what may be read is a
+  /// property of the person, not of the receipt: with `id` alone as the key, a
+  /// manager's wider fetch overwrote the cashier's row with a different
+  /// `employee_id`, and the cashier's own history then came back empty after a
+  /// handover. Two rows for one receipt is the honest cost of that.
+  ///
+  /// `register_id`, `cashier_id`, `status` and `placed_at_ms` are lifted out of
+  /// the payload so a scoped or filtered read is a WHERE rather than decoding
+  /// every cached row in Dart. The payload itself stays authoritative.
+  static const _remoteOrdersDdl = '''
+    CREATE TABLE IF NOT EXISTS _remote_orders (
+      id TEXT NOT NULL,
+      employee_id TEXT NOT NULL,
+      business_date TEXT NOT NULL,
+      scope TEXT NOT NULL DEFAULT 'register',
+      register_id TEXT,
+      cashier_id TEXT,
+      status TEXT,
+      placed_at_ms INTEGER NOT NULL DEFAULT 0,
+      payload TEXT NOT NULL,
+      fetched_at INTEGER NOT NULL,
+      PRIMARY KEY (id, employee_id))
+  ''';
+  static const _remoteOrdersIndexDdl = '''
+    CREATE INDEX IF NOT EXISTS _remote_orders_read
+      ON _remote_orders (employee_id, business_date DESC, placed_at_ms DESC)
+  ''';
+
+  /// What was fetched, for whom, and whether the fetch finished.
+  ///
+  /// Without it the app cannot tell "this period had no sales" from "this
+  /// period was never downloaded", and those are opposite answers: the first
+  /// is a fact worth showing, the second is a reason to say the list is
+  /// incomplete offline rather than to draw an empty day.
+  /// Rebuilds `_remote_orders` onto its v30 key, carrying every cached row
+  /// across.
+  ///
+  /// SQLite cannot add a column to a primary key in place, so the table is
+  /// recreated beside the old one and the rows are copied. The copy keeps the
+  /// payload verbatim and re-derives the new columns from it — the payload is
+  /// what the server sent, so nothing here is invented.
+  ///
+  /// `INSERT OR IGNORE` because the OLD key allowed one row per receipt across
+  /// every viewer: nothing can duplicate under the wider key, but an install
+  /// that somehow holds a collision keeps its first row rather than failing
+  /// the whole upgrade.
+  Future<void> _rebuildRemoteOrders(Database db) async {
+    if (!await _tableExists(db, '_remote_orders')) {
+      await db.execute(_remoteOrdersDdl);
+      await db.execute(_remoteOrdersIndexDdl);
+      return;
+    }
+    await db.execute('ALTER TABLE _remote_orders RENAME TO _remote_orders_v29');
+    await db.execute(_remoteOrdersDdl);
+    await db.execute(_remoteOrdersIndexDdl);
+    await db.execute('''
+      INSERT OR IGNORE INTO _remote_orders
+        (id, employee_id, business_date, scope, register_id, cashier_id, status, placed_at_ms, payload, fetched_at)
+      SELECT id, employee_id, business_date, 'register',
+             json_extract(payload, '\$.pos_id'),
+             json_extract(payload, '\$.cashier_id'),
+             json_extract(payload, '\$.status'),
+             COALESCE(json_extract(payload, '\$.placed_at_ms'), 0),
+             payload, fetched_at
+      FROM _remote_orders_v29
+    ''');
+    await db.execute('DROP TABLE _remote_orders_v29');
+  }
+
+  static const _remoteHistoryMetaDdl = '''
+    CREATE TABLE IF NOT EXISTS _remote_history_meta (
+      employee_id TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      filter_key TEXT NOT NULL,
+      fetched_at INTEGER NOT NULL,
+      complete INTEGER NOT NULL DEFAULT 0,
+      row_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (employee_id, scope, filter_key))
+  ''';
+
+  /// Server report bodies, cached per viewer and per filter so an offline till
+  /// shows the LAST SERVER ANSWER with its timestamp — never a local total
+  /// quietly standing in for an outlet one.
+  static const _remoteReportsDdl = '''
+    CREATE TABLE IF NOT EXISTS _remote_reports (
+      employee_id TEXT NOT NULL,
+      endpoint TEXT NOT NULL,
+      filter_key TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      fetched_at INTEGER NOT NULL,
+      PRIMARY KEY (employee_id, endpoint, filter_key))
+  ''';
 
   /// Held as constants because both `_createSchemaV2` (fresh install) and the
   /// v10 upgrade have to create these, and two copies of a CREATE TABLE is how
