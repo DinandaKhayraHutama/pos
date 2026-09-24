@@ -64,7 +64,7 @@ func (f fixture) provision(t *testing.T, slug string) (tenantID, ownerID string)
 func (f fixture) create(t *testing.T, tenantID, name string, role auth.Role, pin string) string {
 	t.Helper()
 
-	id, err := f.svc.Create(context.Background(), tenantID, staff.ProfileInput{Name: name, Role: role}, pin)
+	id, err := f.svc.Create(context.Background(), tenantID, "", staff.ProfileInput{Name: name, Role: role}, pin)
 	require.NoError(t, err)
 
 	return id
@@ -132,7 +132,7 @@ func TestAPINMustBeExactlyFourDigits(t *testing.T) {
 	f := newFixture(t)
 
 	for _, pin := range []string{"", "123", "12345", "12a4", " 1234"} {
-		_, err := f.svc.Create(context.Background(), f.tenantID,
+		_, err := f.svc.Create(context.Background(), f.tenantID, "",
 			staff.ProfileInput{Name: "Sari", Role: auth.Cashier}, pin)
 		requireField(t, err, "pin")
 	}
@@ -151,7 +151,7 @@ func TestStaffMayShareAPIN(t *testing.T) {
 
 	departed := f.create(t, f.tenantID, "Dewi", auth.Cashier, "5678")
 	require.NoError(t, f.svc.SetActive(ctx, f.tenantID, f.ownerID, departed, false))
-	require.NoError(t, f.svc.SetPIN(ctx, f.tenantID, departed, "1234"))
+	require.NoError(t, f.svc.SetPIN(ctx, f.tenantID, f.ownerID, departed, "1234"))
 	require.NoError(t, f.svc.SetActive(ctx, f.tenantID, f.ownerID, departed, true),
 		"coming back with a PIN someone else uses is fine")
 
@@ -193,7 +193,7 @@ func TestTwoOwnersDemotingEachOtherLeaveExactlyOne(t *testing.T) {
 
 	for round := range 8 {
 		tenantID, first := f.provision(t, fmt.Sprintf("race-%d", round))
-		second, err := f.svc.Create(ctx, tenantID,
+		second, err := f.svc.Create(ctx, tenantID, "",
 			staff.ProfileInput{Name: "Owner Dua", Role: auth.Owner}, "2222")
 		require.NoError(t, err)
 
@@ -258,17 +258,17 @@ func TestABackofficePasswordIsOnlyForRolesThatUseIt(t *testing.T) {
 	ctx := context.Background()
 
 	cashier := f.create(t, f.tenantID, "Sari", auth.Cashier, "1234")
-	requireField(t, f.svc.SetPassword(ctx, f.tenantID, cashier, "a-long-enough-password"), "password")
+	requireField(t, f.svc.SetPassword(ctx, f.tenantID, f.ownerID, cashier, "a-long-enough-password"), "password")
 
 	email := "manajer@example.test"
-	manager, err := f.svc.Create(ctx, f.tenantID,
+	manager, err := f.svc.Create(ctx, f.tenantID, "",
 		staff.ProfileInput{Name: "Manajer", Role: auth.Manager, Email: &email}, "5678")
 	require.NoError(t, err)
 
-	requireField(t, f.svc.SetPassword(ctx, f.tenantID, manager, "short"), "password")
-	requireField(t, f.svc.SetPassword(ctx, f.tenantID, manager, strings.Repeat("x", 73)), "password")
+	requireField(t, f.svc.SetPassword(ctx, f.tenantID, f.ownerID, manager, "short"), "password")
+	requireField(t, f.svc.SetPassword(ctx, f.tenantID, f.ownerID, manager, strings.Repeat("x", 73)), "password")
 
-	require.NoError(t, f.svc.SetPassword(ctx, f.tenantID, manager, "a-long-enough-password"))
+	require.NoError(t, f.svc.SetPassword(ctx, f.tenantID, f.ownerID, manager, "a-long-enough-password"))
 
 	signedIn, err := f.svc.Authenticate(ctx, "MANAJER@example.test", "a-long-enough-password")
 	require.NoError(t, err, "the password set here is the one the sign-in form accepts")
@@ -281,7 +281,7 @@ func TestAnEmailBelongsToOneAccount(t *testing.T) {
 	f := newFixture(t)
 
 	taken := "Alpha-Owner@Example.test"
-	_, err := f.svc.Create(context.Background(), f.tenantID,
+	_, err := f.svc.Create(context.Background(), f.tenantID, "",
 		staff.ProfileInput{Name: "Tiruan", Role: auth.Manager, Email: &taken}, "9999")
 
 	requireField(t, err, "email")
@@ -318,7 +318,7 @@ func TestAPasswordChangeWakesNobody(t *testing.T) {
 	f := newFixture(t)
 	before := f.counter(t, "employees")
 
-	require.NoError(t, f.svc.SetPassword(context.Background(), f.tenantID, f.ownerID, "another-long-password"))
+	require.NoError(t, f.svc.SetPassword(context.Background(), f.tenantID, f.ownerID, f.ownerID, "another-long-password"))
 
 	require.Equal(t, before, f.counter(t, "employees"))
 }
@@ -332,7 +332,7 @@ func TestStaffAreTenantIsolated(t *testing.T) {
 
 	_, err := f.svc.Profile(ctx, f.tenantID, theirs)
 	require.ErrorIs(t, err, staff.ErrNotFound)
-	require.ErrorIs(t, f.svc.SetPIN(ctx, f.tenantID, theirs, "4321"), staff.ErrNotFound)
+	require.ErrorIs(t, f.svc.SetPIN(ctx, f.tenantID, f.ownerID, theirs, "4321"), staff.ErrNotFound)
 	require.ErrorIs(t, f.svc.SetActive(ctx, f.tenantID, f.ownerID, theirs, false), staff.ErrNotFound)
 
 	mine, err := f.svc.List(ctx, f.tenantID)

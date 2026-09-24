@@ -37,7 +37,9 @@ class GlassCard extends StatelessWidget {
     super.key,
     this.child,
     this.padding = AppDimensions.cardPadding,
-    this.radius = const BorderRadius.all(Radius.circular(AppDimensions.radius20)),
+    this.radius = const BorderRadius.all(
+      Radius.circular(AppDimensions.radius20),
+    ),
     this.blur = true,
     this.tint,
     this.borderColor,
@@ -136,11 +138,11 @@ class GlassCard extends StatelessWidget {
               // brand colour. Call sites then paired it with `onXContainer`
               // text, which is tuned for a pale wash, so the checkout total
               // read as dark navy on saturated blue.
-              color: tint ??
+              color:
+                  tint ??
                   design.glassTint.withValues(alpha: design.glassOpacity),
               border: Border.all(
-                color:
-                    borderColor ?? design.glassBorder.withValues(alpha: 0.6),
+                color: borderColor ?? design.glassBorder.withValues(alpha: 0.6),
                 width: borderColor != null ? borderWidth : 0.6,
               ),
               boxShadow: [
@@ -203,8 +205,7 @@ class GlassCard extends StatelessWidget {
                   end: Alignment.bottomCenter,
                   colors: [
                     Colors.white.withValues(
-                      alpha:
-                          design.brightness == Brightness.light ? 0.6 : 0.25,
+                      alpha: design.brightness == Brightness.light ? 0.6 : 0.25,
                     ),
                     Colors.white.withValues(alpha: 0.0),
                   ],
@@ -240,16 +241,15 @@ class GlassCard extends StatelessWidget {
 
     // The blur path is the only thing that allocates a BackdropFilter, so a
     // list of `.solid` cards stays cheap.
-    final Widget decorated =
-        blur
-            ? BackdropFilter(
-              filter: ImageFilter.blur(
-                sigmaX: design.glassBlurSigma,
-                sigmaY: design.glassBlurSigma,
-              ),
-              child: painted,
-            )
-            : painted;
+    final Widget decorated = blur
+        ? BackdropFilter(
+            filter: ImageFilter.blur(
+              sigmaX: design.glassBlurSigma,
+              sigmaY: design.glassBlurSigma,
+            ),
+            child: painted,
+          )
+        : painted;
 
     // Clip so the tint + backdrop stay inside the rounded corners.
     return ClipRRect(borderRadius: radius, child: decorated);
@@ -257,7 +257,12 @@ class GlassCard extends StatelessWidget {
 
   Widget _body() {
     if (child != null && trailing != null) {
-      return Row(children: [Expanded(child: child!), trailing!]);
+      return Row(
+        children: [
+          Expanded(child: child!),
+          trailing!,
+        ],
+      );
     }
     if (child != null) return child!;
     return trailing!;

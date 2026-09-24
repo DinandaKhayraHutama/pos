@@ -17,12 +17,17 @@ func TestRealPostgresRowsConformToOpenAPI(t *testing.T) {
 	require.NoError(t, syncfixture.Seed(context.Background(), f.feed, f.tenantID, 2))
 	schemas := map[string]string{
 		"employees": "EmployeeRow", "outlets": "OutletRow", "pos_registers": "RegisterRow",
-		"categories": "CategoryRow", "products": "ProductRow", "product_variants": "VariantRow",
+		"categories": "CategoryRow", "brands": "BrandRow", "customers": "CustomerRow",
+		"products": "ProductRow", "product_variants": "VariantRow",
 		"modifier_groups": "ModifierGroupRow", "modifier_options": "ModifierOptionRow",
 		"product_modifier_groups": "ProductModifierGroupRow", "product_modifier_options": "ProductModifierOptionRow",
 		"promos": "PromoRow", "promo_outlets": "PromoOutletRow",
 		"outlet_stock": "OutletStockRow", "stock_movements": "StockMovementRow",
 		"tables": "TableRow", "table_status": "TableStatusRow",
+		"roles": "RoleRow", "business_settings": "BusinessSettingsRow", "outlet_settings": "OutletSettingsRow",
+		"sales_types": "SalesTypeRow", "payment_methods": "PaymentMethodRow", "payment_groups": "PaymentGroupRow",
+		"discounts": "DiscountRow", "product_sales_type_prices": "ProductSalesTypePriceRow",
+		"outlet_product_sales_type_prices": "OutletProductSalesTypePriceRow",
 	}
 	var outletID string
 	require.NoError(t, f.db.Owner.QueryRow(context.Background(), syncfixture.FeedOutletSQL, f.tenantID).Scan(&outletID))

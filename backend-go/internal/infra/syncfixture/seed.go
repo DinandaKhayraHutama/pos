@@ -15,7 +15,8 @@ import (
 // outlet feed ask for the same one.
 const FeedOutletSQL = `SELECT id::text FROM outlets WHERE tenant_id = $1 ORDER BY created_at, id LIMIT 1`
 
-// Seed publishes n rows of every current feed in manifest order, through the
+// Seed publishes n rows of every current feed (one of a singleton feed) in
+// manifest order, through the
 // real counter/write path. Use a fresh tenant with no previously published
 // rows: join fixtures pair rows by sequence. The caller owns tenant cleanup.
 func Seed(ctx context.Context, feed *syncfeed.Service, tenantID string, n int) error {
@@ -32,8 +33,18 @@ func Seed(ctx context.Context, feed *syncfeed.Service, tenantID string, n int) e
 				columns, values = "name, outlet_id", "'Feed Register ' || g, (SELECT id FROM outlets WHERE tenant_id=$1 ORDER BY id LIMIT 1)"
 			case "categories":
 				columns, values = "name", "'Feed Category ' || g"
+			case "brands":
+				columns, values = "name", "'Feed Brand ' || g"
+			case "customers":
+				columns, values = "id, name", "gen_random_uuid(), 'Feed Customer ' || g"
 			case "products":
-				columns, values = "name, price, category_id", "'Feed Product ' || g, 10000 + g, (SELECT id FROM categories WHERE tenant_id=$1 ORDER BY id LIMIT 1)"
+				// Every fixture product carries a brand, not just a category —
+				// otherwise this fixture would never exercise the join a brand
+				// filter or report needs, only the case where brand_id is NULL.
+				columns, values = "name, price, category_id, brand_id",
+					"'Feed Product ' || g, 10000 + g, "+
+						"(SELECT id FROM categories WHERE tenant_id=$1 ORDER BY id LIMIT 1), "+
+						"(SELECT id FROM brands WHERE tenant_id=$1 ORDER BY id LIMIT 1)"
 			case "product_variants":
 				columns, values = "name, product_id", "'Feed Variant ' || g, (SELECT id FROM products WHERE tenant_id=$1 ORDER BY id LIMIT 1)"
 			case "modifier_groups":
@@ -57,6 +68,26 @@ func Seed(ctx context.Context, feed *syncfeed.Service, tenantID string, n int) e
 					"gen_random_uuid(), $4, (SELECT id FROM products WHERE tenant_id=$1 AND sync_seq=$2+g-1), 'received', 1, 1, 0, 'backoffice', 'Feed Staff', 'Feed Product ' || g, $2+g-1"
 			case "tables":
 				columns, values = "outlet_id, name, area, capacity, sort_order", "$4, 'Feed Table ' || g, 'Feed Area', 4, g"
+			case "roles":
+				// Custom roles only: the three system roles already exist, seeded
+				// with the tenant, and a system_key may appear once per merchant.
+				columns, values = "name, permissions", "'Feed Role ' || g, ARRAY['sell', 'viewOwnOrders']"
+			case "business_settings":
+				columns, values = "tax_rate_bp", "1000"
+			case "outlet_settings":
+				columns, values = "outlet_id, pricing_model", "$4, 'legacy'"
+			case "sales_types":
+				columns, values = "name", "'Feed Sales Type ' || g"
+			case "payment_methods":
+				columns, values = "name, kind", "'Feed Payment ' || g, 'other'"
+			case "payment_groups":
+				columns, values = "name, method_ids", "'Feed Payment Group ' || g, ARRAY(SELECT id FROM payment_methods WHERE tenant_id=$1 ORDER BY id LIMIT 2)"
+			case "discounts":
+				columns, values = "name, scope, kind, value", "'Feed Discount ' || g, 'bill', 'amount', 1000"
+			case "product_sales_type_prices":
+				columns, values = "product_id, sales_type_id, price", "(SELECT id FROM products WHERE tenant_id=$1 AND sync_seq=$2+g-1), (SELECT id FROM sales_types WHERE tenant_id=$1 ORDER BY id LIMIT 1), 12000 + g"
+			case "outlet_product_sales_type_prices":
+				columns, values = "outlet_id, product_id, sales_type_id, price", "$4, (SELECT id FROM products WHERE tenant_id=$1 AND sync_seq=$2+g-1), (SELECT id FROM sales_types WHERE tenant_id=$1 ORDER BY id LIMIT 1), 13000 + g"
 			case "table_status":
 				// A fresh branch counter starts the status feed where the tables
 				// feed started, so seq pairs each status with its table.
@@ -68,20 +99,24 @@ func Seed(ctx context.Context, feed *syncfeed.Service, tenantID string, n int) e
 			args := []any{tenantID}
 			var first int64
 			var err error
+			rows := n
+			if e.Singleton {
+				rows = 1
+			}
 			if e.Scope == syncfeed.ScopeOutlet {
 				if outletID == "" {
 					if err := w.Tx.QueryRow(ctx, FeedOutletSQL, tenantID).Scan(&outletID); err != nil {
 						return fmt.Errorf("seed %s: find feed outlet: %w", e.Name, err)
 					}
 				}
-				first, err = w.OutletSeqBlock(ctx, e.Name, outletID, int64(n))
+				first, err = w.OutletSeqBlock(ctx, e.Name, outletID, int64(rows))
 			} else {
-				first, err = w.SeqBlock(ctx, e.Name, int64(n))
+				first, err = w.SeqBlock(ctx, e.Name, int64(rows))
 			}
 			if err != nil {
 				return err
 			}
-			args = append(args, first, n)
+			args = append(args, first, rows)
 			if e.Scope == syncfeed.ScopeOutlet {
 				args = append(args, outletID)
 			}
@@ -97,4 +132,13 @@ func Seed(ctx context.Context, feed *syncfeed.Service, tenantID string, n int) e
 		}
 		return nil
 	})
+}
+
+// ExpectedRows is how many rows a till pulls from a feed Seed wrote n of: one
+// for a singleton feed, otherwise n plus the rows every merchant is born with.
+func ExpectedRows(e syncfeed.Entity, n int) int {
+	if e.Singleton {
+		return 1
+	}
+	return n + e.SystemRows
 }

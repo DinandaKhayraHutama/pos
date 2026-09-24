@@ -20,6 +20,7 @@ class Order {
   final OrderType type;
   final TableAssignment? table;
   final String? customerName;
+  final String? customerId;
   final String? note;
 
   final int subtotal;
@@ -89,6 +90,26 @@ class Order {
   /// refund records less. Null until a refund happens.
   final int? refundedAmount;
 
+  final int? pricingVersion;
+  final int taxIncluded;
+  final int roundingAmount;
+  final int? timezoneOffsetMinutes;
+  final String? salesTypeId;
+  final String? salesTypeName;
+  final String? paymentMethodId;
+  final String? paymentMethodName;
+  final String? paymentReference;
+  final String? servedById;
+  final String? servedByName;
+  final String? discountId;
+  final String? discountName;
+  final String? receiptSnapshot;
+
+  /// The saved bill this receipt settled (v33, paritas F4). Null for a direct
+  /// sale on a till that does not run saved bills, and for every receipt
+  /// written before them.
+  final String? billId;
+
   final List<OrderItem> items;
   final int? itemCount;
 
@@ -101,6 +122,7 @@ class Order {
     required this.type,
     this.table,
     this.customerName,
+    this.customerId,
     this.note,
     required this.subtotal,
     required this.discount,
@@ -127,6 +149,21 @@ class Order {
     this.authorizedBy,
     this.voidReason,
     this.refundedAmount,
+    this.pricingVersion,
+    this.taxIncluded = 0,
+    this.roundingAmount = 0,
+    this.timezoneOffsetMinutes,
+    this.salesTypeId,
+    this.salesTypeName,
+    this.paymentMethodId,
+    this.paymentMethodName,
+    this.paymentReference,
+    this.servedById,
+    this.servedByName,
+    this.discountId,
+    this.discountName,
+    this.receiptSnapshot,
+    this.billId,
     this.items = const [],
     this.itemCount,
   });
@@ -164,6 +201,7 @@ class Order {
     type: type,
     table: table,
     customerName: customerName,
+    customerId: customerId,
     note: note,
     subtotal: subtotal,
     discount: discount,
@@ -186,6 +224,21 @@ class Order {
     authorizedBy: authorizedBy ?? this.authorizedBy,
     voidReason: voidReason ?? this.voidReason,
     refundedAmount: refundedAmount ?? this.refundedAmount,
+    pricingVersion: pricingVersion,
+    taxIncluded: taxIncluded,
+    roundingAmount: roundingAmount,
+    timezoneOffsetMinutes: timezoneOffsetMinutes,
+    salesTypeId: salesTypeId,
+    salesTypeName: salesTypeName,
+    paymentMethodId: paymentMethodId,
+    paymentMethodName: paymentMethodName,
+    paymentReference: paymentReference,
+    servedById: servedById,
+    servedByName: servedByName,
+    discountId: discountId,
+    discountName: discountName,
+    receiptSnapshot: receiptSnapshot,
+    billId: billId,
     items: items ?? this.items,
     itemCount: itemCount,
   );
@@ -201,6 +254,7 @@ class Order {
       ),
       type: OrderTypeX.fromWire((m['type'] as String?) ?? 'dineIn'),
       customerName: m['customer_name'] as String?,
+      customerId: m['customer_id'] as String?,
       note: m['note'] as String?,
       subtotal: (m['subtotal'] as num).toInt(),
       discount: (m['discount'] as num?)?.toInt() ?? 0,
@@ -225,6 +279,21 @@ class Order {
       authorizedBy: m['authorized_by'] as String?,
       voidReason: m['void_reason'] as String?,
       refundedAmount: (m['refunded_amount'] as num?)?.toInt(),
+      pricingVersion: (m['pricing_version'] as num?)?.toInt(),
+      taxIncluded: (m['tax_included'] as num?)?.toInt() ?? 0,
+      roundingAmount: (m['rounding_amount'] as num?)?.toInt() ?? 0,
+      timezoneOffsetMinutes: (m['tz_offset_minutes'] as num?)?.toInt(),
+      salesTypeId: m['sales_type_id'] as String?,
+      salesTypeName: m['sales_type_name'] as String?,
+      paymentMethodId: m['payment_method_id'] as String?,
+      paymentMethodName: m['payment_method_name'] as String?,
+      paymentReference: m['payment_reference'] as String?,
+      servedById: m['served_by_id'] as String?,
+      servedByName: m['served_by_name'] as String?,
+      discountId: m['discount_id'] as String?,
+      discountName: m['discount_name'] as String?,
+      receiptSnapshot: m['receipt_snapshot'] as String?,
+      billId: m['bill_id'] as String?,
       table: m['table_id'] != null
           ? TableAssignment(
               tableId: m['table_id'] as String,
@@ -245,6 +314,7 @@ class Order {
     'table_id': table?.tableId,
     'table_name': table?.tableName,
     'customer_name': customerName,
+    'customer_id': customerId,
     'note': note,
     'subtotal': subtotal,
     'discount': discount,
@@ -267,6 +337,21 @@ class Order {
     'authorized_by': authorizedBy,
     'void_reason': voidReason,
     'refunded_amount': refundedAmount,
+    'pricing_version': pricingVersion,
+    'tax_included': taxIncluded,
+    'rounding_amount': roundingAmount,
+    'tz_offset_minutes': timezoneOffsetMinutes,
+    'sales_type_id': salesTypeId,
+    'sales_type_name': salesTypeName,
+    'payment_method_id': paymentMethodId,
+    'payment_method_name': paymentMethodName,
+    'payment_reference': paymentReference,
+    'served_by_id': servedById,
+    'served_by_name': servedByName,
+    'discount_id': discountId,
+    'discount_name': discountName,
+    'receipt_snapshot': receiptSnapshot,
+    'bill_id': billId,
   };
 }
 

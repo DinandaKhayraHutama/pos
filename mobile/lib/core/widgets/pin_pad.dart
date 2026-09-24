@@ -96,7 +96,9 @@ class PinPad extends StatelessWidget {
           crossAxisCount: 3,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: AppDimensions.space16),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppDimensions.space16,
+          ),
           mainAxisSpacing: AppDimensions.space10,
           crossAxisSpacing: AppDimensions.space10,
           childAspectRatio: 1.4,
@@ -107,10 +109,7 @@ class PinPad extends StatelessWidget {
             _PinKey(label: '0', onTap: () => onDigit('0')),
             _PinKey(
               onTap: onBackspace,
-              child: Icon(
-                Icons.backspace_rounded,
-                color: design.textMedium,
-              ),
+              child: Icon(Icons.backspace_rounded, color: design.textMedium),
             ),
           ],
         ),

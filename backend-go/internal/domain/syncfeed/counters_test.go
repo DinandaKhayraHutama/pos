@@ -173,7 +173,11 @@ func TestCountersAreTenantIsolated(t *testing.T) {
 	tx, end := f.openTenantTx(t, f.tenantID)
 	defer end()
 
-	var count int
-	require.NoError(t, tx.QueryRow(ctx, `SELECT count(*) FROM sync_counters`).Scan(&count))
-	require.Equal(t, 1, count, "a merchant must see only its own counters")
+	// Every merchant is born with the counters of its seeded system rows
+	// (roles, sales types, payment methods), so the assertion is about
+	// ownership, not a count.
+	var foreign, categories int
+	require.NoError(t, tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE tenant_id <> $1), count(*) FILTER (WHERE scope_key LIKE '%/e:categories') FROM sync_counters`, f.tenantID).Scan(&foreign, &categories))
+	require.Zero(t, foreign, "a merchant must see only its own counters")
+	require.Equal(t, 1, categories)
 }

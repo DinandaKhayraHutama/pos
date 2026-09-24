@@ -19,6 +19,7 @@ import '../../data/models/order.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../providers/catalog_provider.dart';
 import '../../providers/order_provider.dart';
+import '../../providers/report_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../core/widgets/app_snack_bar.dart';
 
@@ -129,11 +130,7 @@ class OrderDetailPage extends ConsumerWidget {
               // Who rang it up. With several cashiers sharing one till this is
               // the field the whole per-employee attribution exists for, and
               // it belonged on the order rather than only on the receipt.
-              _infoChip(
-                context,
-                Icons.badge_outlined,
-                order.cashierName,
-              ),
+              _infoChip(context, Icons.badge_outlined, order.cashierName),
               // And which till they were standing at. Two registers at one
               // counter are indistinguishable on a receipt otherwise, and this
               // is the field that says which drawer the money went into.
@@ -147,6 +144,30 @@ class OrderDetailPage extends ConsumerWidget {
                 ),
             ],
           ),
+          if (order.note != null && order.note!.isNotEmpty) ...[
+            const SizedBox(height: AppDimensions.space8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.sticky_note_2_outlined,
+                  size: 16,
+                  color: design.textMedium,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    order.note!,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: design.textMedium,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -404,10 +425,7 @@ class OrderDetailPage extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (printButton != null) ...[
-          printButton,
-          const SizedBox(height: 8),
-        ],
+        if (printButton != null) ...[printButton, const SizedBox(height: 8)],
         if (next != null)
           FilledButton.icon(
             onPressed: () async {
@@ -438,10 +456,7 @@ class OrderDetailPage extends ConsumerWidget {
             Expanded(
               child: TextButton.icon(
                 onPressed: () => _settle(context, ref, order, refund: true),
-                icon: Icon(
-                  Icons.undo_rounded,
-                  color: context.design.warning,
-                ),
+                icon: Icon(Icons.undo_rounded, color: context.design.warning),
                 label: Text(
                   l10n.ordersRefund,
                   style: TextStyle(color: context.design.warning),
@@ -482,9 +497,7 @@ class OrderDetailPage extends ConsumerWidget {
       final approver = await requestAuthorization(
         context,
         permission: permission,
-        reason: refund
-            ? l10n.authorizeReasonRefund
-            : l10n.authorizeReasonVoid,
+        reason: refund ? l10n.authorizeReasonRefund : l10n.authorizeReasonVoid,
       );
       if (approver == null) return;
       approverName = approver.name;
@@ -516,6 +529,7 @@ class OrderDetailPage extends ConsumerWidget {
     // counts either is stale.
     ref.invalidate(orderDetailProvider(order.id));
     ref.invalidate(dashboardSummaryProvider);
+    ref.invalidate(dashboardReportProvider);
     ref.invalidate(topProductsProvider);
     ref.invalidate(productsProvider);
     if (!context.mounted) return;

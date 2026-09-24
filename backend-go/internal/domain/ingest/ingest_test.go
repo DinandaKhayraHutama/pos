@@ -109,6 +109,59 @@ func TestBatch200RetriedThreeTimesPreservesBusinessState(t *testing.T) {
 	require.EqualValues(t, 1, jobs)
 }
 
+func TestCustomerCreateIsIdempotentAndOrderKeepsItsIdentity(t *testing.T) {
+	f := setup(t)
+	id := f.id(t)
+	customer := map[string]any{"id": id, "name": "Sari", "phone": "0812"}
+	accepted(t, f.push("customers", customer))
+	accepted(t, f.push("customers", customer))
+	require.EqualValues(t, 1, f.count(t, "customers"))
+
+	session := f.session(t, false)
+	accepted(t, f.push("pos_sessions", session))
+	order := f.order(t, session.Id)
+	order.CustomerId = &id
+	order.CustomerName = ptr("Sari")
+	accepted(t, f.push("orders", order))
+	var stored string
+	require.NoError(t, f.db.Owner.QueryRow(context.Background(), "SELECT customer_id::text FROM orders WHERE id=$1", order.Id).Scan(&stored))
+	require.Equal(t, id, stored)
+}
+
+func TestCustomerIDOwnedByAnotherTenantIsRejected(t *testing.T) {
+	f := setup(t)
+	id := f.id(t)
+	customer := map[string]any{"id": id, "name": "Sari"}
+	accepted(t, f.push("customers", customer))
+
+	other := devices.Binding{}
+	ctx := context.Background()
+	require.NoError(t, f.db.Owner.QueryRow(ctx, "INSERT INTO tenants(name,slug) VALUES ('other', gen_random_uuid()::text) RETURNING id").Scan(&other.Tenant.ID))
+	require.NoError(t, f.db.Owner.QueryRow(ctx, "INSERT INTO outlets(tenant_id,name) VALUES ($1,'outlet') RETURNING id", other.Tenant.ID).Scan(&other.Outlet.ID))
+	require.NoError(t, f.db.Owner.QueryRow(ctx, "INSERT INTO pos_registers(tenant_id,outlet_id,name) VALUES ($1,$2,'register') RETURNING id", other.Tenant.ID, other.Outlet.ID).Scan(&other.Register.ID))
+	require.NoError(t, f.db.Owner.QueryRow(ctx, "INSERT INTO devices(tenant_id,outlet_id,pos_register_id,device_uuid) VALUES ($1,$2,$3,'other-tablet') RETURNING id", other.Tenant.ID, other.Outlet.ID, other.Register.ID).Scan(&other.Device.ID))
+
+	rows := f.svc.Push(ctx, other, request("customers", customer)).Results
+	require.Len(t, rows, 1)
+	require.Equal(t, wire.PushResultStatus("rejected"), rows[0].Status)
+	require.Equal(t, wire.PushResultCode("schema_rejected"), *rows[0].Code)
+	require.EqualValues(t, 1, f.count(t, "customers"))
+}
+
+func TestOrderWaitsForCustomerDependency(t *testing.T) {
+	f := setup(t)
+	session := f.session(t, false)
+	accepted(t, f.push("pos_sessions", session))
+	order := f.order(t, session.Id)
+	missing := f.id(t)
+	order.CustomerId = &missing
+	rows := f.push("orders", order)
+	require.Equal(t, wire.PushResultStatus("retry"), rows[0].Status)
+	require.Equal(t, wire.PushResultCode("dependency_pending"), *rows[0].Code)
+}
+
+func ptr[T any](v T) *T { return &v }
+
 func TestSessionClosedOnceAndBusyHolder(t *testing.T) {
 	f := setup(t)
 	session := f.session(t, false)

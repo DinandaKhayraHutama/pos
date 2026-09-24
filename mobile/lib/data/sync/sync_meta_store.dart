@@ -14,6 +14,7 @@ class SyncMetaStore {
   static const table = '_sync_meta';
   static const _serverTimeDelta = 'server_time_delta_ms';
   static const _deviceRevision = 'device_revision';
+  static const _manifestEntities = 'manifest_entities';
 
   /// How far the server's clock is ahead of this device (negative when behind),
   /// as last measured, or null before the first server response.
@@ -48,6 +49,30 @@ class SyncMetaStore {
 
   Future<void> recordDeviceRevision(int revision) =>
       _write(_deviceRevision, revision);
+
+  Future<void> recordManifestEntities(Set<String> entities) async {
+    final sorted = entities.toList()..sort();
+    final db = await AppDatabase.instance.db;
+    await db.insert(table, {
+      'key': _manifestEntities,
+      'value': sorted.join(','),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  static Future<bool> supportsEntityWithin(
+    DatabaseExecutor txn,
+    String entity,
+  ) async {
+    final rows = await txn.query(
+      table,
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: [_manifestEntities],
+      limit: 1,
+    );
+    if (rows.isEmpty) return false;
+    return (rows.first['value'] as String).split(',').contains(entity);
+  }
 
   static Future<int?> _readInt(DatabaseExecutor txn, String key) async {
     final rows = await txn.query(

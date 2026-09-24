@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:sqflite/sqflite.dart';
 
 import 'wire_values.dart';
 import 'stock_movement_push.dart';
+import 'sync_meta_store.dart';
 
 /// A sale as `POST /api/v2/sync/push` receives it.
 ///
@@ -32,6 +35,18 @@ class OrderPush {
     DatabaseExecutor txn,
     String orderId,
   ) async {
+    final supportsCustomers = await SyncMetaStore.supportsEntityWithin(
+      txn,
+      'customers',
+    );
+    final supportsBrands = await SyncMetaStore.supportsEntityWithin(
+      txn,
+      'brands',
+    );
+    final supportsPricing = await SyncMetaStore.supportsEntityWithin(
+      txn,
+      'business_settings',
+    );
     final orders = await txn.query(
       'orders',
       where: 'id = ?',
@@ -40,6 +55,11 @@ class OrderPush {
     );
     if (orders.isEmpty) return null;
     final order = orders.first;
+    // The Fase 3 figures travel only on a version 2 receipt, which is the only
+    // kind the server checks them on: a legacy receipt that brought a
+    // snapshot, included tax or a line breakdown is refused outright. The
+    // version is read from the stored row, so every revision decides alike.
+    final v2 = supportsPricing && order['pricing_version'] == 2;
 
     final placedAtMs = wireInt(order['created_at']);
     var businessDate = order['business_date'] as String?;
@@ -89,6 +109,32 @@ class OrderPush {
         'note': item['note'],
         'category_id': uuidOrNull(item['category_id']),
         'category_name': item['category_name'],
+        if (supportsBrands) 'brand_id': uuidOrNull(item['brand_id']),
+        if (v2) ...{
+          'custom': wireInt(item['custom']) == 1,
+          'base_price': wireInt(item['base_price']),
+          'price_source': item['price_source'],
+          'tax_rate_bp': wireInt(item['tax_rate_bp']),
+          if (item['discount_spec'] is String)
+            'discount': jsonDecode(item['discount_spec'] as String),
+          'line_discount_id': uuidOrNull(item['line_discount_id']),
+          'line_discount_name': item['line_discount_name'],
+          'line_discount_authorized_by_id': uuidOrNull(
+            item['line_discount_authorized_by_id'],
+          ),
+          'line_discount_authorized_by_name':
+              item['line_discount_authorized_by_name'],
+          'line_discount': wireInt(item['line_discount']),
+          'bill_discount_share': wireInt(item['bill_discount_share']),
+          'service_share': wireInt(item['service_share']),
+          'tax_amount': wireInt(item['tax_amount']),
+          'tax_included': wireInt(item['tax_included']),
+          'net_amount': wireInt(item['net_amount']),
+        },
+        // Fase 4: the bill line this receipt line settles. Only a bill's
+        // receipt carries it, and such a receipt exists only where the server
+        // runs saved bills — an older server would refuse the key.
+        if (item['bill_line_id'] != null) 'bill_line_id': item['bill_line_id'],
         'modifiers': [
           for (final m in modifiers)
             {
@@ -144,6 +190,7 @@ class OrderPush {
       'table_id': uuidOrNull(order['table_id']),
       'table_name': order['table_name'],
       'customer_name': order['customer_name'],
+      if (supportsCustomers) 'customer_id': uuidOrNull(order['customer_id']),
       'note': order['note'],
       'subtotal': wireInt(order['subtotal']),
       'discount': wireInt(order['discount']),
@@ -162,6 +209,33 @@ class OrderPush {
       'authorized_by': order['authorized_by'],
       'void_reason': order['void_reason'],
       'refunded_amount': wireIntOrNull(order['refunded_amount']),
+      if (v2) ...{
+        'pricing_version': 2,
+        if (order['pricing'] is String)
+          'pricing': jsonDecode(order['pricing'] as String),
+        'tax_included': wireInt(order['tax_included']),
+        'rounding_amount': wireInt(order['rounding_amount']),
+      },
+      // The snapshot names — sales type, payment method, server, discount —
+      // belong to any receipt a 2.8.0 server can read, legacy ones included.
+      if (supportsPricing) ...{
+        if (order['tz_offset_minutes'] != null)
+          'tz_offset_minutes': wireInt(order['tz_offset_minutes']),
+        'sales_type_id': uuidOrNull(order['sales_type_id']),
+        'sales_type_name': order['sales_type_name'],
+        'payment_method_id': uuidOrNull(order['payment_method_id']),
+        'payment_method_name': order['payment_method_name'],
+        'payment_reference': order['payment_reference'],
+        'served_by_id': uuidOrNull(order['served_by_id']),
+        'served_by_name': order['served_by_name'],
+        'discount_id': uuidOrNull(order['discount_id']),
+        'discount_name': order['discount_name'],
+        'discount_authorized_by_id': uuidOrNull(
+          order['discount_authorized_by_id'],
+        ),
+        'discount_authorized_by_name': order['discount_authorized_by_name'],
+      },
+      if (order['bill_id'] != null) 'bill_id': order['bill_id'],
       'items': itemPayloads,
     };
   }

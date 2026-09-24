@@ -27,7 +27,8 @@ class EmployeeManagementPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
     final employees = ref.watch(employeesProvider);
-    final signedInId = ref.watch(settingsProvider).valueOrNull?.employeeId ?? '';
+    final signedInId =
+        ref.watch(settingsProvider).valueOrNull?.employeeId ?? '';
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -217,7 +218,8 @@ class _EmployeeFormSheetState extends ConsumerState<_EmployeeFormSheet> {
         left: AppDimensions.space16,
         right: AppDimensions.space16,
         top: AppDimensions.space8,
-        bottom: MediaQuery.of(context).viewInsets.bottom + AppDimensions.space16,
+        bottom:
+            MediaQuery.of(context).viewInsets.bottom + AppDimensions.space16,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -303,18 +305,13 @@ class _EmployeeFormSheetState extends ConsumerState<_EmployeeFormSheet> {
                 // Signing yourself out of the ability to sign in would lock the
                 // till for whoever is holding it, so the switch is disabled on
                 // your own account.
-                onChanged: isSelf
-                    ? null
-                    : (v) => setState(() => _active = v),
+                onChanged: isSelf ? null : (v) => setState(() => _active = v),
               ),
             ],
           ),
           if (_error != null) ...[
             const SizedBox(height: AppDimensions.space10),
-            Text(
-              _error!,
-              style: TextStyle(color: design.error, fontSize: 12),
-            ),
+            Text(_error!, style: TextStyle(color: design.error, fontSize: 12)),
           ],
           const SizedBox(height: AppDimensions.space16),
           FilledButton(onPressed: _save, child: Text(l10n.commonSave)),
@@ -350,6 +347,7 @@ class _EmployeeFormSheetState extends ConsumerState<_EmployeeFormSheet> {
     EmployeeRole.cashier => l10n.employeeRoleCashierHint,
     EmployeeRole.manager => l10n.employeeRoleManagerHint,
     EmployeeRole.owner => l10n.employeeRoleOwnerHint,
+    EmployeeRole.custom => l10n.employeeRoleCustomHint,
   };
 
   Future<void> _save() async {

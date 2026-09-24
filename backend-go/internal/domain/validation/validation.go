@@ -13,6 +13,7 @@ import (
 	"errors"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -97,4 +98,39 @@ func Trimmed(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+var (
+	plainAmount   = regexp.MustCompile(`^-?[0-9]+$`)
+	groupedAmount = regexp.MustCompile(`^-?[0-9]{1,3}(\.[0-9]{3})+$`)
+)
+
+// ParseRupiah is the one reader of money in this codebase — both the
+// Backoffice form parser (internal/backoffice/forms.go's parseRupiah) and
+// Fase 2's full catalogue importer call this, never their own strconv.
+//
+// A dotted thousands grouping ("25.000") is accepted because that is what an
+// owner types and what Excel/Sheets writes back when a merchant edits an
+// exported CSV in Indonesian locale; a decimal point ("25000.50") is refused
+// outright rather than truncated, because silently rounding somebody's typed
+// price is a worse failure than making them fix it. Blank returns (0, "") —
+// zero rather than an error — so a caller can tell "left blank" from
+// "typed something invalid" only by checking the input first, exactly as
+// parser.optionalMoney already does.
+func ParseRupiah(input string) (int64, string) {
+	raw := strings.NewReplacer(" ", "", "Rp", "", "rp", "").Replace(strings.TrimSpace(input))
+	switch {
+	case raw == "":
+		return 0, ""
+	case groupedAmount.MatchString(raw):
+		raw = strings.ReplaceAll(raw, ".", "")
+	case !plainAmount.MatchString(raw):
+		return 0, "Harus rupiah bulat, tanpa desimal."
+	}
+
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return 0, "Angka terlalu besar."
+	}
+	return n, ""
 }

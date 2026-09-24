@@ -213,8 +213,7 @@ class OrderHistoryNotifier extends AutoDisposeAsyncNotifier<OrderHistoryState> {
     int generation,
   ) async {
     final connected = TillCoordinator.current != null && settings != null;
-    final seesEverything =
-        settings?.can(AppPermission.viewAllOrders) ?? true;
+    final seesEverything = settings?.can(AppPermission.viewAllOrders) ?? true;
 
     final local = await _localPage(filter, settings, outletId, seesEverything);
     if (!_localExhausted && local.isNotEmpty) {

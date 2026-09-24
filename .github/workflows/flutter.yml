@@ -4,10 +4,12 @@ on:
   push:
     paths:
       - "mobile/**"
+      - "testdata/**"
       - ".github/workflows/flutter.yml"
   pull_request:
     paths:
       - "mobile/**"
+      - "testdata/**"
       - ".github/workflows/flutter.yml"
 
 defaults:

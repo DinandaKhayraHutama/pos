@@ -51,10 +51,8 @@ class OutletPickerSheet extends ConsumerWidget {
           const SizedBox(height: AppDimensions.space16),
           outlets.when(
             loading: () => const LoadingIndicator(),
-            error: (e, _) => Text(
-              '$e',
-              style: TextStyle(color: design.error, fontSize: 12),
-            ),
+            error: (e, _) =>
+                Text('$e', style: TextStyle(color: design.error, fontSize: 12)),
             data: (list) {
               final open = list.where((o) => o.active).toList();
               return Column(

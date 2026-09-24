@@ -15,16 +15,20 @@ import (
 // fingerprints render every rollup row of one slice as text, without
 // computed_at, so a stored slice and a freshly computed one compare exactly.
 var fingerprints = map[string]string{
+	"daily_brand_rollup":            `concat_ws('|', brand_key, brand_name, name_at_ms, gross_sales, net_sales, items_sold)`,
 	"daily_product_category_rollup": `concat_ws('|', category_key, product_key, product_name, name_at_ms, quantity, gross_sales, net_sales)`,
 	"daily_sales_rollup": `concat_ws('|', order_count, subtotal, discount, tax, service_charge, revenue,
 		items_sold, cost_of_goods, costed_items, discounted_orders, cancelled_count, cancelled_amount,
-		refunded_count, refunded_amount, gross_sales, all_discount, sales_returns, anomaly_count, calculation_version)`,
-	"daily_category_rollup":   `concat_ws('|', category_key, category_name, name_at_ms, gross_sales, net_sales, items_sold)`,
-	"daily_product_rollup":    `concat_ws('|', product_key, product_name, name_at_ms, quantity, gross_sales, cost_of_goods, costed_quantity, net_sales)`,
-	"daily_employee_rollup":   `concat_ws('|', cashier_key, cashier_name, name_at_ms, order_count, revenue, discount, net_sales)`,
-	"daily_payment_rollup":    `concat_ws('|', payment_method, order_count, revenue)`,
-	"hourly_sales_rollup":     `concat_ws('|', hour, order_count, revenue, net_sales, gross_sales)`,
-	"daily_adjustment_rollup": `concat_ws('|', kind, label, order_count, amount)`,
+		refunded_count, refunded_amount, gross_sales, all_discount, sales_returns, anomaly_count, calculation_version,
+		tax_included, rounding)`,
+	"daily_category_rollup":       `concat_ws('|', category_key, category_name, name_at_ms, gross_sales, net_sales, items_sold)`,
+	"daily_product_rollup":        `concat_ws('|', product_key, product_name, name_at_ms, quantity, gross_sales, cost_of_goods, costed_quantity, net_sales)`,
+	"daily_employee_rollup":       `concat_ws('|', cashier_key, cashier_name, name_at_ms, order_count, revenue, discount, net_sales)`,
+	"daily_payment_rollup":        `concat_ws('|', payment_method, order_count, revenue)`,
+	"hourly_sales_rollup":         `concat_ws('|', hour, order_count, revenue, net_sales, gross_sales)`,
+	"daily_adjustment_rollup":     `concat_ws('|', kind, label, order_count, amount)`,
+	"daily_sales_type_rollup":     `concat_ws('|', sales_type_key, sales_type_name, order_count, revenue, net_sales)`,
+	"daily_payment_method_rollup": `concat_ws('|', payment_method_key, payment_method_name, payment_kind, order_count, revenue)`,
 }
 
 // errRollback ends a verification transaction without keeping its writes.

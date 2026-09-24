@@ -11,6 +11,7 @@ import 'package:nti_pos/data/models/table.dart';
 import 'package:nti_pos/data/preferences/app_preferences.dart';
 import 'package:nti_pos/data/repositories/order_repository.dart';
 import 'package:nti_pos/data/repositories/table_repository.dart';
+import 'package:nti_pos/providers/bill_provider.dart';
 import 'package:nti_pos/providers/cart_provider.dart';
 import 'package:nti_pos/providers/order_provider.dart';
 import 'package:nti_pos/providers/settings_provider.dart';
@@ -93,7 +94,12 @@ void main() {
       'locale_code': 'en',
     });
 
-    container = makeContainer();
+    // The legacy checkout: a connected outlet that has not switched saved
+    // bills on still sells this way. The bill checkout (the demo's default)
+    // has its own cases in bill_checkout_test.dart.
+    container = makeContainer(
+      overrides: [billsEnabledProvider.overrideWith((ref) => false)],
+    );
   });
 
   tearDown(() async {

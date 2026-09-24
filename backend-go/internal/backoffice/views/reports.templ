@@ -435,9 +435,15 @@ templ ReportBody(r reporting.Report) {
 					<td class="num">−{ Rupiah(r.AllDiscount) }</td>
 				</tr>
 				<tr><td>Retur penjualan</td><td class="num">−{ Rupiah(r.SalesReturns) }</td></tr>
+				if r.TaxIncluded != 0 {
+					<tr><td>Pajak termasuk harga</td><td class="num">−{ Rupiah(r.TaxIncluded) }</td></tr>
+				}
 				<tr><td><strong>Penjualan bersih</strong></td><td class="num"><strong>{ Rupiah(r.NetSales) }</strong></td></tr>
 				<tr><td>Pajak (PB1)</td><td class="num">+{ Rupiah(r.Tax) }</td></tr>
 				<tr><td>Service charge</td><td class="num">+{ Rupiah(r.ServiceCharge) }</td></tr>
+				if r.Rounding != 0 {
+					<tr><td>Pembulatan</td><td class="num">{ Rupiah(r.Rounding) }</td></tr>
+				}
 				<tr><td><strong>Total penerimaan penjualan</strong></td><td class="num"><strong>{ Rupiah(r.Revenue) }</strong></td></tr>
 				<tr><td>HPP</td><td class="num">−{ Rupiah(r.CostOfGoods) }</td></tr>
 				<tr><td><strong>Laba kotor</strong></td><td class="num"><strong>{ Rupiah(r.GrossProfit) }</strong></td></tr>
@@ -547,6 +553,21 @@ templ ReportBody(r reporting.Report) {
 			</table>
 		</div>
 		<div class="card">
+			<h2>Per brand</h2>
+			<p class="sub">Transaksi sebelum dukungan brand tersedia tampil sebagai Tanpa brand.</p>
+			<table>
+				<thead><tr><th>Brand</th><th class="num">Kotor</th><th class="num">Bersih</th><th class="num">Item</th><th class="num">Kontribusi</th></tr></thead>
+				<tbody>
+					for _, b := range r.ByBrand {
+						<tr><td>{ reporting.BrandLabel(b) }</td><td class="num">{ Rupiah(b.Gross) }</td><td class="num">{ Rupiah(b.Net) }</td><td class="num">{ reportCount(b.Items) }</td><td class="num">{ reportPct(b.ContributionPercent) }</td></tr>
+					}
+					if len(r.ByBrand) == 0 {
+						<tr><td colspan="5" class="sub">Belum ada penjualan.</td></tr>
+					}
+				</tbody>
+			</table>
+		</div>
+		<div class="card">
 			<h2>Komposisi pembayaran</h2>
 			<table>
 				<thead><tr><th>Metode</th><th class="num">Pendapatan</th><th class="num">Order</th><th class="num">Porsi</th></tr></thead>
@@ -565,6 +586,24 @@ templ ReportBody(r reporting.Report) {
 				</tbody>
 			</table>
 		</div>
+		if len(r.BySalesType) > 0 {
+			<div class="card">
+				<h2>Per jenis penjualan</h2>
+				<table>
+					<thead><tr><th>Jenis</th><th class="num">Penjualan bersih</th><th class="num">Pendapatan</th><th class="num">Order</th></tr></thead>
+					<tbody>
+						for _, st := range r.BySalesType {
+							<tr>
+								<td>{ SalesTypeLabel(st.Label) }</td>
+								<td class="num">{ Rupiah(st.Net) }</td>
+								<td class="num">{ Rupiah(st.Value) }</td>
+								<td class="num">{ reportCount(st.Count) }</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		}
 		<div class="card">
 			<h2>Per kasir</h2>
 			<table>
@@ -869,8 +908,11 @@ templ DashboardTiles(v DashboardView) {
 						<tr><td>Penjualan kotor</td><td class="num">{ Rupiah(v.Current.GrossSales) }</td></tr>
 						<tr><td>Diskon</td><td class="num">−{ Rupiah(v.Current.AllDiscount) }</td></tr>
 						<tr><td>Retur penjualan</td><td class="num">−{ Rupiah(v.Current.SalesReturns) }</td></tr>
+						if v.Current.TaxIncluded != 0 {
+							<tr><td>Pajak termasuk harga</td><td class="num">−{ Rupiah(v.Current.TaxIncluded) }</td></tr>
+						}
 						<tr><td><strong>Penjualan bersih</strong></td><td class="num"><strong>{ Rupiah(v.Current.NetSales) }</strong></td></tr>
-						<tr><td>Pajak &amp; service</td><td class="num">+{ Rupiah(v.Current.Tax + v.Current.ServiceCharge) }</td></tr>
+						<tr><td>Pajak, service &amp; pembulatan</td><td class="num">+{ Rupiah(v.Current.Tax + v.Current.ServiceCharge + v.Current.Rounding) }</td></tr>
 						<tr><td><strong>Total penerimaan</strong></td><td class="num"><strong>{ Rupiah(v.Current.Revenue) }</strong></td></tr>
 					</tbody>
 				</table>

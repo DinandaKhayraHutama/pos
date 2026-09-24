@@ -77,32 +77,60 @@ func (s *Service) ingestSaleForRecovery(ctx context.Context, w *syncfeed.Writer,
 			}
 		}
 	}
+	// A receipt that settles a saved bill (Fase 4) is checked against the bill
+	// before it is written: the bill is locked, and a receipt for a bill this
+	// till does not own, or one with lines not yet sent to the kitchen, never
+	// reaches the orders table.
+	var settlement *billSettlement
+	if in.BillId != nil {
+		if settlement, err = s.prepareSettlement(ctx, w, b, in, allowedRecoveryID != ""); err != nil {
+			return err
+		}
+	}
 	if err = s.ingestOrder(ctx, w.Tx, b, in, result); err != nil {
 		return err
+	}
+	if settlement != nil {
+		if err = settlement.close(ctx, w.Tx, in, result); err != nil {
+			return err
+		}
 	}
 	if in.StockMovements == nil {
 		return nil
 	}
 	// Effects are uniquely attached to a receipt, not its human-readable number.
+	//
+	// What a receipt may move is bounded by its own lines — or, for one that
+	// settles a bill, by what that bill's dispatches actually consumed: the
+	// kitchen took the stock, and the receipt itself takes none.
 	seen := map[string]bool{}
-	quantities := map[string]int64{}
-	for _, line := range in.Items {
-		if line.ProductId != nil {
-			quantities[*line.ProductId] += int64(line.Quantity)
+	bound := map[string]int64{}
+	if settlement != nil {
+		bound = settlement.consumed
+	} else {
+		for _, line := range in.Items {
+			if line.ProductId != nil {
+				bound[strings.ToLower(*line.ProductId)] += int64(line.Quantity)
+			}
 		}
 	}
 	sales, returns := map[string]int64{}, map[string]int64{}
+	movements := make([]stock.DeviceMovement, 0, len(*in.StockMovements))
 	for _, effect := range *in.StockMovements {
 		var movement stock.DeviceMovement
 		if err = json.Unmarshal(encode(effect), &movement); err != nil {
 			return err
 		}
+		movement.ID, movement.ProductID = strings.ToLower(movement.ID), strings.ToLower(movement.ProductID)
 		if seen[movement.ID] {
 			return reject("schema_rejected", "Duplicate movement in receipt.")
 		}
 		seen[movement.ID] = true
 		switch movement.Reason {
 		case stock.ReasonSale:
+			if settlement != nil {
+				return reject("schema_rejected", "A bill's stock was consumed by its dispatches, not by its receipt.")
+			}
 			sales[movement.ProductID] -= movement.DeltaQty
 		case stock.ReasonVoidReturn:
 			if in.Status != "cancelled" && in.Status != "refunded" {
@@ -112,30 +140,21 @@ func (s *Service) ingestSaleForRecovery(ctx context.Context, w *syncfeed.Writer,
 		default:
 			return reject("schema_rejected", "Only sale and return movements belong to a receipt.")
 		}
-		if quantities[movement.ProductID] == 0 || sales[movement.ProductID] > quantities[movement.ProductID] || returns[movement.ProductID] > quantities[movement.ProductID] {
+		if bound[movement.ProductID] == 0 || sales[movement.ProductID] > bound[movement.ProductID] || returns[movement.ProductID] > bound[movement.ProductID] {
 			return reject("schema_rejected", "Stock quantity exceeds the receipt lines.")
 		}
-		var ref *string
-		err = w.Tx.QueryRow(ctx, "SELECT ref_id::text FROM stock_movements WHERE id=$1", movement.ID).Scan(&ref)
-		if err == nil && (ref == nil || *ref != in.Id) {
-			return reject("duplicate", "Movement belongs to another operation.")
+		movements = append(movements, movement)
+	}
+	applied, err := s.stock.RecordBatchFromDevice(ctx, w, b, movements, "order", in.Id)
+	if err != nil {
+		var rejection *stock.Rejection
+		if errors.As(err, &rejection) {
+			return reject(rejection.Code, rejection.Message)
 		}
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return err
-		}
-		if _, err = s.stock.RecordFromDevice(ctx, w, b, movement); err != nil {
-			var rejection *stock.Rejection
-			if errors.As(err, &rejection) {
-				return reject(rejection.Code, rejection.Message)
-			}
-			return err
-		}
-		if _, err = w.Tx.Exec(ctx, "UPDATE stock_movements SET ref_type='order',ref_id=$2 WHERE id=$1", movement.ID, in.Id); err != nil {
-			return err
-		}
+		return err
 	}
 	// A subsequent revision cannot omit a previously committed effect. Its
-	// canonical payload is checked by RecordFromDevice above.
+	// canonical payload is checked by RecordBatchFromDevice above.
 	var stored int
 	if err = w.Tx.QueryRow(ctx, "SELECT count(*) FROM stock_movements WHERE ref_type='order' AND ref_id=$1", in.Id).Scan(&stored); err != nil {
 		return err
@@ -143,5 +162,19 @@ func (s *Service) ingestSaleForRecovery(ctx context.Context, w *syncfeed.Writer,
 	if stored != len(seen) {
 		return reject("schema_rejected", "Receipt omitted an existing stock effect.")
 	}
+	result.Effects = effectsOf(applied)
 	return nil
+}
+
+// effectsOf is what a push result says about the movements a row committed,
+// or nil when it committed none.
+func effectsOf(applied []stock.Applied) *[]wire.PushEffect {
+	if len(applied) == 0 {
+		return nil
+	}
+	out := make([]wire.PushEffect, len(applied))
+	for i, a := range applied {
+		out[i] = wire.PushEffect{Id: a.ID, StockSeq: a.StockSeq, BalanceAfter: a.BalanceAfter}
+	}
+	return &out
 }

@@ -44,7 +44,7 @@ import (
 // read, which is what keeps a request path from ever naming a file outside the
 // directory, and a stored name from ever being something a browser would run.
 var keyPattern = regexp.MustCompile(
-	`^products/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{64}\.(jpg|png)$`)
+	`^(products|receipts)/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{64}\.(jpg|png)$`)
 
 var ErrInvalidKey = errors.New("media: invalid key")
 

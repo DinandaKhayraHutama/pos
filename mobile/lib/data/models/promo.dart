@@ -60,9 +60,7 @@ class Promo {
   /// hand out as change.
   int discountFor(int subtotal) {
     if (subtotal <= 0) return 0;
-    final raw = kind == PromoKind.percent
-        ? (subtotal * value) ~/ 100
-        : value;
+    final raw = kind == PromoKind.percent ? (subtotal * value) ~/ 100 : value;
     return raw.clamp(0, subtotal);
   }
 

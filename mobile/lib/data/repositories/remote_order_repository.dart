@@ -259,14 +259,13 @@ class RemoteOrderRepository {
     String cursor = '',
   }) async {
     final db = await AppDatabase.instance.db;
-    final meta =
-        (await db.query(
-          '_remote_history_meta',
-          where: 'employee_id = ? AND filter_key = ?',
-          whereArgs: [employee, filter.key],
-          orderBy: 'fetched_at DESC',
-          limit: 1,
-        )).firstOrNull;
+    final meta = (await db.query(
+      '_remote_history_meta',
+      where: 'employee_id = ? AND filter_key = ?',
+      whereArgs: [employee, filter.key],
+      orderBy: 'fetched_at DESC',
+      limit: 1,
+    )).firstOrNull;
     if (meta == null) {
       // Never downloaded. Deliberately NOT an empty list: the screen has to be
       // able to say "not available offline" rather than "no transactions".
@@ -328,7 +327,11 @@ class RemoteOrderRepository {
     final more = rows.length > pageSize;
     return RemoteOrderPage(
       orders: page
-          .map((r) => decode(jsonDecode(r['payload'] as String) as Map<String, dynamic>))
+          .map(
+            (r) => decode(
+              jsonDecode(r['payload'] as String) as Map<String, dynamic>,
+            ),
+          )
           .toList(),
       next: more && page.isNotEmpty
           ? '${page.last['business_date']}:${page.last['placed_at_ms']}:${page.last['id']}'
@@ -358,7 +361,9 @@ class RemoteOrderRepository {
     );
     return rows.isEmpty
         ? null
-        : decode(jsonDecode(rows.first['payload'] as String) as Map<String, dynamic>);
+        : decode(
+            jsonDecode(rows.first['payload'] as String) as Map<String, dynamic>,
+          );
   }
 
   /// Drops everything this device cached for a viewer. Signing out uses it, so

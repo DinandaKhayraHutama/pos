@@ -81,7 +81,7 @@ it runs SQLite-on-wasm against IndexedDB via the conditional-export seam in
 
 ### DB Migrations
 `lib/data/database/app_database.dart` — bump `currentVersion` and add migration in `_onUpgrade`.
-Current version: **16**. `_onUpgrade` is split in two: per-version blocks that change the SCHEMA
+Current version: **31**. `_onUpgrade` is split in two: per-version blocks that change the SCHEMA
 ONLY, then a deferred section that WRITES ROWS against the finished schema — v6 and v12 both broke
 by ignoring that, so any new seeder belongs in the deferred part. v13 added `outlets`; v14
 `outlet_stock`; v15 `tables.outlet_id`; **v16 added `pos_registers` (a branch's tills, each with

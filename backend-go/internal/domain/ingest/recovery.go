@@ -178,6 +178,20 @@ func (s *Service) ForceTakeover(ctx context.Context, tenantID string, in ForceTa
 		if _, err := tx.Exec(ctx, `UPDATE till_claims SET active_employee_id=NULL WHERE session_id=$1`, in.SessionID); err != nil {
 			return err
 		}
+		// Fase 4: the lost till's open bills are released to the server in the
+		// same transaction, each with a raised owner generation, so another
+		// till can claim them and anything the lost till sends later for them
+		// is refused rather than applied over the new owner's work.
+		if _, err := tx.Exec(ctx, `WITH released AS (
+				UPDATE bills SET owner_device_id=NULL, owner_session_id=NULL, owner_generation=owner_generation+1,
+					parked_at=now(), updated_at=now()
+				WHERE owner_device_id=$1 AND status='open'
+				RETURNING id, outlet_id, owner_generation)
+			INSERT INTO bill_events(tenant_id,outlet_id,bill_id,event_type,device_id,actor_employee_id,actor_name,from_generation,to_generation,detail)
+			SELECT $2, outlet_id, id, 'force_park', $1, $3, $4, owner_generation-1, owner_generation, jsonb_build_object('recovery_id', $5::text)
+			FROM released`, in.DeviceID, tenantID, in.Actor.ID, in.Actor.Name, out.RecoveryID); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(ctx, `DELETE FROM till_access WHERE device_id=$1`, in.DeviceID); err != nil {
 			return err
 		}

@@ -38,7 +38,7 @@ templ Shell(title string, s Session) {
 						</button>
 						<div class="crumb">{ s.BusinessName }</div>
 						<div class="who">
-							<span>{ s.EmployeeName } · { RoleLabel(s.Role) }</span>
+							<a href="/backoffice/account">{ s.EmployeeName }</a> <span>· { RoleLabel(s.Role) }</span>
 							<form method="post" action="/backoffice/logout">
 								<input type="hidden" name="gorilla.csrf.Token" value={ s.CSRFToken }/>
 								<button type="submit" class="link">Keluar</button>

@@ -137,7 +137,7 @@ const sessionColumns = `
 // receipt and multiply every column beside it.
 const sessionTotals = `
 	LEFT JOIN LATERAL (
-		SELECT count(*) AS orders, sum(o.subtotal - o.discount) AS net, sum(o.total) AS revenue,
+		SELECT count(*) AS orders, sum(o.subtotal - o.discount - o.tax_included) AS net, sum(o.total) AS revenue,
 		       COALESCE(sum(o.total) FILTER (WHERE o.payment_method = 'cash'), 0) AS cash
 		FROM orders o
 		WHERE o.tenant_id = p.tenant_id AND o.pos_session_id = p.id

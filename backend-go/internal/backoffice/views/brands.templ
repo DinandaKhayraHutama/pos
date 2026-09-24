@@ -1,0 +1,78 @@
+package views
+
+import (
+	"strconv"
+
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/catalogue"
+)
+
+templ BrandsPage(s Session, rows []catalogue.BrandRow, f Form) {
+	@Shell("Brand", s) {
+		<h1>Brand</h1>
+		<p class="sub">Label datar untuk produk — tanpa hierarki, dan opsional per produk.</p>
+		@BrandsSection(rows, f)
+	}
+}
+
+// BrandsSection is swapped as a whole after a create, so the new row and a
+// fresh form arrive together — same shape as CategoriesSection.
+templ BrandsSection(rows []catalogue.BrandRow, f Form) {
+	<div id="brands">
+		<div class="card">
+			<h2>Tambah brand</h2>
+			<form class="inline" hx-post="/backoffice/catalogue/brands" hx-target="#brands" hx-swap="outerHTML">
+				@Field(f, "Nama", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+				@Field(f, "Urutan", "sort_order", "number", templ.Attributes{"step": "1"})
+				<button type="submit" class="primary">Tambah</button>
+			</form>
+		</div>
+		<div class="card">
+			<table>
+				<thead>
+					<tr><th>Nama</th><th class="num">Produk</th><th class="num">Urutan</th><th></th></tr>
+				</thead>
+				<tbody>
+					for _, b := range rows {
+						<tr>
+							<td>{ b.Name }</td>
+							<td class="num">{ strconv.Itoa(b.ProductCount) }</td>
+							<td class="num">{ strconv.Itoa(b.SortOrder) }</td>
+							<td style="text-align:right"><a href={ templ.URL("/backoffice/catalogue/brands/" + b.ID) }>Ubah</a></td>
+						</tr>
+					}
+					if len(rows) == 0 {
+						<tr><td colspan="4" class="sub">Belum ada brand.</td></tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	</div>
+}
+
+templ BrandPage(s Session, id string, f Form) {
+	@Shell("Ubah brand", s) {
+		<p><a href="/backoffice/catalogue/brands">← Brand</a></p>
+		<h1>Ubah brand</h1>
+		<p class="sub">Perubahan sampai ke setiap till pada sinkron berikutnya.</p>
+		<div class="card">
+			@BrandForm(id, f)
+		</div>
+		<div class="card">
+			<h2>Hapus</h2>
+			<p class="sub">Brand yang masih dipakai produk tidak bisa dihapus.</p>
+			<button
+				class="danger"
+				hx-post={ "/backoffice/catalogue/brands/" + id + "/delete" }
+				hx-confirm="Hapus brand ini dari semua till?"
+			>Hapus brand</button>
+		</div>
+	}
+}
+
+templ BrandForm(id string, f Form) {
+	<form class="grid" hx-post={ "/backoffice/catalogue/brands/" + id } hx-swap="outerHTML">
+		@Field(f, "Nama", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+		@Field(f, "Urutan", "sort_order", "number", templ.Attributes{"step": "1"})
+		<div class="actions wide"><button type="submit" class="primary">Simpan</button></div>
+	</form>
+}

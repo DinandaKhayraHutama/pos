@@ -14,12 +14,14 @@ String roleLabel(AppLocalizations l10n, EmployeeRole role) => switch (role) {
   EmployeeRole.cashier => l10n.employeeRoleCashier,
   EmployeeRole.manager => l10n.employeeRoleManager,
   EmployeeRole.owner => l10n.employeeRoleOwner,
+  EmployeeRole.custom => l10n.employeeRoleCustom,
 };
 
 IconData roleIcon(EmployeeRole role) => switch (role) {
   EmployeeRole.cashier => Icons.person_outline_rounded,
   EmployeeRole.manager => Icons.manage_accounts_rounded,
   EmployeeRole.owner => Icons.admin_panel_settings_rounded,
+  EmployeeRole.custom => Icons.badge_outlined,
 };
 
 /// Up to two initials for an avatar. Falls back to a dot rather than rendering

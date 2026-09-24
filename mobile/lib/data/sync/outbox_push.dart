@@ -141,6 +141,7 @@ class OutboxPush {
     final batches = <_Batch>[];
     var rows = 0;
     var bytes = 0;
+    final barrier = await _StockBarrier.read();
 
     for (final entity in OutboxStore.pushOrder) {
       if (rows >= maxRows) break;
@@ -164,6 +165,7 @@ class OutboxPush {
             if (remaining.isNotEmpty) continue;
           }
         }
+        if (!barrier.allows(entry)) continue;
         if (!await _boundToThisTill(entry)) {
           // Written before the binding was enforced, or by a path that went
           // around it. Sending it would misattribute a drawer or a sale, so it
@@ -231,6 +233,19 @@ class OutboxPush {
         return row['session_pos'] == binding.registerId &&
             matches(row['pos_id'], binding.registerId) &&
             matches(row['outlet_id'], binding.outletId);
+      case 'bills':
+      case 'kitchen_dispatches':
+        // A bill is filed under the token's outlet, and its dispatch moves
+        // that outlet's shelf.
+        final rows = await db.query(
+          entry.entity,
+          columns: ['outlet_id'],
+          where: 'id = ?',
+          whereArgs: [entry.entityId],
+          limit: 1,
+        );
+        if (rows.isEmpty) return true;
+        return matches(rows.first['outlet_id'], binding.outletId);
       case 'stock_movements':
       case 'table_status_events':
         // The server applies a movement at the token's outlet. One written
@@ -316,6 +331,23 @@ class OutboxPush {
                 verdict.details['status_seq'] as int,
                 verdict.details['outcome'] as String,
               );
+            }
+            // Movements committed with a receipt, a dispatch or a bill
+            // cancellation (Fase 4): marked applied at the sequence the
+            // server reports, before the entry goes, for the same reason a
+            // standalone movement is — the next pull must not count it twice.
+            final effects = verdict.details['effects'];
+            if (effects is List) {
+              for (final effect in effects) {
+                if (effect is Map &&
+                    effect['id'] is String &&
+                    effect['stock_seq'] is int) {
+                  await StockRepository.instance.markApplied(
+                    effect['id'] as String,
+                    effect['stock_seq'] as int,
+                  );
+                }
+              }
             }
             final stockSeq = verdict.details['stock_seq'];
             if (stockSeq is int) {
@@ -407,7 +439,8 @@ class OutboxPush {
         // Removing a sale needs the server to name it: both id and revision.
         // Every row this device builds has a UUID id and a revision >= 1, so
         // a genuine acceptance always echoes both.
-        if (!(idMatches && revisionMatches)) {
+        final createOnlyCustomer = entity == 'customers';
+        if (!(idMatches && (createOnlyCustomer || revisionMatches))) {
           return const _Verdict(
             _Status.keep,
             'acceptance did not name the row',
@@ -444,6 +477,13 @@ class OutboxPush {
             'status_seq': seq,
             'outcome': outcome,
           });
+        }
+        // Optional: the movements a row committed with it. Their absence
+        // never keeps the row — the next pull settles them — but a malformed
+        // list is ignored rather than trusted.
+        final effects = result['effects'];
+        if (effects is List) {
+          return _Verdict(_Status.accepted, null, null, {'effects': effects});
         }
         return const _Verdict(_Status.accepted);
       case 'rejected':
@@ -485,4 +525,100 @@ class _Verdict {
   final String? code;
   final String? message;
   final Map<String, Object?> details;
+}
+
+/// Keeps a stock count (opname) in its place among the stock-moving rows this
+/// till wrote, whichever entity carries them.
+///
+/// The server turns a count into a delta against its own quantity at the
+/// moment the count arrives. A dispatch made before the count therefore has to
+/// reach the server before it — or the count absorbs it and the dispatch then
+/// takes the shelf below what was counted — and one made after has to follow
+/// it. Ordering stock movements among themselves is not enough since Fase 4:
+/// a dispatch, a receipt and a bill cancellation each carry their movements
+/// inside their own row.
+///
+/// So one request carries either the stock rows written before the earliest
+/// pending count, or that count alone; everything that moves stock after it
+/// waits for the next request. Rows that move no stock are never held.
+class _StockBarrier {
+  const _StockBarrier._(
+    this._countAt,
+    this._countId,
+    this._rowsBefore,
+    this._stockOrders,
+    this._stockBills,
+  );
+
+  static const _none = _StockBarrier._(null, null, false, {}, {});
+
+  /// When the earliest pending count was written, or null with none pending.
+  final int? _countAt;
+  final String? _countId;
+
+  /// Whether stock rows written before that count are still owed.
+  final bool _rowsBefore;
+
+  /// Pending receipts and bills that carry movements of their own.
+  final Set<String> _stockOrders;
+  final Set<String> _stockBills;
+
+  static Future<_StockBarrier> read() async {
+    final db = await AppDatabase.instance.db;
+    final count = await db.rawQuery('''
+      SELECT o.entity_id, COALESCE(o.last_queued_at, o.queued_at) AS at
+      FROM _outbox o JOIN stock_movements m ON m.id = o.entity_id
+      WHERE o.entity = 'stock_movements' AND m.reason = 'count'
+      ORDER BY at ASC, o.rowid ASC LIMIT 1''');
+    if (count.isEmpty) return _none;
+    final countId = count.first['entity_id'] as String;
+    final countAt = (count.first['at'] as num).toInt();
+
+    final orders = {
+      for (final r in await db.rawQuery('''
+        SELECT DISTINCT o.entity_id FROM _outbox o
+        JOIN stock_movements m ON m.order_id = o.entity_id
+        WHERE o.entity = 'orders'
+      '''))
+        r['entity_id'] as String,
+    };
+    final bills = {
+      for (final r in await db.rawQuery('''
+        SELECT DISTINCT o.entity_id FROM _outbox o
+        JOIN stock_movements m ON m.source_kind = 'bill_cancel' AND m.source_id = o.entity_id
+        WHERE o.entity = 'bills'
+      '''))
+        r['entity_id'] as String,
+    };
+    final before = await db.rawQuery(
+      '''SELECT o.entity, o.entity_id FROM _outbox o
+         WHERE COALESCE(o.last_queued_at, o.queued_at) < ?
+           AND o.entity IN ('stock_movements', 'kitchen_dispatches', 'orders', 'bills')
+           AND o.entity_id != ?''',
+      [countAt, countId],
+    );
+    final probe = _StockBarrier._(countAt, countId, false, orders, bills);
+    final rowsBefore = before.any(
+      (r) => probe._movesStock(r['entity'] as String, r['entity_id'] as String),
+    );
+    return _StockBarrier._(countAt, countId, rowsBefore, orders, bills);
+  }
+
+  bool _movesStock(String entity, String id) => switch (entity) {
+    'stock_movements' || 'kitchen_dispatches' => true,
+    'orders' => _stockOrders.contains(id),
+    'bills' => _stockBills.contains(id),
+    _ => false,
+  };
+
+  bool allows(OutboxEntry entry) {
+    final countAt = _countAt;
+    if (countAt == null || !_movesStock(entry.entity, entry.entityId)) {
+      return true;
+    }
+    if (_rowsBefore) {
+      return entry.writtenAt < countAt && entry.entityId != _countId;
+    }
+    return entry.entityId == _countId;
+  }
 }

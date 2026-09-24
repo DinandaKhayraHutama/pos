@@ -142,11 +142,7 @@ class _FlatGlassButton extends StatelessWidget {
       ),
     );
 
-    body = _PressScale(
-      onPressed: onPressed,
-      enabled: enabled,
-      child: body,
-    );
+    body = _PressScale(onPressed: onPressed, enabled: enabled, child: body);
 
     // Dim the whole painted body when disabled (null onPressed or loading)
     // so the button reads as inert instead of pixel-identical to enabled.
@@ -228,11 +224,7 @@ class SecondaryButton extends StatelessWidget {
       ),
     );
 
-    body = _PressScale(
-      onPressed: onPressed,
-      enabled: enabled,
-      child: body,
-    );
+    body = _PressScale(onPressed: onPressed, enabled: enabled, child: body);
 
     // Same disabled dim as the flat variants — keeps the family consistent.
     body = Opacity(opacity: enabled ? 1.0 : 0.45, child: body);

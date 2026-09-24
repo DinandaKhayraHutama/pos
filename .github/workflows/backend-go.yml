@@ -4,10 +4,12 @@ on:
   push:
     paths:
       - "backend-go/**"
+      - "testdata/**"
       - ".github/workflows/backend-go.yml"
   pull_request:
     paths:
       - "backend-go/**"
+      - "testdata/**"
       - ".github/workflows/backend-go.yml"
 
 defaults:
@@ -121,7 +123,9 @@ jobs:
           go build -o /tmp/justclick ./cmd/justclick
           /tmp/justclick serve > /tmp/justclick-verify.log 2>&1 &
           api_pid=$!
-          trap 'kill "$api_pid" 2>/dev/null || true' EXIT
+          /tmp/justclick worker > /tmp/justclick-worker.log 2>&1 &
+          worker_pid=$!
+          trap 'kill "$api_pid" "$worker_pid" 2>/dev/null || true' EXIT
           for attempt in $(seq 1 30); do
             if curl --fail --silent "$VERIFY_BASE_URL/health" >/dev/null; then break; fi
             sleep 1
@@ -137,6 +141,8 @@ jobs:
           go run ./scripts/verify-till
           go run ./scripts/verify-recovery
           go run ./scripts/verify-reports
+          go run ./scripts/verify-history
+          go run ./scripts/verify-pricing
           go run ./scripts/verify-platform
           # The Fase 9 harness, at the smallest size that still exercises the
           # whole device lifecycle: activate with a real code, sync, sell, move

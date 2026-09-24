@@ -102,7 +102,7 @@ func (h *Handler) requireEmployee(next http.Handler) http.Handler {
 		}
 
 		employee, err := h.staff.ByID(r.Context(), tenantID, employeeID)
-		if err != nil || !employee.Active || !employee.Role.UsesBackoffice() {
+		if err != nil || !employee.Active || !employee.Access.Backoffice {
 			h.sessions.Destroy(r.Context())
 			http.Redirect(w, r, "/backoffice/login", http.StatusSeeOther)
 			return
@@ -220,12 +220,15 @@ func (h *Handler) sessionView(r *http.Request) views.Session {
 
 	s := views.Session{
 		EmployeeName:    employee.Name,
-		Role:            string(employee.Role),
+		Role:            roleDisplay(employee),
 		BusinessName:    employee.BusinessName,
 		CSRFToken:       csrf.Token(r),
 		Path:            r.URL.Path,
 		CanCatalogue:    employee.Can(auth.ManageCatalogue),
+		CanCustomers:    h.customers != nil && employee.Can(auth.ManageCustomers),
 		CanPromos:       employee.Can(auth.ManagePromos) && employee.Has(entitlements.Promos),
+		CanDiscounts:    employee.Can(auth.ManagePromos),
+		CanSettings:     h.settings != nil && h.payments != nil && employee.Can(auth.ManageSettings),
 		CanStaff:        employee.Can(auth.ManageEmployees),
 		CanOutlets:      employee.Can(auth.ManageOutlets),
 		CanStock:        employee.Can(auth.AdjustStock) && employee.Has(entitlements.Stock),
@@ -255,4 +258,13 @@ func clientIP(r *http.Request) string {
 		return ip
 	}
 	return r.RemoteAddr
+}
+
+// roleDisplay is what the header says someone is: the built-in role's key,
+// which RoleLabel translates, or a custom role's own name.
+func roleDisplay(e staff.Employee) string {
+	if e.Access.System != "" {
+		return string(e.Access.System)
+	}
+	return e.RoleName
 }

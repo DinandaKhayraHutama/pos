@@ -32,6 +32,8 @@ func TestPermissionStringsMatchTheDartEnum(t *testing.T) {
 		"viewFinancialReports",
 		"manageSettings",
 		"manageOutlets",
+		"manageCustomers",
+		"enterCustomAmount",
 	}, auth.AllPermissions)
 }
 
@@ -84,7 +86,7 @@ func TestManagerRunsTheFloorAndTheExceptions(t *testing.T) {
 	for _, p := range []auth.Permission{
 		auth.ManageTables, auth.ViewAllOrders, auth.VoidOrder, auth.RefundOrder,
 		auth.ApplyManualDiscount, auth.ViewCashDrawer, auth.AdjustStock,
-		auth.ViewDailySummary, auth.ManageOutlets,
+		auth.ViewDailySummary, auth.ManageOutlets, auth.ManageCustomers,
 	} {
 		require.True(t, auth.Manager.Grants(p), "a manager must hold %q", p)
 	}
@@ -116,4 +118,40 @@ func TestParseRoleRejectsAnythingElse(t *testing.T) {
 
 	_, err := auth.ParseRole("superuser")
 	require.Error(t, err)
+}
+
+// Fase 3: the role migration must not widen anyone. A system role resolves to
+// exactly the set it had before custom roles existed, and enterCustomAmount —
+// the one permission Fase 3 added — reaches the owner by derivation and
+// nobody else.
+func TestSystemRolesKeepTheirPreFase3Sets(t *testing.T) {
+	require.Equal(t, []auth.Permission{"sell", "manageTables", "openCloseShift", "viewOwnOrders"},
+		auth.SystemAccess(auth.Cashier).Permissions())
+	require.Equal(t, []auth.Permission{"manageTables", "viewAllOrders", "voidOrder", "refundOrder",
+		"applyManualDiscount", "viewCashDrawer", "adjustStock", "viewDailySummary", "manageOutlets", "manageCustomers"},
+		auth.SystemAccess(auth.Manager).Permissions())
+	require.True(t, auth.SystemAccess(auth.Owner).Grants(auth.EnterCustomAmount))
+	require.False(t, auth.SystemAccess(auth.Owner).Grants(auth.Sell), "owner still does not run the till")
+	require.False(t, auth.SystemAccess(auth.Cashier).Backoffice)
+	require.True(t, auth.SystemAccess(auth.Manager).Backoffice)
+}
+
+func TestACustomRoleGrantsOnlyWhatItNamesAndThisBuildKnows(t *testing.T) {
+	a := auth.CustomAccess([]string{"sell", "refundOrder", "teleport"}, true, false)
+	require.Equal(t, []auth.Permission{"sell", "refundOrder"}, a.Permissions())
+	require.False(t, a.IsOwner())
+	require.False(t, auth.Custom.Grants(auth.Sell), "the custom marker itself grants nothing")
+
+	unknown := "wizard"
+	require.Empty(t, auth.ResolveAccess(&unknown, nil, true, true).Permissions(),
+		"a system key this build does not know grants nothing")
+}
+
+func TestCoversIgnoresTheTillSetOnly(t *testing.T) {
+	owner := auth.SystemAccess(auth.Owner)
+	require.True(t, owner.Covers(auth.CustomAccess([]string{"sell", "openCloseShift", "refundOrder"}, true, false)),
+		"an owner creates till roles without holding sell")
+	manager := auth.SystemAccess(auth.Manager)
+	require.False(t, manager.Covers(auth.CustomAccess([]string{"viewFinancialReports"}, false, true)),
+		"a manager cannot hand out the financial reports they do not have")
 }

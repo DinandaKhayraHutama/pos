@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'dart:convert';
 
 import '../../data/models/enums.dart';
 import '../../data/models/order.dart';
@@ -44,38 +46,62 @@ Future<bool> printOrderReceipt(
     amountPaid: l10n.posAmountPaid,
     change: l10n.posChange,
     cashier: l10n.receiptCashier,
+    note: l10n.posNote,
     thankYou: l10n.receiptThankYou,
     orderTypes: {
       OrderType.dineIn: l10n.posDineIn,
       OrderType.takeaway: l10n.posTakeaway,
       OrderType.delivery: l10n.posDelivery,
+      OrderType.custom: order.salesTypeName ?? l10n.posSalesTypeCustom,
     },
     paymentMethods: {
       PaymentMethod.cash: l10n.posCash,
       PaymentMethod.qris: l10n.posQris,
       PaymentMethod.card: l10n.posCard,
+      PaymentMethod.ewallet: l10n.posPaymentEwallet,
+      PaymentMethod.transfer: l10n.posPaymentTransfer,
+      PaymentMethod.other: l10n.posPaymentOther,
     },
+    servedBy: l10n.receiptServedBy,
+    taxIncluded: l10n.posTaxIncluded,
+    rounding: l10n.posRounding,
+    manualPayment: l10n.receiptManualPayment,
   );
 
   try {
-    // The branch NAME comes off the order, because it is a snapshot of what
-    // the shop was called when the sale happened. The ADDRESS is looked up
-    // live: a branch that moved should print where it is now, since that is
-    // where a customer holding this receipt would go back to.
-    final outletId = order.outletId;
-    final outlet = outletId == null
-        ? null
-        : await OutletRepository.instance.byId(outletId);
+    // A sale made since Fase 3 froze its receipt identity — store name,
+    // address, phone, header, footer, logo — at the moment it was rung up, so
+    // a reprint says what the original said even after the Backoffice changed
+    // any of it, and an address the owner chose to hide stays hidden. An older
+    // sale has no snapshot: its branch NAME comes off the order and the
+    // ADDRESS is looked up live, as it always was.
+    final snapshot = order.receiptSnapshot?.isNotEmpty == true
+        ? jsonDecode(order.receiptSnapshot!) as Map<String, dynamic>
+        : null;
+    final String address;
+    if (snapshot != null) {
+      address = snapshot['address'] as String? ?? '';
+    } else {
+      final outletId = order.outletId;
+      final outlet = outletId == null
+          ? null
+          : await OutletRepository.instance.byId(outletId);
+      address = outlet?.address?.isNotEmpty == true
+          ? outlet!.address!
+          : settings.storeAddress;
+    }
 
     final bytes = await buildReceiptPdf(
       order: order,
       store: ReceiptStore(
-        name: settings.storeName,
+        name: snapshot?['store_name'] as String? ?? settings.storeName,
         branch: order.outletName,
-        address: outlet?.address?.isNotEmpty == true
-            ? outlet!.address!
-            : settings.storeAddress,
+        address: address,
+        phone: snapshot?['phone'] as String?,
         currency: settings.currency,
+        header: snapshot?['header'] as String?,
+        footer: snapshot?['footer'] as String?,
+        logo: await _logo(snapshot?['logo_url'] as String?),
       ),
       labels: labels,
     );
@@ -101,5 +127,17 @@ Future<bool> printOrderReceipt(
       showAppSnackBar(context, l10n.ordersPrintFailed, error: true);
     }
     return false;
+  }
+}
+
+/// The receipt logo, or null when there is none or it cannot be fetched.
+/// A till printing offline must still print: a missing logo is cosmetic, a
+/// receipt that fails to print over one is not.
+Future<pw.ImageProvider?> _logo(String? url) async {
+  if (url == null || url.isEmpty) return null;
+  try {
+    return await networkImage(url);
+  } catch (_) {
+    return null;
   }
 }

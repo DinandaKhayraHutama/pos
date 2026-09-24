@@ -207,6 +207,8 @@ class ServerReport {
     required this.netSales,
     required this.tax,
     required this.serviceCharge,
+    this.taxIncluded = 0,
+    this.rounding = 0,
     required this.revenue,
     required this.orderCount,
     required this.averageSale,
@@ -224,8 +226,10 @@ class ServerReport {
     this.byDay = const [],
     this.byOutlet = const [],
     this.byPayment = const [],
+    this.bySalesType = const [],
     this.byCashier = const [],
     this.byCategory = const [],
+    this.byBrand = const [],
     this.byProduct = const [],
     this.byProductInCategory = const [],
   });
@@ -258,6 +262,9 @@ class ServerReport {
       netSales: _int(sales['net_sales']),
       tax: _int(sales['tax']),
       serviceCharge: _int(sales['service_charge']),
+      // Absent from a server older than 2.8.0, which never had either.
+      taxIncluded: _int(sales['tax_included']),
+      rounding: _int(sales['rounding']),
       revenue: _int(sales['revenue']),
       orderCount: _int(sales['order_count']),
       averageSale: _int(sales['average_sale']),
@@ -275,8 +282,10 @@ class ServerReport {
       byDay: _list(json['by_day'], ServerDayLine.fromJson),
       byOutlet: _list(json['by_outlet'], ServerLine.fromJson),
       byPayment: _list(json['by_payment'], ServerLine.fromJson),
+      bySalesType: _list(json['by_sales_type'], ServerLine.fromJson),
       byCashier: _list(json['by_cashier'], ServerLine.fromJson),
       byCategory: _list(json['by_category'], ServerCategoryLine.fromJson),
+      byBrand: _list(json['by_brand'], ServerCategoryLine.fromJson),
       byProduct: _list(json['by_product'], ServerProductLine.fromJson),
       byProductInCategory: _list(
         json['by_product_in_category'],
@@ -315,6 +324,12 @@ class ServerReport {
   final int netSales;
   final int tax;
   final int serviceCharge;
+
+  /// Fase 3: tax already inside inclusive prices, out of [netSales].
+  final int taxIncluded;
+
+  /// Fase 3: rounding collected; part of [revenue], never of sales.
+  final int rounding;
   final int revenue;
   final int orderCount;
   final int averageSale;
@@ -339,8 +354,10 @@ class ServerReport {
   final List<ServerDayLine> byDay;
   final List<ServerLine> byOutlet;
   final List<ServerLine> byPayment;
+  final List<ServerLine> bySalesType;
   final List<ServerLine> byCashier;
   final List<ServerCategoryLine> byCategory;
+  final List<ServerCategoryLine> byBrand;
   final List<ServerProductLine> byProduct;
   final List<ServerCategoryProducts> byProductInCategory;
 
@@ -351,7 +368,8 @@ class ServerReport {
   bool get costCoverageLow =>
       costCoverage != null && itemsSold > 0 && costCoverage! < 0.9;
 
-  bool get isEmpty => orderCount == 0 && cancelledCount == 0 && refundedCount == 0;
+  bool get isEmpty =>
+      orderCount == 0 && cancelledCount == 0 && refundedCount == 0;
 
   /// The same figures in [SalesReport]'s shape, for the report sections both
   /// sources share.
@@ -359,20 +377,24 @@ class ServerReport {
   /// A RENDERING convenience and nothing more. It does not make the two the
   /// same thing: this one still covers every register in the outlet and that
   /// one covers this device, which is why the screen always shows where its
-  /// numbers came from. `byOrderType` is empty because the server does not
-  /// group by it — an empty map draws no section, where a fabricated one
-  /// would draw a wrong one.
+  /// numbers came from. `byOrderType` is the server's sales-type grouping,
+  /// keyed by the label it gives each — empty from a server older than 2.8.0,
+  /// which draws no section rather than a fabricated one.
   SalesReport asPresentation() => SalesReport(
     from: from,
     to: to,
     revenue: revenue,
-    subtotal: netSales + discounts,
+    // Rebuilt so SalesReport.netSales (subtotal − discount − included tax)
+    // reads back the server's own net.
+    subtotal: netSales + discounts + taxIncluded,
     discount: discounts,
     grossSales: grossSales,
     allDiscount: discounts,
     salesReturns: salesReturns,
     tax: tax,
     serviceCharge: serviceCharge,
+    taxIncluded: taxIncluded,
+    rounding: rounding,
     orderCount: orderCount,
     itemsSold: itemsSold,
     cancelledCount: cancelledCount,
@@ -385,7 +407,10 @@ class ServerReport {
       for (final p in byPayment)
         p.key: ReportBucket(amount: p.revenue, count: p.count),
     },
-    byOrderType: const {},
+    byOrderType: {
+      for (final t in bySalesType)
+        t.label: ReportBucket(amount: t.revenue, count: t.count),
+    },
     byCashier: {
       for (final c in byCashier)
         c.label: ReportBucket(amount: c.netSales, count: c.count),

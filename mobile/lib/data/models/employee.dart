@@ -25,6 +25,10 @@ enum EmployeeRole {
   /// Full control of the business: catalogue and prices, financial reports,
   /// inventory, staff accounts and promotions.
   owner,
+
+  /// Permissions are resolved from the synced `roles` row referenced by
+  /// [Employee.roleId]. Unknown or missing rows grant no access.
+  custom,
 }
 
 extension EmployeeRoleX on EmployeeRole {
@@ -32,7 +36,7 @@ extension EmployeeRoleX on EmployeeRole {
 
   static EmployeeRole fromWire(String v) => EmployeeRole.values.firstWhere(
     (e) => e.name == v,
-    orElse: () => EmployeeRole.cashier,
+    orElse: () => EmployeeRole.custom,
   );
 }
 
@@ -44,6 +48,7 @@ class Employee {
     this.pin = '',
     this.pinHash,
     required this.role,
+    this.roleId,
     this.active = true,
     this.sortOrder = 0,
   });
@@ -70,6 +75,7 @@ class Employee {
   final String? pinHash;
 
   final EmployeeRole role;
+  final String? roleId;
   final bool active;
   final int sortOrder;
 
@@ -82,6 +88,7 @@ class Employee {
     pin: (m['pin'] as String?) ?? '',
     pinHash: m['pin_hash'] as String?,
     role: EmployeeRoleX.fromWire(m['role'] as String),
+    roleId: m['role_id'] as String?,
     active: ((m['active'] as int?) ?? 1) == 1,
     sortOrder: (m['sort_order'] as int?) ?? 0,
   );
@@ -92,6 +99,7 @@ class Employee {
     'pin': pin,
     'pin_hash': pinHash,
     'role': role.wire,
+    'role_id': roleId,
     'active': active ? 1 : 0,
     'sort_order': sortOrder,
   };
@@ -102,6 +110,7 @@ class Employee {
     String? pin,
     String? pinHash,
     EmployeeRole? role,
+    String? roleId,
     bool? active,
     int? sortOrder,
   }) => Employee(
@@ -110,6 +119,7 @@ class Employee {
     pin: pin ?? this.pin,
     pinHash: pinHash ?? this.pinHash,
     role: role ?? this.role,
+    roleId: roleId ?? this.roleId,
     active: active ?? this.active,
     sortOrder: sortOrder ?? this.sortOrder,
   );

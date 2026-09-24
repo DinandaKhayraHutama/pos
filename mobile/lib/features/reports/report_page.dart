@@ -13,6 +13,8 @@ import '../../core/widgets/glass/glass_card.dart';
 import '../../core/widgets/loading_indicator.dart';
 import '../../data/models/enums.dart';
 import '../../data/models/sales_report.dart';
+import '../../data/models/server_report.dart';
+import '../../l10n/gen/app_localizations.dart';
 import '../../providers/report_provider.dart';
 import '../../core/widgets/app_snack_bar.dart';
 
@@ -38,7 +40,7 @@ class ReportPage extends ConsumerWidget {
                 tooltip: l10n.reportExport,
                 onPressed: report.valueOrNull?.presentable == null
                     ? null
-                    : () => _export(context, report.value!.presentable!),
+                    : () => _export(context, report.value!),
                 icon: const Icon(Icons.download_rounded),
               ),
             ],
@@ -60,20 +62,34 @@ class ReportPage extends ConsumerWidget {
     );
   }
 
-  Future<void> _export(BuildContext context, SalesReport report) async {
+  Future<void> _export(BuildContext context, ReportView view) async {
     final l10n = context.l10n;
+    final report = view.presentable!;
+    final server = view.server;
     final csv = buildReportCsv(
       report,
+      // What the file actually covers, and when those figures were produced.
+      // A connected export is the outlet's; a demo one is this device's.
+      scope: switch (view.source) {
+        ReportSource.server || ReportSource.cache =>
+          server!.allOutlets
+              ? l10n.reportOutletComparison
+              : (server.outletName.isEmpty ? '' : server.outletName),
+        _ => l10n.reportSourceLocal,
+      },
+      computedAt: server?.computedAt == null
+          ? ''
+          : DateFormatter.dateTime(server!.computedAt!),
+      calculationVersion: server?.calculationVersion ?? 2,
       paymentLabel: (k) => switch (PaymentMethodX.fromWire(k)) {
         PaymentMethod.cash => l10n.posCash,
         PaymentMethod.qris => l10n.posQris,
         PaymentMethod.card => l10n.posCard,
+        PaymentMethod.ewallet => l10n.posPaymentEwallet,
+        PaymentMethod.transfer => l10n.posPaymentTransfer,
+        PaymentMethod.other => l10n.posPaymentOther,
       },
-      orderTypeLabel: (k) => switch (OrderTypeX.fromWire(k)) {
-        OrderType.dineIn => l10n.posDineIn,
-        OrderType.takeaway => l10n.posTakeaway,
-        OrderType.delivery => l10n.posDelivery,
-      },
+      orderTypeLabel: (k) => salesTypeLabel(l10n, k),
       uncategorizedLabel: l10n.reportUncategorized,
       headers: [
         l10n.reportPeriod,
@@ -110,8 +126,11 @@ class _RangePicker extends ConsumerWidget {
     final design = context.design;
     final range = ref.watch(reportRangeProvider);
 
+    // The same five the Backoffice offers, so "7 hari" means one thing on
+    // both surfaces and two people comparing screens are comparing periods.
     final presets = <(String, ReportRange)>[
       (l10n.reportToday, ReportRange.today()),
+      (l10n.historyPeriodYesterday, ReportRange.yesterday()),
       (l10n.reportLast7, ReportRange.lastDays(7)),
       (l10n.reportLast30, ReportRange.lastDays(30)),
       (l10n.reportThisMonth, ReportRange.thisMonth()),
@@ -245,9 +264,7 @@ class _SourceBanner extends StatelessWidget {
               : DateFormatter.dateTime(view.server!.computedAt!),
         ),
         ReportSource.cache => l10n.reportSourceCache(
-          view.cachedAt == null
-              ? '—'
-              : DateFormatter.dateTime(view.cachedAt!),
+          view.cachedAt == null ? '—' : DateFormatter.dateTime(view.cachedAt!),
         ),
         ReportSource.unavailable => l10n.reportSourceUnavailable,
         ReportSource.local => l10n.reportSourceLocal,
@@ -257,8 +274,7 @@ class _SourceBanner extends StatelessWidget {
       // Named beside the totals, never added to them: the server figure is
       // what the outlet sold as the server knows it, and quietly topping it up
       // with one device's queue produces a number that matches nothing.
-      if (view.unsyncedCount > 0)
-        l10n.reportUnsyncedNotice(view.unsyncedCount),
+      if (view.unsyncedCount > 0) l10n.reportUnsyncedNotice(view.unsyncedCount),
     ];
 
     return GlassCard.solid(
@@ -321,6 +337,13 @@ class _ReportBody extends StatelessWidget {
                 label: l10n.reportSalesReturns,
                 value: -report.salesReturns,
               ),
+              // Tax already inside inclusive prices was never the merchant's
+              // sale; it comes out here and goes back in with PB1 below.
+              if (report.taxIncluded != 0)
+                _MoneyRow(
+                  label: l10n.posTaxIncluded,
+                  value: -report.taxIncluded,
+                ),
               const Divider(height: AppDimensions.space20),
               _MoneyRow(
                 label: l10n.reportNetSales,
@@ -332,6 +355,8 @@ class _ReportBody extends StatelessWidget {
                 label: l10n.reportServiceCharge,
                 value: report.serviceCharge,
               ),
+              if (report.rounding != 0)
+                _MoneyRow(label: l10n.posRounding, value: report.rounding),
               const Divider(height: AppDimensions.space20),
               _MoneyRow(
                 label: l10n.reportTotalReceipts,
@@ -375,6 +400,9 @@ class _ReportBody extends StatelessWidget {
             PaymentMethod.cash => l10n.posCash,
             PaymentMethod.qris => l10n.posQris,
             PaymentMethod.card => l10n.posCard,
+            PaymentMethod.ewallet => l10n.posPaymentEwallet,
+            PaymentMethod.transfer => l10n.posPaymentTransfer,
+            PaymentMethod.other => l10n.posPaymentOther,
           },
           total: report.revenue,
         ),
@@ -385,16 +413,16 @@ class _ReportBody extends StatelessWidget {
           _BucketSection(
             title: l10n.reportByType,
             buckets: report.byOrderType,
-            labelFor: (k) => switch (OrderTypeX.fromWire(k)) {
-              OrderType.dineIn => l10n.posDineIn,
-              OrderType.takeaway => l10n.posTakeaway,
-              OrderType.delivery => l10n.posDelivery,
-            },
+            labelFor: (k) => salesTypeLabel(l10n, k),
             total: report.revenue,
           ),
         ],
         const SizedBox(height: AppDimensions.space12),
         _CategorySection(report: report),
+        if (server != null && server.byBrand.isNotEmpty) ...[
+          const SizedBox(height: AppDimensions.space12),
+          _ServerBrandSection(lines: server.byBrand),
+        ],
         if (server != null && server.byProductInCategory.isNotEmpty) ...[
           const SizedBox(height: AppDimensions.space12),
           _TopItemsSection(groups: server.byProductInCategory),
@@ -486,9 +514,7 @@ class _ProfitSection extends StatelessWidget {
                     ? Icons.info_outline_rounded
                     : Icons.warning_amber_rounded,
                 size: 14,
-                color: report.costIsReliable
-                    ? design.textLow
-                    : design.warning,
+                color: report.costIsReliable ? design.textLow : design.warning,
               ),
               const SizedBox(width: 6),
               Expanded(
@@ -710,6 +736,15 @@ class _Tile extends StatelessWidget {
                 ),
               ),
             ),
+            if (detail != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                detail!,
+                style: TextStyle(color: design.textLow, fontSize: 11),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ],
         ),
       ),
@@ -787,10 +822,7 @@ class _BucketSection extends StatelessWidget {
                       ),
                       Text(
                         '${e.value.count}',
-                        style: TextStyle(
-                          color: design.textLow,
-                          fontSize: 12,
-                        ),
+                        style: TextStyle(color: design.textLow, fontSize: 12),
                       ),
                       const SizedBox(width: AppDimensions.space10),
                       Text(
@@ -833,6 +865,52 @@ class _BucketSection extends StatelessWidget {
 /// minus Discount, not to [SalesReport.revenue] (which includes both PB1 and
 /// Service Charge) — reading it as the latter makes the two sections look
 /// contradictory when they are not.
+class _ServerBrandSection extends StatelessWidget {
+  const _ServerBrandSection({required this.lines});
+  final List<ServerCategoryLine> lines;
+
+  @override
+  Widget build(BuildContext context) {
+    final design = context.design;
+    return _Section(
+      title: context.l10n.reportByBrand,
+      child: Column(
+        children: [
+          for (final line in lines)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppDimensions.space10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      line.label,
+                      style: TextStyle(
+                        color: design.textHigh,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '${line.items}',
+                    style: TextStyle(color: design.textLow),
+                  ),
+                  const SizedBox(width: AppDimensions.space10),
+                  Text(
+                    MoneyFormatter.format(line.netSales),
+                    style: TextStyle(
+                      color: design.textHigh,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _CategorySection extends StatelessWidget {
   const _CategorySection({required this.report});
   final SalesReport report;
@@ -915,9 +993,7 @@ class _CategorySection extends StatelessWidget {
                             backgroundColor: design.primary.withValues(
                               alpha: 0.12,
                             ),
-                            valueColor: AlwaysStoppedAnimation(
-                              design.primary,
-                            ),
+                            valueColor: AlwaysStoppedAnimation(design.primary),
                           ),
                         ),
                       ),
@@ -938,11 +1014,7 @@ class _CategorySection extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
-                Icons.info_outline_rounded,
-                size: 14,
-                color: design.textLow,
-              ),
+              Icon(Icons.info_outline_rounded, size: 14, color: design.textLow),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
@@ -983,10 +1055,7 @@ class _DailySection extends StatelessWidget {
                     width: 62,
                     child: Text(
                       DateFormat('d MMM').format(d),
-                      style: TextStyle(
-                        color: design.textMedium,
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: design.textMedium, fontSize: 12),
                     ),
                   ),
                   Expanded(
@@ -1039,10 +1108,7 @@ class _MoneyRow extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: TextStyle(color: design.textMedium, fontSize: 13),
-          ),
+          Text(label, style: TextStyle(color: design.textMedium, fontSize: 13)),
           Text(
             MoneyFormatter.format(value),
             style: TextStyle(
@@ -1071,10 +1137,7 @@ class _PlainRow extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: TextStyle(color: design.textMedium, fontSize: 13),
-          ),
+          Text(label, style: TextStyle(color: design.textMedium, fontSize: 13)),
           Text(
             value,
             style: TextStyle(
@@ -1088,3 +1151,15 @@ class _PlainRow extends StatelessWidget {
     );
   }
 }
+
+/// Names a sales-type bucket of a report. The three built-in wire types are
+/// translated; anything else is already a name — a merchant's own type
+/// ("GoFood"), or the label the server gave it — and is shown as it is.
+@visibleForTesting
+String salesTypeLabel(AppLocalizations l10n, String key) => switch (key) {
+  'dineIn' => l10n.posDineIn,
+  'takeaway' => l10n.posTakeaway,
+  'delivery' => l10n.posDelivery,
+  'custom' => l10n.posSalesTypeCustom,
+  _ => key,
+};

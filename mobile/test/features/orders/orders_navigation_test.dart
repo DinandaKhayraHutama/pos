@@ -13,6 +13,7 @@ import 'package:nti_pos/data/models/order_item.dart';
 import 'package:nti_pos/features/orders/order_detail_page.dart';
 import 'package:nti_pos/features/orders/orders_page.dart';
 import 'package:nti_pos/l10n/gen/app_localizations.dart';
+import 'package:nti_pos/providers/order_history_provider.dart';
 import 'package:nti_pos/providers/order_provider.dart';
 import 'package:nti_pos/providers/settings_provider.dart';
 
@@ -35,11 +36,13 @@ class _ResolvedSettingsNotifier extends SettingsNotifier {
   Future<SettingsState> build() async => _initial;
 }
 
-class _FakeOrdersNotifier extends OrdersNotifier {
-  _FakeOrdersNotifier(this._data);
+/// Stands in for the paged history so this test stays about navigation.
+class _FakeHistoryNotifier extends OrderHistoryNotifier {
+  _FakeHistoryNotifier(this._data);
   final List<Order> _data;
   @override
-  Future<List<Order>> build(OrderStatus? arg) async => _data;
+  Future<OrderHistoryState> build() async =>
+      OrderHistoryState(orders: _data, localOnly: true);
 }
 
 Order _order() => Order(
@@ -93,7 +96,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         settingsProvider.overrideWith(() => _ResolvedSettingsNotifier(settings)),
-        ordersProvider.overrideWith(() => _FakeOrdersNotifier([order])),
+        orderHistoryProvider.overrideWith(() => _FakeHistoryNotifier([order])),
         orderDetailProvider.overrideWith((ref, _) async => order),
       ],
     );

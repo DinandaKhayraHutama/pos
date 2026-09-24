@@ -62,9 +62,9 @@ class EmptyState extends StatelessWidget {
                 const SizedBox(height: AppDimensions.space6),
                 Text(
                   subtitle!,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: design.textMedium,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: design.textMedium),
                   textAlign: TextAlign.center,
                 ),
               ],

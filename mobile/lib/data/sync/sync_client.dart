@@ -11,6 +11,10 @@ import 'retry_gate.dart';
 /// update instead of guessing at columns it cannot store.
 const kClientSchemaVersion = 1;
 
+/// Features this build can execute safely. Sent on activation and every API
+/// request so the server can refuse a v2 rollout while an old till remains.
+const kClientCapabilities = 'bills-v1,pricing-v2,roles-v1';
+
 /// Why a sync request stopped.
 ///
 /// **None of these ever authorizes deleting queued work.** The v1 client mapped
@@ -116,6 +120,7 @@ class SyncClient {
       'Authorization': 'Bearer $_token',
       'Accept': 'application/json',
       'X-Schema-Version': '$kClientSchemaVersion',
+      'X-Device-Capabilities': kClientCapabilities,
     });
     // Never forward a bearer token across a redirect. A 3xx from the sync API
     // is a misconfiguration, and following it would hand the credential to

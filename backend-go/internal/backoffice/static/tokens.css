@@ -1,0 +1,397 @@
+/* ================================================================
+   JustClick POS — Design Tokens
+   ================================================================
+   Source of truth: mobile/lib/core/theme/*.dart
+   Brand: NTI Blue (default)  |  Modes: Light + Dark
+   
+   Drop this file into backend-go/internal/backoffice/static/ and
+   add one <link> in layout.templ's <head>:
+   
+     <link rel="stylesheet" href="/backoffice/static/tokens.css"/>
+   
+   The legacy variable names (--ink, --muted, --line, --bg, --blue,
+   --danger, --ok) are aliased at the bottom of :root so existing
+   CSS keeps working with zero changes.
+   ================================================================ */
+
+
+/* ── Font ─────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&display=swap');
+
+
+/* ================================================================
+   LIGHT MODE (default)
+   ================================================================ */
+:root {
+
+  /* ── Typography ──────────────────────────────────────────────── */
+  --font-family:        'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-family-mono:   ui-monospace, SFMono-Regular, Consolas, monospace;
+
+  /* ── Primary / Brand ─────────────────────────────────────────── */
+  --primary:                #1E40AF;
+  --primary-rgb:            30, 64, 175;
+  --on-primary:             #FFFFFF;
+  --secondary:              #0369A1;
+  --secondary-rgb:          3, 105, 161;
+  --on-secondary:           #FFFFFF;
+  --primary-container:      rgba(30, 64, 175, 0.14);
+  --on-primary-container:   #0D2463;   /* darken(#1E40AF, 0.45) */
+
+  /* ── Surfaces ────────────────────────────────────────────────── */
+  --surface-base:               #F6F7F9;
+  --surface-raised:             #FFFFFF;
+  --surface-overlay:            #FFFFFF;
+  --surface-container-lowest:   #FFFFFF;
+  --surface-container-low:      #FFFFFF;
+  --surface-container:          #FFFFFF;
+  --surface-container-high:     #F0F1F5;
+  --surface-container-highest:  #E9EBF0;
+
+  /* ── Text Tiers ──────────────────────────────────────────────── */
+  --text-high:    #0B0C0F;
+  --text-medium:  #5A5E6A;
+  --text-low:     #9A9FAE;
+
+  /* ── Semantic ────────────────────────────────────────────────── */
+  --success:              #15803D;
+  --success-rgb:          21, 128, 61;
+  --success-container:    #DCFCE7;
+  --on-success:           #FFFFFF;
+
+  --warning:              #B45309;
+  --warning-rgb:          180, 83, 9;
+  --warning-container:    #FEF3C7;
+  --on-warning:           #FFFFFF;
+
+  --error:                #DC2626;
+  --error-rgb:            220, 38, 38;
+  --error-container:      #FEE2E2;
+  --on-error:             #FFFFFF;
+
+  --info:                 #0284C7;
+  --info-rgb:             2, 132, 199;
+  --info-container:       #E0F2FE;
+  --on-info:              #FFFFFF;
+
+  /* ── Glass / Borders ─────────────────────────────────────────── */
+  --glass-tint:     #FFFFFF;
+  --glass-border:   #D9DDE4;
+
+  /* ── Brand Gradient (substrate) ──────────────────────────────── */
+  --gradient-start:   #F1F5FB;
+  --gradient-end:     #DCE6F7;
+
+  /* ── Spacing (4-pt grid) ─────────────────────────────────────── */
+  --space-2:    2px;
+  --space-4:    4px;
+  --space-6:    6px;
+  --space-8:    8px;
+  --space-10:  10px;
+  --space-12:  12px;
+  --space-14:  14px;
+  --space-16:  16px;
+  --space-18:  18px;
+  --space-20:  20px;
+  --space-24:  24px;
+  --space-28:  28px;
+  --space-32:  32px;
+
+  /* ── Border Radius ───────────────────────────────────────────── */
+  --radius-sm:    8px;
+  --radius-md:   14px;
+  --radius-lg:   20px;
+  --radius-xl:   28px;
+  --radius-pill: 32px;
+
+  /* ── Layout ──────────────────────────────────────────────────── */
+  --nav-rail-width:       248px;
+  --nav-rail-collapsed:    76px;
+  --cart-panel-width:     380px;
+  --nav-bar-height:        68px;
+  --chip-height:           44px;
+
+  /* ── Elevation / Shadow ──────────────────────────────────────── */
+  --shadow-none:      none;
+  --shadow-xs:        0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-scrolled:  0 1px 3px rgba(0, 0, 0, 0.08);
+
+  /* ── Button Sizing ───────────────────────────────────────────── */
+  --btn-filled-height:    52px;
+  --btn-outlined-height:  48px;
+
+  /* ── Divider ─────────────────────────────────────────────────── */
+  --divider:            rgba(154, 159, 174, 0.6);   /* textLow @ 60% */
+  --divider-thickness:  1px;
+
+  /* ── Transition ──────────────────────────────────────────────── */
+  --ease-fast:    150ms ease;
+  --ease-normal:  200ms ease;
+  --ease-smooth:  300ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ── Active nav (brand-tinted) ───────────────────────────────── */
+  --nav-active-bg:    rgba(30, 64, 175, 0.08);
+  --nav-active-text:  var(--primary);
+
+  /* ================================================================
+     LEGACY ALIASES — keep existing layout.templ CSS working
+     ================================================================ */
+  --ink:      var(--text-high);
+  --muted:    var(--text-medium);
+  --line:     var(--glass-border);
+  --bg:       var(--surface-base);
+  --blue:     var(--primary);
+  --danger:   var(--error);
+  --ok:       var(--success);
+}
+
+
+/* ================================================================
+   DARK MODE
+   ================================================================ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* ── Brand (NTI Blue dark overrides) ── */
+    --primary:              #60A5FA;
+    --primary-rgb:          96, 165, 250;
+    --on-primary:           #0B1220;
+    --secondary:            #38BDF8;
+    --secondary-rgb:        56, 189, 248;
+    --primary-container:    rgba(96, 165, 250, 0.22);
+    --on-primary-container: #93C5FD;
+
+    /* ── Surfaces ── */
+    --surface-base:               #0B0C10;
+    --surface-raised:             #16181E;
+    --surface-overlay:            #1E2128;
+    --surface-container-lowest:   #070809;
+    --surface-container-low:      #16181E;
+    --surface-container:          #1E2128;
+    --surface-container-high:     #22252D;
+    --surface-container-highest:  #2A2D36;
+
+    /* ── Text ── */
+    --text-high:    #F5F6FA;
+    --text-medium:  #B4B8C4;
+    --text-low:     #7A7F8E;
+
+    /* ── Semantic (lightened +12% for dark surfaces) ── */
+    --success:              #4ADE80;
+    --success-rgb:          74, 222, 128;
+    --success-container:    #14532D;
+
+    --warning:              #FBBF24;
+    --warning-rgb:          251, 191, 36;
+    --warning-container:    #451A03;
+
+    --error:                #FCA5A5;
+    --error-rgb:            252, 165, 165;
+    --error-container:      #451A1A;
+
+    --info:                 #38BDF8;
+    --info-rgb:             56, 189, 248;
+    --info-container:       #0C4A6E;
+
+    /* ── Glass / Borders ── */
+    --glass-tint:     #16181E;
+    --glass-border:   #2E333D;
+
+    /* ── Gradient ── */
+    --gradient-start:   #060810;
+    --gradient-end:     #0B0C10;
+
+    /* ── Divider ── */
+    --divider:  rgba(122, 127, 142, 0.4);
+
+    /* ── Nav active ── */
+    --nav-active-bg:    rgba(96, 165, 250, 0.15);
+    --nav-active-text:  #60A5FA;
+  }
+}
+
+
+/* ================================================================
+   CATEGORY COLORS  (product tiles, chips, avatars)
+   ================================================================ */
+:root {
+  --cat-food-fg:     #EF4444;   --cat-food-bg:     #FEE2E2;
+  --cat-drinks-fg:   #3B82F6;   --cat-drinks-bg:   #DBEAFE;
+  --cat-snacks-fg:   #F59E0B;   --cat-snacks-bg:   #FEF3C7;
+  --cat-dessert-fg:  #EC4899;   --cat-dessert-bg:  #FCE7F3;
+  --cat-coffee-fg:   #92400E;   --cat-coffee-bg:   #FED7AA;
+}
+
+
+/* ================================================================
+   UTILITY CLASSES
+   ================================================================ */
+
+/* ── Background ── */
+.bg-primary             { background-color: var(--primary); }
+.bg-primary-container   { background-color: var(--primary-container); }
+.bg-secondary           { background-color: var(--secondary); }
+.bg-surface             { background-color: var(--surface-base); }
+.bg-surface-raised      { background-color: var(--surface-raised); }
+.bg-surface-overlay     { background-color: var(--surface-overlay); }
+.bg-surface-high        { background-color: var(--surface-container-high); }
+.bg-surface-highest     { background-color: var(--surface-container-highest); }
+.bg-success             { background-color: var(--success); }
+.bg-success-container   { background-color: var(--success-container); }
+.bg-warning             { background-color: var(--warning); }
+.bg-warning-container   { background-color: var(--warning-container); }
+.bg-error               { background-color: var(--error); }
+.bg-error-container     { background-color: var(--error-container); }
+.bg-info                { background-color: var(--info); }
+.bg-info-container      { background-color: var(--info-container); }
+.bg-gradient            { background: linear-gradient(180deg, var(--gradient-start), var(--gradient-end)); }
+
+/* ── Text Color ── */
+.text-primary           { color: var(--primary); }
+.text-on-primary        { color: var(--on-primary); }
+.text-secondary         { color: var(--secondary); }
+.text-high              { color: var(--text-high); }
+.text-medium            { color: var(--text-medium); }
+.text-low               { color: var(--text-low); }
+.text-success           { color: var(--success); }
+.text-warning           { color: var(--warning); }
+.text-error             { color: var(--error); }
+.text-info              { color: var(--info); }
+
+/* ── Border Color ── */
+.border-primary         { border-color: var(--primary); }
+.border-glass           { border-color: var(--glass-border); }
+.border-success         { border-color: var(--success); }
+.border-warning         { border-color: var(--warning); }
+.border-error           { border-color: var(--error); }
+.border-info            { border-color: var(--info); }
+.border-divider         { border-color: var(--divider); }
+
+/* ── Border Radius ── */
+.rounded-sm             { border-radius: var(--radius-sm); }
+.rounded-md             { border-radius: var(--radius-md); }
+.rounded-lg             { border-radius: var(--radius-lg); }
+.rounded-xl             { border-radius: var(--radius-xl); }
+.rounded-pill           { border-radius: var(--radius-pill); }
+
+/* ── Spacing (padding) ── */
+.p-2    { padding: var(--space-2); }
+.p-4    { padding: var(--space-4); }
+.p-6    { padding: var(--space-6); }
+.p-8    { padding: var(--space-8); }
+.p-10   { padding: var(--space-10); }
+.p-12   { padding: var(--space-12); }
+.p-14   { padding: var(--space-14); }
+.p-16   { padding: var(--space-16); }
+.p-20   { padding: var(--space-20); }
+.p-24   { padding: var(--space-24); }
+.p-32   { padding: var(--space-32); }
+
+/* ── Spacing (gap) ── */
+.gap-2    { gap: var(--space-2); }
+.gap-4    { gap: var(--space-4); }
+.gap-6    { gap: var(--space-6); }
+.gap-8    { gap: var(--space-8); }
+.gap-10   { gap: var(--space-10); }
+.gap-12   { gap: var(--space-12); }
+.gap-14   { gap: var(--space-14); }
+.gap-16   { gap: var(--space-16); }
+.gap-20   { gap: var(--space-20); }
+.gap-24   { gap: var(--space-24); }
+
+/* ── Typography ── */
+.font-display {
+  font-family: var(--font-family);
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  line-height: 1.1;
+}
+.font-headline {
+  font-family: var(--font-family);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  line-height: 1.15;
+}
+.font-title {
+  font-family: var(--font-family);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  line-height: 1.2;
+}
+.font-body {
+  font-family: var(--font-family);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+.font-body-lg {
+  font-family: var(--font-family);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+.font-label {
+  font-family: var(--font-family);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.font-label-sm {
+  font-family: var(--font-family);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+}
+.font-money {
+  font-family: var(--font-family);
+  font-weight: 600;
+  letter-spacing: -0.1px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+.font-numeric {
+  font-family: var(--font-family);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.font-code {
+  font-family: var(--font-family-mono);
+  font-weight: 600;
+}
+
+/* ── Semantic Badges (matching Flutter StatusBadge) ── */
+.badge-success {
+  color: var(--success);
+  background: var(--success-container);
+  border: 1px solid rgba(var(--success-rgb), 0.3);
+}
+.badge-warning {
+  color: var(--warning);
+  background: var(--warning-container);
+  border: 1px solid rgba(var(--warning-rgb), 0.3);
+}
+.badge-error {
+  color: var(--error);
+  background: var(--error-container);
+  border: 1px solid rgba(var(--error-rgb), 0.3);
+}
+.badge-info {
+  color: var(--info);
+  background: var(--info-container);
+  border: 1px solid rgba(var(--info-rgb), 0.3);
+}
+
+/* ── Shadow ── */
+.shadow-none     { box-shadow: var(--shadow-none); }
+.shadow-xs       { box-shadow: var(--shadow-xs); }
+.shadow-scrolled { box-shadow: var(--shadow-scrolled); }
+
+/* ── Transition ── */
+.transition-fast   { transition: all var(--ease-fast); }
+.transition-normal { transition: all var(--ease-normal); }
+.transition-smooth { transition: all var(--ease-smooth); }

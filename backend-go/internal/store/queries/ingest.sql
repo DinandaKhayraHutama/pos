@@ -37,12 +37,15 @@ SELECT * FROM orders WHERE business_date = $1 AND id = $2;
 -- name: InsertOrder :exec
 INSERT INTO orders (business_date, id, tenant_id, outlet_id, pos_register_id, device_id, pos_session_id,
  revision, status, settled_at, placed_at_ms, subtotal, discount, tax, service_charge_amount,
- total, amount_paid, refunded_amount, payment_method, cashier_name, authorized_by, void_reason, payload)
+ total, amount_paid, refunded_amount, payment_method, cashier_name, authorized_by, void_reason, customer_id,
+ tax_included, rounding_amount, pricing_mismatch, payload)
 SELECT $1, (p->>'id')::uuid, $2, $3, $4, $5, (p->>'pos_session_id')::uuid,
  (p->>'revision')::bigint, p->>'status', CASE WHEN p->>'status' IN ('cancelled','refunded') THEN now() END,
  (p->>'placed_at_ms')::bigint, (p->>'subtotal')::bigint, (p->>'discount')::bigint, (p->>'tax')::bigint,
  (p->>'service_charge_amount')::bigint, (p->>'total')::bigint, (p->>'amount_paid')::bigint,
- (p->>'refunded_amount')::bigint, p->>'payment_method', p->>'cashier_name', p->>'authorized_by', p->>'void_reason', p
+ (p->>'refunded_amount')::bigint, p->>'payment_method', p->>'cashier_name', p->>'authorized_by', p->>'void_reason',
+ NULLIF(p->>'customer_id', '')::uuid,
+ COALESCE((p->>'tax_included')::bigint, 0), COALESCE((p->>'rounding_amount')::bigint, 0), $7, p
 FROM (SELECT $6::jsonb AS p) input;
 
 -- name: UpdateUnsettledOrder :execrows

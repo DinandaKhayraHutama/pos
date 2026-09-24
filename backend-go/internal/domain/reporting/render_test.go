@@ -108,7 +108,7 @@ func TestAnXLSXExportIsAWorkbookWithNumbersAsNumbers(t *testing.T) {
 	// Row 1 is the title and row 2 the header, so the waterfall starts at 3
 	// and "Total penerimaan penjualan" is its seventh line.
 	summary := sheet("Ringkasan penjualan")
-	require.Contains(t, summary, `<c r="B9" s="2"><v>77450</v></c>`, "revenue is a number cell")
+	require.Contains(t, summary, `<c r="B11" s="2"><v>77450</v></c>`, "revenue is a number cell (row 11 since Fase 3 added included tax and rounding to the waterfall)")
 	require.Contains(t, summary, `<v>60.00</v>`)
 
 	categories := sheet("Kategori")

@@ -32,6 +32,17 @@ func decimalCell(v float64) Cell     { return Cell{Kind: cellDecimal, Float: v} 
 func row(cells ...Cell) []Cell       { return cells }
 func kv(label string, v Cell) []Cell { return row(textCell(label), v) }
 
+// TextCell and IntCell let another package build a Table without reaching
+// into this package's unexported cellKind constants.
+//
+// Fase 2's catalogue exporter (internal/domain/catalogue) is the first
+// caller outside reporting: a product or brand name is exactly the kind of
+// cashier-typed text safeText already guards report exports against, and
+// RenderCSV/RenderXLSX are exactly the byte-for-byte-compatible renderers a
+// second export feature should sit on rather than reimplement.
+func TextCell(s string) Cell { return textCell(s) }
+func IntCell(v int64) Cell   { return intCell(v) }
+
 // Table is one section of an export: a title, a header and its rows.
 type Table struct {
 	Title  string
@@ -89,9 +100,11 @@ func Tables(r Report, loc *time.Location) []Table {
 		kv("Penjualan kotor", intCell(r.GrossSales)),
 		kv("Diskon", intCell(r.AllDiscount)),
 		kv("Retur penjualan", intCell(r.SalesReturns)),
+		kv("Pajak termasuk harga", intCell(r.TaxIncluded)),
 		kv("Penjualan bersih", intCell(r.NetSales)),
 		kv("Pajak (PB1)", intCell(r.Tax)),
 		kv("Service charge", intCell(r.ServiceCharge)),
+		kv("Pembulatan", intCell(r.Rounding)),
 		kv("Total penerimaan penjualan", intCell(r.Revenue)),
 		kv("Jumlah order", intCell(r.OrderCount)),
 		kv("Rata-rata penjualan per order", intCell(r.AverageOrder)),
@@ -130,6 +143,15 @@ func Tables(r Report, loc *time.Location) []Table {
 			intCell(c.Items), decimalCell(c.ContributionPercent)))
 	}
 
+	brands := Table{Title: "Brand", Header: []string{"Brand", "Penjualan kotor", "Penjualan bersih", "Item", "Kontribusi (%)"}}
+	for _, b := range r.ByBrand {
+		label := b.Name
+		if b.Key == Uncategorised || label == "" {
+			label = "Tanpa brand"
+		}
+		brands.Rows = append(brands.Rows, row(textCell(label), intCell(b.Gross), intCell(b.Net), intCell(b.Items), decimalCell(b.ContributionPercent)))
+	}
+
 	products := Table{Title: "Produk", Header: []string{"Produk", "Qty", "Penjualan kotor", "Penjualan bersih", "HPP", "Cakupan HPP (%)"}}
 	for _, p := range r.ByProduct {
 		products.Rows = append(products.Rows, row(textCell(p.Name), intCell(p.Quantity), intCell(p.Revenue),
@@ -163,14 +185,19 @@ func Tables(r Report, loc *time.Location) []Table {
 		payments.Rows = append(payments.Rows, row(textCell(l.Label), intCell(l.Value), intCell(l.Count)))
 	}
 
+	salesTypes := Table{Title: "Jenis penjualan", Header: []string{"Jenis", "Penjualan bersih", "Penerimaan", "Order"}}
+	for _, l := range r.BySalesType {
+		salesTypes.Rows = append(salesTypes.Rows, row(textCell(SalesTypeLabel(l.Label)), intCell(l.Net), intCell(l.Value), intCell(l.Count)))
+	}
+
 	audit := Table{Title: "Audit diskon & void", Header: []string{"Jenis", "Keterangan", "Order", "Nilai"}}
 	for _, a := range r.Adjustments {
 		audit.Rows = append(audit.Rows, row(textCell(AdjustmentKindLabel(a.Kind)), textCell(AdjustmentLabel(a)),
 			intCell(a.Count), intCell(a.Amount)))
 	}
 
-	return []Table{scope, summary, daily, weekdays, outlets, categories, products, inCategory,
-		cashiers, hours, payments, audit}
+	return []Table{scope, summary, daily, weekdays, outlets, categories, brands, products, inCategory,
+		cashiers, hours, payments, salesTypes, audit}
 }
 
 // marginCell writes an em dash rather than a zero when there is nothing to
@@ -201,6 +228,13 @@ func (p ProductLine) Coverage() float64 {
 
 // CategoryLabel names a category row, including the bucket with no category.
 func CategoryLabel(c CategorySales) string { return categoryName(c.Key, c.Name) }
+
+func BrandLabel(b CategorySales) string {
+	if b.Key == Uncategorised || b.Name == "" {
+		return "Tanpa brand"
+	}
+	return b.Name
+}
 
 func AdjustmentKindLabel(kind string) string {
 	switch kind {

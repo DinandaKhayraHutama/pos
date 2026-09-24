@@ -93,6 +93,16 @@ func (h *Handler) Routes() chi.Router {
 		r.Get("/till/orders", h.tillHistory)
 		r.Get("/till/recoveries/{recoveryID}", h.tillRecovery)
 
+		// Fase 4: saved bills and table seatings. Online by design — who
+		// owns a bill and who sits at a table is not something one till can
+		// decide alone.
+		r.Get("/till/bills", h.tillBillBoard)
+		r.Get("/till/bills/{billID}", h.tillBillDetail)
+		r.Post("/till/bills/{billID}/park", h.tillBillPark)
+		r.Post("/till/bills/{billID}/claim", h.tillBillClaim)
+		r.Post("/till/table-sessions", h.tillTableOpen)
+		r.Post("/till/table-sessions/{sessionID}/close", h.tillTableClose)
+
 		// Two endpoints rather than one with a flag: the permission is part of
 		// the contract, so a client cannot ask for the financial body and be
 		// silently handed the summary one with fields missing.

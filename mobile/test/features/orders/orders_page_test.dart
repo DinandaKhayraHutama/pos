@@ -16,7 +16,7 @@ import 'package:nti_pos/data/models/enums.dart';
 import 'package:nti_pos/data/models/order.dart';
 import 'package:nti_pos/features/orders/orders_page.dart';
 import 'package:nti_pos/l10n/gen/app_localizations.dart';
-import 'package:nti_pos/providers/order_provider.dart';
+import 'package:nti_pos/providers/order_history_provider.dart';
 import 'package:nti_pos/providers/settings_provider.dart';
 
 /// Widget tests for [OrdersPage].
@@ -25,16 +25,24 @@ import 'package:nti_pos/providers/settings_provider.dart';
 /// - Order numbers (`#ORD-00xx`) are DATA, not localized strings.
 /// - [StatusBadge] is matched by type and its `status` property, never by its
 ///   translated label.
-/// - The `_FilterBar` chips are matched by index in a fixed-order
-///   [GlassFilterChip] list (All, pending, preparing, ready, served, paid,
-///   cancelled) rather than by localized label text.
+/// - The filter chips are matched by index in a fixed order rather than by
+///   localized label text. Since paritas F1 the page builds three rows:
+///   period (today, yesterday, 7 days, this month, custom), then status (All,
+///   pending, preparing, ready, served, paid, cancelled, refunded), then —
+///   for an account holding `viewAllOrders` — scope (this till, whole outlet).
+///   [_paidChipIndex] names the one the filter test taps.
 /// - The empty / loading branches are matched by widget type
 ///   ([EmptyState], [Skeleton]) and by the [IconData] the empty state uses.
 ///
-/// `ordersProvider` is a family keyed by `OrderStatus?`. Riverpod 2.6 only
-/// allows overriding the family as a whole (one fake for every arg), so each
-/// test supplies a fake whose `build` branches on `arg`. The null arg is the
-/// "All" filter; `OrderStatus.paid` is the target of the filter-tap test.
+/// The page reads [orderHistoryProvider], which pages the server and SQLite
+/// together; the fake below stands in for both so these tests stay about the
+/// widget. The filter itself lives in [orderHistoryFilterProvider], so tapping
+/// a chip genuinely re-runs the notifier the way it does in the app.
+
+/// The first chip of the status row, and the sixth within it.
+const _periodChips = 5;
+const _paidChipIndex = _periodChips + 5;
+
 class _ResolvedSettingsNotifier extends SettingsNotifier {
   _ResolvedSettingsNotifier(this._initial);
   final SettingsState _initial;
@@ -42,22 +50,27 @@ class _ResolvedSettingsNotifier extends SettingsNotifier {
   Future<SettingsState> build() async => _initial;
 }
 
-/// Fake [OrdersNotifier] that returns a per-arg list. Used to seed the family
-/// with deterministic data for each filter the test exercises.
-class _FakeOrdersNotifier extends OrdersNotifier {
-  _FakeOrdersNotifier(this._byArg);
-  final Map<OrderStatus?, List<Order>> _byArg;
+/// Fake history notifier that answers from a per-status map, re-reading the
+/// filter so a chip tap changes the list exactly as it does in the app.
+class _FakeHistoryNotifier extends OrderHistoryNotifier {
+  _FakeHistoryNotifier(this._byStatus);
+  final Map<OrderStatus?, List<Order>> _byStatus;
+
   @override
-  Future<List<Order>> build(OrderStatus? arg) async => _byArg[arg] ?? const [];
+  Future<OrderHistoryState> build() async {
+    final filter = ref.watch(orderHistoryFilterProvider);
+    return OrderHistoryState(
+      orders: _byStatus[filter.status] ?? const [],
+      localOnly: true,
+    );
+  }
 }
 
 /// Fake whose `build` never completes so the provider stays in `AsyncLoading`.
-/// Used to exercise the loading branch of `orders.when`.
-class _HangingOrdersNotifier extends OrdersNotifier {
-  _HangingOrdersNotifier();
+class _HangingHistoryNotifier extends OrderHistoryNotifier {
+  _HangingHistoryNotifier();
   @override
-  Future<List<Order>> build(OrderStatus? arg) =>
-      Completer<List<Order>>().future;
+  Future<OrderHistoryState> build() => Completer<OrderHistoryState>().future;
 }
 
 Order _order({
@@ -133,7 +146,7 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    // Surface wide enough that all 7 `_FilterBar` chips mount at once
+    // Surface wide enough that every filter chip mounts at once
     // (the bar is a horizontal ListView — at phone width the later chips
     // are off-screen and not built, so `find...at(5)` would throw). Tall
     // enough for the AppBar + filter row + orders ListView.
@@ -175,8 +188,8 @@ void main() {
       await pumpOrders(
         tester,
         extraOverrides: [
-          ordersProvider.overrideWith(
-            () => _FakeOrdersNotifier({null: _allOrders}),
+          orderHistoryProvider.overrideWith(
+            () => _FakeHistoryNotifier({null: _allOrders}),
           ),
         ],
       );
@@ -195,8 +208,8 @@ void main() {
       await pumpOrders(
         tester,
         extraOverrides: [
-          ordersProvider.overrideWith(
-            () => _FakeOrdersNotifier({
+          orderHistoryProvider.overrideWith(
+            () => _FakeHistoryNotifier({
               null: _allOrders,
               OrderStatus.paid: [_o3],
             }),
@@ -204,10 +217,11 @@ void main() {
         ],
       );
 
-      // _FilterBar builds chips in fixed order:
+      // Five period chips come first, then the status row:
       //   0:All 1:pending 2:preparing 3:ready 4:served 5:paid 6:cancelled
+      //   7:refunded
       // Tap by index so the test stays agnostic to the localized label.
-      final paidChip = find.byType(GlassFilterChip).at(5);
+      final paidChip = find.byType(GlassFilterChip).at(_paidChipIndex);
       expect(paidChip, findsOneWidget);
 
       await tester.tap(paidChip);
@@ -225,8 +239,8 @@ void main() {
       await pumpOrders(
         tester,
         extraOverrides: [
-          ordersProvider.overrideWith(
-            () => _FakeOrdersNotifier({null: const []}),
+          orderHistoryProvider.overrideWith(
+            () => _FakeHistoryNotifier({null: const []}),
           ),
         ],
       );
@@ -243,7 +257,7 @@ void main() {
         tester,
         settle: false,
         extraOverrides: [
-          ordersProvider.overrideWith(() => _HangingOrdersNotifier()),
+          orderHistoryProvider.overrideWith(() => _HangingHistoryNotifier()),
         ],
       );
 

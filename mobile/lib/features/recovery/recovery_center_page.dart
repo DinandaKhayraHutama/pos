@@ -99,9 +99,7 @@ class _RecoveryCenterPageState extends ConsumerState<RecoveryCenterPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          done ? l10n.recoveryRequeued : l10n.recoveryNotRetryable,
-        ),
+        content: Text(done ? l10n.recoveryRequeued : l10n.recoveryNotRetryable),
       ),
     );
     await _refresh();

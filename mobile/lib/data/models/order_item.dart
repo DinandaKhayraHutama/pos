@@ -38,6 +38,28 @@ class OrderItem {
   /// `OrderRepository.create`/the v17 migration backfill.
   final String? categoryId;
   final String? categoryName;
+  final String? brandId;
+  final bool custom;
+  final int? basePrice;
+  final String? priceSource;
+  final int? taxRateBp;
+  final int lineDiscount;
+
+  /// The item discount as it was specified (JSON `{kind, value}`), kept so a
+  /// version 2 order can be recomputed by the server from what the till saw.
+  final String? discountSpec;
+  final String? lineDiscountId;
+  final String? lineDiscountName;
+  final String? lineDiscountAuthorizedById;
+  final String? lineDiscountAuthorizedByName;
+  final int billDiscountShare;
+  final int serviceShare;
+  final int taxAmount;
+  final int taxIncluded;
+  final int? netAmount;
+
+  /// The bill line this receipt line settled (v33, paritas F4).
+  final String? billLineId;
 
   const OrderItem({
     required this.id,
@@ -52,13 +74,29 @@ class OrderItem {
     this.modifiers = const [],
     this.categoryId,
     this.categoryName,
+    this.brandId,
+    this.custom = false,
+    this.basePrice,
+    this.priceSource,
+    this.taxRateBp,
+    this.lineDiscount = 0,
+    this.discountSpec,
+    this.lineDiscountId,
+    this.lineDiscountName,
+    this.lineDiscountAuthorizedById,
+    this.lineDiscountAuthorizedByName,
+    this.billDiscountShare = 0,
+    this.serviceShare = 0,
+    this.taxAmount = 0,
+    this.taxIncluded = 0,
+    this.netAmount,
+    this.billLineId,
   });
 
   int get lineTotal => unitPrice * quantity;
 
   /// Full display name including the variant: "Kopi Susu (Large)".
-  String get displayName =>
-      variantName == null || variantName!.isEmpty
+  String get displayName => variantName == null || variantName!.isEmpty
       ? productName
       : '$productName ($variantName)';
 
@@ -81,6 +119,24 @@ class OrderItem {
     modifiers: modifiers,
     categoryId: m['category_id'] as String?,
     categoryName: m['category_name'] as String?,
+    brandId: m['brand_id'] as String?,
+    custom: (m['custom'] as int? ?? 0) == 1,
+    basePrice: (m['base_price'] as num?)?.toInt(),
+    priceSource: m['price_source'] as String?,
+    taxRateBp: (m['tax_rate_bp'] as num?)?.toInt(),
+    lineDiscount: (m['line_discount'] as num?)?.toInt() ?? 0,
+    discountSpec: m['discount_spec'] as String?,
+    lineDiscountId: m['line_discount_id'] as String?,
+    lineDiscountName: m['line_discount_name'] as String?,
+    lineDiscountAuthorizedById: m['line_discount_authorized_by_id'] as String?,
+    lineDiscountAuthorizedByName:
+        m['line_discount_authorized_by_name'] as String?,
+    billDiscountShare: (m['bill_discount_share'] as num?)?.toInt() ?? 0,
+    serviceShare: (m['service_share'] as num?)?.toInt() ?? 0,
+    taxAmount: (m['tax_amount'] as num?)?.toInt() ?? 0,
+    taxIncluded: (m['tax_included'] as num?)?.toInt() ?? 0,
+    netAmount: (m['net_amount'] as num?)?.toInt(),
+    billLineId: m['bill_line_id'] as String?,
   );
 
   Map<String, dynamic> toMap() => {
@@ -95,5 +151,22 @@ class OrderItem {
     'note': note,
     'category_id': categoryId,
     'category_name': categoryName,
+    'brand_id': brandId,
+    'custom': custom ? 1 : 0,
+    'base_price': basePrice,
+    'price_source': priceSource,
+    'tax_rate_bp': taxRateBp,
+    'line_discount': lineDiscount,
+    'discount_spec': discountSpec,
+    'line_discount_id': lineDiscountId,
+    'line_discount_name': lineDiscountName,
+    'line_discount_authorized_by_id': lineDiscountAuthorizedById,
+    'line_discount_authorized_by_name': lineDiscountAuthorizedByName,
+    'bill_discount_share': billDiscountShare,
+    'service_share': serviceShare,
+    'tax_amount': taxAmount,
+    'tax_included': taxIncluded,
+    'net_amount': netAmount,
+    'bill_line_id': billLineId,
   };
 }

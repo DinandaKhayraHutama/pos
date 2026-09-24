@@ -3,6 +3,7 @@ import '../repositories/stock_repository.dart';
 import '../repositories/table_repository.dart';
 import 'sync_client.dart';
 import 'sync_state_store.dart';
+import 'sync_meta_store.dart';
 
 /// What one pull run moved.
 class SyncReport {
@@ -93,11 +94,22 @@ class CatalogueSync {
   /// till shows through `StockRepository` and `TableRepository`, which also
   /// account for this till's own changes the snapshot does not reflect yet.
   static const supportedEntities = {
+    'roles',
     'employees',
+    'business_settings',
     'outlets',
     'pos_registers',
+    'sales_types',
+    'payment_methods',
+    'payment_groups',
+    'discounts',
+    'outlet_settings',
     'categories',
+    'brands',
     'products',
+    'product_sales_type_prices',
+    'outlet_product_sales_type_prices',
+    'customers',
     'product_variants',
     'modifier_groups',
     'modifier_options',
@@ -352,6 +364,12 @@ class CatalogueSync {
         'manifest has no entities',
       );
     }
-    return [for (final json in entities) ?ManifestEntity.tryParse(json)];
+    final parsed = [
+      for (final json in entities) ?ManifestEntity.tryParse(json),
+    ];
+    await SyncMetaStore.instance.recordManifestEntities({
+      for (final e in parsed) e.name,
+    });
+    return parsed;
   }
 }

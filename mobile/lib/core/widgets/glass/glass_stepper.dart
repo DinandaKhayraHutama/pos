@@ -102,8 +102,9 @@ class GlassStepper extends StatelessWidget {
   /// qty>0 full variant: solid [BrandColors.primary] bar with three tap zones.
   Widget _buildStepper(BuildContext context) {
     final design = context.design;
-    final decIcon =
-        quantity == 1 ? Icons.delete_outline_rounded : Icons.remove_rounded;
+    final decIcon = quantity == 1
+        ? Icons.delete_outline_rounded
+        : Icons.remove_rounded;
     return SizedBox(
       height: _minHeight,
       child: Material(

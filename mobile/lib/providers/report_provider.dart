@@ -158,10 +158,32 @@ enum ReportSource {
 /// server, so it computes the same formulas locally. The two are never mixed.
 final salesReportProvider = FutureProvider.autoDispose<ReportView>((ref) async {
   final range = ref.watch(reportRangeProvider);
-  final settings = ref.watch(settingsProvider).valueOrNull;
-  final outletId = ref.watch(activeOutletProvider).valueOrNull?.id;
+  final settings = await ref.watch(settingsProvider.future);
+  final outlet = await ref.watch(activeOutletProvider.future);
+  return buildReportView(range, settings, outlet?.id);
+});
 
-  if (TillCoordinator.current == null || settings == null) {
+/// Today against yesterday, for the dashboard.
+///
+/// A separate provider rather than a shared range, so opening the report
+/// screen and changing its period does not silently change what the dashboard
+/// says the day was.
+final dashboardReportProvider = FutureProvider.autoDispose<ReportView>((
+  ref,
+) async {
+  final settings = await ref.watch(settingsProvider.future);
+  final outlet = await ref.watch(activeOutletProvider.future);
+  return buildReportView(ReportRange.today(), settings, outlet?.id);
+});
+
+/// Builds a [ReportView] for one range. Shared by the report screen and the
+/// dashboard so the two can never disagree about what a day sold.
+Future<ReportView> buildReportView(
+  ReportRange range,
+  SettingsState settings,
+  String? outletId,
+) async {
+  if (TillCoordinator.current == null) {
     // Demo mode: this device is the whole shop, and says so.
     final local = await OrderRepository.instance.report(
       from: range.from,
@@ -217,4 +239,4 @@ final salesReportProvider = FutureProvider.autoDispose<ReportView>((ref) async {
     cachedAt: current.cachedAt,
     unsyncedCount: await OrderRepository.instance.unsyncedCount(),
   );
-});
+}

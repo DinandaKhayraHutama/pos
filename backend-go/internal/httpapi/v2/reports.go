@@ -42,15 +42,15 @@ func (h *Handler) tillReports(permission auth.Permission) http.HandlerFunc {
 			h.tillReply(w, nil, err)
 			return
 		}
-		role := auth.Role(actor.Role)
-		if !role.Grants(permission) {
+		access := actor.Access
+		if !access.Grants(permission) {
 			w.Header().Set("Cache-Control", "no-store")
 			render.Error(w, h.logger, http.StatusForbidden, "forbidden",
 				"Akun ini tidak punya izin melihat laporan tersebut.")
 			return
 		}
 
-		filter, err := h.reportFilter(r, b, role)
+		filter, err := h.reportFilter(r, b, access)
 		if err != nil {
 			w.Header().Set("Cache-Control", "no-store")
 			render.Error(w, h.logger, http.StatusBadRequest, "invalid_filter", err.Error())
@@ -78,7 +78,7 @@ func (h *Handler) tillReports(permission auth.Permission) http.HandlerFunc {
 		// Cost and profit leave the server only for whoever may see them.
 		// Stripping here rather than in the client is the difference between a
 		// figure being hidden and a figure never being sent.
-		full := role.Grants(auth.ViewFinancialReports)
+		full := access.Grants(auth.ViewFinancialReports)
 		if !full {
 			report = report.WithoutCostData()
 		}
@@ -96,7 +96,7 @@ func (h *Handler) tillReports(permission auth.Permission) http.HandlerFunc {
 // have: widening to the whole company needs BOTH the summary permission and
 // the permission to manage outlets, which together are the shape of "this
 // person is responsible for more than one branch".
-func (h *Handler) reportFilter(r *http.Request, b devices.Binding, role auth.Role) (reporting.Filter, error) {
+func (h *Handler) reportFilter(r *http.Request, b devices.Binding, role auth.Access) (reporting.Filter, error) {
 	today, err := h.reports.Today(r.Context(), b.Tenant.ID)
 	if err != nil {
 		return reporting.Filter{}, err
@@ -178,7 +178,9 @@ func reportBody(r reporting.Report, f reporting.Filter, full bool) map[string]an
 			"sales_returns":    r.SalesReturns,
 			"net_sales":        r.NetSales,
 			"tax":              r.Tax,
+			"tax_included":     r.TaxIncluded,
 			"service_charge":   r.ServiceCharge,
+			"rounding":         r.Rounding,
 			"revenue":          r.Revenue,
 			"order_count":      r.OrderCount,
 			"average_sale":     r.AverageOrder,
@@ -189,11 +191,21 @@ func reportBody(r reporting.Report, f reporting.Filter, full bool) map[string]an
 			"refunded_count":   r.RefundedCount,
 			"refunded_amount":  r.RefundedAmount,
 		},
-		"by_hour":    hourLines(r),
-		"by_weekday": weekdayLines(r),
-		"by_day":     dayLines(r),
-		"by_outlet":  namedLines(r.ByOutlet),
-		"by_payment": namedLines(r.ByPayment),
+		"by_hour":       hourLines(r),
+		"by_weekday":    weekdayLines(r),
+		"by_day":        dayLines(r),
+		"by_outlet":     namedLines(r.ByOutlet),
+		"by_payment":    namedLines(r.ByPayment),
+		"by_sales_type": namedLines(r.BySalesType),
+		// Managers need the sales picture promised by the summary endpoint:
+		// top products, categories, cashiers and adjustments. Product rows only
+		// gain their cost field on the financial endpoint.
+		"by_cashier":             namedLines(r.ByCashier),
+		"by_category":            categoryLines(r),
+		"by_brand":               categoryLinesFor(r.ByBrand),
+		"by_product":             productLines(r.ByProduct, full),
+		"by_product_in_category": productsInCategories(r, full),
+		"adjustments":            adjustmentLines(r),
 	}
 	if !full {
 		return body
@@ -206,12 +218,20 @@ func reportBody(r reporting.Report, f reporting.Filter, full bool) map[string]an
 		"cost_coverage": r.CostCoverage,
 		"margin":        marginOrNil(r),
 	}
-	body["by_cashier"] = namedLines(r.ByCashier)
-	body["by_category"] = categoryLines(r)
-	body["by_product"] = productLines(r.ByProduct)
-	body["by_product_in_category"] = productsInCategories(r)
-	body["adjustments"] = adjustmentLines(r)
 	return body
+}
+
+func categoryLinesFor(lines []reporting.CategorySales) []map[string]any {
+	out := make([]map[string]any, 0, len(lines))
+	for _, b := range lines {
+		label := b.Name
+		if b.Key == reporting.Uncategorised || label == "" {
+			label = "Tanpa brand"
+		}
+		out = append(out, map[string]any{"key": b.Key, "label": label, "gross_sales": b.Gross,
+			"net_sales": b.Net, "items": b.Items, "contribution": b.ContributionPercent})
+	}
+	return out
 }
 
 func millisOrNil(t *time.Time) any {
@@ -287,24 +307,28 @@ func categoryLines(r reporting.Report) []map[string]any {
 	return out
 }
 
-func productLines(lines []reporting.ProductLine) []map[string]any {
+func productLines(lines []reporting.ProductLine, includeCost bool) []map[string]any {
 	out := make([]map[string]any, 0, len(lines))
 	for _, p := range lines {
-		out = append(out, map[string]any{
+		row := map[string]any{
 			"key": p.Key, "label": p.Name, "quantity": p.Quantity,
-			"gross_sales": p.Revenue, "net_sales": p.NetSales, "cost_of_goods": p.CostOfGoods,
-		})
+			"gross_sales": p.Revenue, "net_sales": p.NetSales,
+		}
+		if includeCost {
+			row["cost_of_goods"] = p.CostOfGoods
+		}
+		out = append(out, row)
 	}
 	return out
 }
 
-func productsInCategories(r reporting.Report) []map[string]any {
+func productsInCategories(r reporting.Report, includeCost bool) []map[string]any {
 	out := make([]map[string]any, 0, len(r.ByProductInCategory))
 	for _, g := range r.ByProductInCategory {
 		out = append(out, map[string]any{
 			"key":   g.CategoryKey,
 			"label": reporting.CategoryLabel(reporting.CategorySales{Key: g.CategoryKey, Name: g.CategoryName}),
-			"items": productLines(g.Products),
+			"items": productLines(g.Products, includeCost),
 		})
 	}
 	return out

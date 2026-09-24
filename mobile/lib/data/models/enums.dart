@@ -1,9 +1,9 @@
 /// Enum helpers shared across data models.
 library;
 
-enum OrderType { dineIn, takeaway, delivery }
+enum OrderType { dineIn, takeaway, delivery, custom }
 
-enum PaymentMethod { cash, qris, card }
+enum PaymentMethod { cash, qris, card, ewallet, transfer, other }
 
 /// Where an order stands.
 ///
@@ -13,7 +13,15 @@ enum PaymentMethod { cash, qris, card }
 /// both are excluded from revenue, and both return their stock to the shelf,
 /// but they are separate because "we voided 3 orders" and "we refunded 3
 /// orders" are very different sentences to read in a report.
-enum OrderStatus { pending, preparing, ready, served, paid, cancelled, refunded }
+enum OrderStatus {
+  pending,
+  preparing,
+  ready,
+  served,
+  paid,
+  cancelled,
+  refunded,
+}
 
 enum TableStatus { available, occupied, reserved }
 
@@ -27,7 +35,7 @@ extension OrderTypeX on OrderType {
   String get wire => name;
   static OrderType fromWire(String v) => OrderType.values.firstWhere(
     (e) => e.name == v,
-    orElse: () => OrderType.dineIn,
+    orElse: () => OrderType.custom,
   );
 }
 
@@ -35,7 +43,7 @@ extension PaymentMethodX on PaymentMethod {
   String get wire => name;
   static PaymentMethod fromWire(String v) => PaymentMethod.values.firstWhere(
     (e) => e.name == v,
-    orElse: () => PaymentMethod.cash,
+    orElse: () => PaymentMethod.other,
   );
 }
 

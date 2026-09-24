@@ -5,16 +5,43 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/auth/authorize_sheet.dart';
 import '../../core/auth/permissions.dart';
 import '../../core/localization/l10n.dart';
+import '../../core/pricing/pricing.dart';
 import '../../core/theme/app_dimensions.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/glass/glass_card.dart';
 import '../../core/widgets/glass/glass_text_field.dart';
 import '../../data/models/promo.dart';
+import '../../data/models/sales_config.dart';
+import '../../data/repositories/sales_config_repository.dart';
 import '../../providers/cart_provider.dart';
+import '../../providers/pricing_provider.dart';
 import '../../providers/promo_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../promos/promo_management_page.dart' show promoValueLabel;
+
+/// Who approves a discount that needs [AppPermission.applyManualDiscount]:
+/// the signed-in cashier when they hold it, otherwise whoever types a PIN
+/// that does. Null when the prompt was backed out of — nothing may change.
+Future<Approver?> approveManualDiscount(
+  BuildContext context,
+  WidgetRef ref, {
+  required String reason,
+}) async {
+  final settings = ref.read(settingsProvider).valueOrNull;
+  if (settings != null && settings.can(AppPermission.applyManualDiscount)) {
+    return (
+      id: settings.employeeId.isEmpty ? null : settings.employeeId,
+      name: settings.cashierName,
+    );
+  }
+  final employee = await requestAuthorization(
+    context,
+    permission: AppPermission.applyManualDiscount,
+    reason: reason,
+  );
+  return employee == null ? null : (id: employee.id, name: employee.name);
+}
 
 /// Picks the discount for the current cart.
 ///
@@ -34,6 +61,10 @@ class _DiscountSheetState extends ConsumerState<DiscountSheet> {
   bool _asPercent = true;
   bool _busy = false;
 
+  /// A saved discount with no value of its own, picked and waiting for the
+  /// cashier to type one in the field below.
+  DiscountConfig? _pending;
+
   @override
   void dispose() {
     _valueCtrl.dispose();
@@ -45,10 +76,23 @@ class _DiscountSheetState extends ConsumerState<DiscountSheet> {
     final l10n = context.l10n;
     final design = context.design;
     final cart = ref.watch(cartProvider);
-    final promos = ref.watch(activePromosProvider).valueOrNull ?? const <Promo>[];
+    final promos =
+        ref.watch(activePromosProvider).valueOrNull ?? const <Promo>[];
     final settings = ref.watch(settingsProvider).valueOrNull;
     final canDiscountFreely =
         settings?.can(AppPermission.applyManualDiscount) ?? false;
+    final pricing =
+        ref.watch(pricingContextProvider).valueOrNull ?? PricingContext.empty;
+    final named = pricing.discounts.where((d) => !d.isItem).toList();
+    // The bill's own discount, as priced: the quote's total less what the
+    // item discounts took.
+    final quote = ref.watch(cartQuoteProvider);
+    final billDiscount =
+        quote.result.discount -
+        quote.lines.fold<int>(0, (s, l) => s + l.result.lineDiscount);
+    final asPercent = _pending == null
+        ? _asPercent
+        : _pending!.kind == DiscountKind.percent;
 
     return SafeArea(
       top: false,
@@ -100,13 +144,11 @@ class _DiscountSheetState extends ConsumerState<DiscountSheet> {
                             ),
                           ),
                           Text(
-                            '- ${MoneyFormatter.format(cart.discountAmount)}'
+                            '- ${MoneyFormatter.format(billDiscount)}'
                             '${cart.discountAuthorizedBy == null ? '' : ' · ${l10n.posDiscountApprovedBy(cart.discountAuthorizedBy!)}'}',
                             style: TextStyle(
                               fontSize: 12,
-                              color: design.onPrimary.withValues(
-                                alpha: 0.8,
-                              ),
+                              color: design.onPrimary.withValues(alpha: 0.8),
                             ),
                           ),
                         ],
@@ -160,11 +202,44 @@ class _DiscountSheetState extends ConsumerState<DiscountSheet> {
                   ),
                 ),
 
+            if (named.isNotEmpty) ...[
+              const SizedBox(height: AppDimensions.space16),
+              Text(
+                l10n.posNamedDiscounts,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: design.textMedium,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final d in named)
+                    ChoiceChip(
+                      label: Text(d.name),
+                      avatar: d.needsApproval && !canDiscountFreely
+                          ? const Icon(Icons.lock_outline_rounded, size: 14)
+                          : null,
+                      tooltip: d.needsApproval
+                          ? l10n.posDiscountNeedsApproval
+                          : null,
+                      selected: _pending?.id == d.id,
+                      onSelected: _busy ? null : (_) => _pickNamed(d),
+                    ),
+                ],
+              ),
+            ],
+
             const SizedBox(height: AppDimensions.space16),
             Row(
               children: [
                 Text(
-                  l10n.posDiscountManual,
+                  _pending == null
+                      ? l10n.posDiscountManual
+                      : l10n.posNamedDiscountValue(_pending!.name),
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -173,37 +248,44 @@ class _DiscountSheetState extends ConsumerState<DiscountSheet> {
                 ),
                 if (!canDiscountFreely) ...[
                   const SizedBox(width: 6),
-                  Icon(Icons.lock_outline_rounded, size: 13, color: design.textLow),
+                  Icon(
+                    Icons.lock_outline_rounded,
+                    size: 13,
+                    color: design.textLow,
+                  ),
                 ],
               ],
             ),
             const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: ChoiceChip(
-                    selected: _asPercent,
-                    onSelected: (_) => setState(() => _asPercent = true),
-                    label: Text(l10n.posDiscountPercent),
+            // A saved discount brings its own kind; only a free-form one
+            // lets the cashier choose between percent and amount.
+            if (_pending == null)
+              Row(
+                children: [
+                  Expanded(
+                    child: ChoiceChip(
+                      selected: _asPercent,
+                      onSelected: (_) => setState(() => _asPercent = true),
+                      label: Text(l10n.posDiscountPercent),
+                    ),
                   ),
-                ),
-                const SizedBox(width: AppDimensions.space8),
-                Expanded(
-                  child: ChoiceChip(
-                    selected: !_asPercent,
-                    onSelected: (_) => setState(() => _asPercent = false),
-                    label: Text(l10n.posDiscountAmount),
+                  const SizedBox(width: AppDimensions.space8),
+                  Expanded(
+                    child: ChoiceChip(
+                      selected: !_asPercent,
+                      onSelected: (_) => setState(() => _asPercent = false),
+                      label: Text(l10n.posDiscountAmount),
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
             const SizedBox(height: AppDimensions.space10),
             GlassTextField(
               controller: _valueCtrl,
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              hint: _asPercent ? '10' : '5000',
-              prefixText: _asPercent ? null : '${settings?.currency ?? 'Rp'} ',
+              hint: asPercent ? '10' : '5000',
+              prefixText: asPercent ? null : '${settings?.currency ?? 'Rp'} ',
               onChanged: (_) => setState(() {}),
             ),
             if (!canDiscountFreely)
@@ -218,7 +300,7 @@ class _DiscountSheetState extends ConsumerState<DiscountSheet> {
             FilledButton(
               onPressed: _busy || (int.tryParse(_valueCtrl.text) ?? 0) <= 0
                   ? null
-                  : _applyManual,
+                  : _applyTyped,
               child: Text(l10n.posDiscountTitle),
             ),
           ],
@@ -227,36 +309,78 @@ class _DiscountSheetState extends ConsumerState<DiscountSheet> {
     );
   }
 
-  Future<void> _applyManual() async {
-    final l10n = context.l10n;
-    final value = int.tryParse(_valueCtrl.text) ?? 0;
-    if (value <= 0) return;
-
-    final settings = ref.read(settingsProvider).valueOrNull;
-    String approver;
-    if (settings?.can(AppPermission.applyManualDiscount) == true) {
-      approver = settings!.cashierName;
-    } else {
+  /// A saved bill discount. One with its own value and no approval flag is
+  /// the owner's decision already made, so any cashier may apply it; one
+  /// flagged for approval costs a PIN; one without a value waits for the
+  /// cashier to type it, and a typed value always needs approval.
+  Future<void> _pickNamed(DiscountConfig discount) async {
+    if (discount.value == null) {
+      setState(() {
+        _pending = _pending?.id == discount.id ? null : discount;
+        _valueCtrl.clear();
+      });
+      return;
+    }
+    Approver? approver;
+    if (discount.requiresAuthorization) {
       setState(() => _busy = true);
-      final employee = await requestAuthorization(
+      approver = await approveManualDiscount(
         context,
-        permission: AppPermission.applyManualDiscount,
-        reason: l10n.authorizeReasonDiscount,
+        ref,
+        reason: context.l10n.authorizeReasonDiscount,
       );
       if (!mounted) return;
       setState(() => _busy = false);
-      if (employee == null) return;
-      approver = employee.name;
+      if (approver == null) return;
     }
-
     ref
         .read(cartProvider.notifier)
-        .applyManualDiscount(
-          authorizedBy: approver,
-          percent: _asPercent ? value : 0,
-          amount: _asPercent ? 0 : value,
+        .applyNamedDiscount(
+          discount,
+          value: discount.spec!,
+          approvedBy: approver,
         );
-    if (mounted) Navigator.of(context).pop();
+    Navigator.of(context).pop();
+  }
+
+  /// Applies the typed value: to the saved discount waiting for one, or as
+  /// a free-form manual discount. Either way it is a manager's decision.
+  Future<void> _applyTyped() async {
+    final value = int.tryParse(_valueCtrl.text) ?? 0;
+    if (value <= 0) return;
+    final pending = _pending;
+    final percent = pending == null
+        ? _asPercent
+        : pending.kind == DiscountKind.percent;
+
+    setState(() => _busy = true);
+    final approver = await approveManualDiscount(
+      context,
+      ref,
+      reason: context.l10n.authorizeReasonDiscount,
+    );
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (approver == null) return;
+
+    final notifier = ref.read(cartProvider.notifier);
+    if (pending != null) {
+      notifier.applyNamedDiscount(
+        pending,
+        value: percent
+            ? DiscountSpec.percent(value.clamp(0, 100))
+            : DiscountSpec.amount(value),
+        approvedBy: approver,
+      );
+    } else {
+      notifier.applyManualDiscount(
+        authorizedBy: approver.name,
+        authorizedById: approver.id,
+        percent: percent ? value : 0,
+        amount: percent ? 0 : value,
+      );
+    }
+    Navigator.of(context).pop();
   }
 }
 

@@ -1,0 +1,65 @@
+{
+  "note": "Version 2, tax exclusive. Expected figures worked by hand; line shares are Hamilton largest-remainder, ties to the lowest index.",
+  "vectors": [
+    {
+      "name": "v2: reproduces the legacy figures when every share divides exactly",
+      "input": {"version": 2, "tax_mode": "exclusive", "service_rate_bp": 1000, "service_taxable": true, "bill_discount": {"kind": "percent", "value": 1000},
+        "lines": [{"unit_price": 40000, "quantity": 1, "tax_rate_bp": 1000}, {"unit_price": 20000, "quantity": 1, "tax_rate_bp": 1000}]},
+      "expected": {"subtotal": 60000, "discount": 6000, "service_charge": 5400, "tax": 5940, "tax_included": 0, "rounding": 0, "total": 65340,
+        "lines": [
+          {"gross": 40000, "line_discount": 0, "bill_discount_share": 4000, "service_share": 3600, "tax_amount": 3960, "tax_included": 0, "net_amount": 36000},
+          {"gross": 20000, "line_discount": 0, "bill_discount_share": 2000, "service_share": 1800, "tax_amount": 1980, "tax_included": 0, "net_amount": 18000}]}
+    },
+    {
+      "name": "v2: the rupiah the floors leave behind go to the first line (1000 over three equal lines)",
+      "input": {"version": 2, "tax_mode": "exclusive", "service_rate_bp": 0, "service_taxable": true, "bill_discount": {"kind": "amount", "value": 1000},
+        "lines": [{"unit_price": 10000, "quantity": 1, "tax_rate_bp": 1000}, {"unit_price": 10000, "quantity": 1, "tax_rate_bp": 1000}, {"unit_price": 10000, "quantity": 1, "tax_rate_bp": 1000}]},
+      "expected": {"subtotal": 30000, "discount": 1000, "service_charge": 0, "tax": 2901, "tax_included": 0, "rounding": 0, "total": 31901,
+        "lines": [
+          {"gross": 10000, "line_discount": 0, "bill_discount_share": 334, "service_share": 0, "tax_amount": 967, "tax_included": 0, "net_amount": 9666},
+          {"gross": 10000, "line_discount": 0, "bill_discount_share": 333, "service_share": 0, "tax_amount": 967, "tax_included": 0, "net_amount": 9667},
+          {"gross": 10000, "line_discount": 0, "bill_discount_share": 333, "service_share": 0, "tax_amount": 967, "tax_included": 0, "net_amount": 9667}]}
+    },
+    {
+      "name": "v2: item discounts first, the bill discount on what the lines still owe",
+      "input": {"version": 2, "tax_mode": "exclusive", "service_rate_bp": 500, "service_taxable": true, "bill_discount": {"kind": "percent", "value": 1000},
+        "lines": [
+          {"unit_price": 25000, "quantity": 2, "tax_rate_bp": 1000, "discount": {"kind": "percent", "value": 2000}},
+          {"unit_price": 15000, "quantity": 1, "tax_rate_bp": 1000, "discount": {"kind": "amount", "value": 5000}}]},
+      "expected": {"subtotal": 65000, "discount": 20000, "service_charge": 2250, "tax": 4725, "tax_included": 0, "rounding": 0, "total": 51975,
+        "lines": [
+          {"gross": 50000, "line_discount": 10000, "bill_discount_share": 4000, "service_share": 1800, "tax_amount": 3780, "tax_included": 0, "net_amount": 36000},
+          {"gross": 15000, "line_discount": 5000, "bill_discount_share": 1000, "service_share": 450, "tax_amount": 945, "tax_included": 0, "net_amount": 9000}]}
+    },
+    {
+      "name": "v2: service charge that is not taxable",
+      "input": {"version": 2, "tax_mode": "exclusive", "service_rate_bp": 1000, "service_taxable": false,
+        "lines": [{"unit_price": 100000, "quantity": 1, "tax_rate_bp": 1000}]},
+      "expected": {"subtotal": 100000, "discount": 0, "service_charge": 10000, "tax": 10000, "tax_included": 0, "rounding": 0, "total": 120000,
+        "lines": [{"gross": 100000, "line_discount": 0, "bill_discount_share": 0, "service_share": 10000, "tax_amount": 10000, "tax_included": 0, "net_amount": 100000}]}
+    },
+    {
+      "name": "v2: service remainder goes to the larger fractional part; a zero-rated line pays no tax on its share",
+      "input": {"version": 2, "tax_mode": "exclusive", "service_rate_bp": 500, "service_taxable": true,
+        "lines": [{"unit_price": 10001, "quantity": 1, "tax_rate_bp": 1000}, {"unit_price": 10000, "quantity": 1, "tax_rate_bp": 0}]},
+      "expected": {"subtotal": 20001, "discount": 0, "service_charge": 1000, "tax": 1050, "tax_included": 0, "rounding": 0, "total": 22051,
+        "lines": [
+          {"gross": 10001, "line_discount": 0, "bill_discount_share": 0, "service_share": 500, "tax_amount": 1050, "tax_included": 0, "net_amount": 10001},
+          {"gross": 10000, "line_discount": 0, "bill_discount_share": 0, "service_share": 500, "tax_amount": 0, "tax_included": 0, "net_amount": 10000}]}
+    },
+    {
+      "name": "v2: a 100% bill discount leaves nothing to charge",
+      "input": {"version": 2, "tax_mode": "exclusive", "service_rate_bp": 500, "service_taxable": true, "bill_discount": {"kind": "percent", "value": 10000},
+        "lines": [{"unit_price": 20000, "quantity": 2, "tax_rate_bp": 1000}]},
+      "expected": {"subtotal": 40000, "discount": 40000, "service_charge": 0, "tax": 0, "tax_included": 0, "rounding": 0, "total": 0,
+        "lines": [{"gross": 40000, "line_discount": 0, "bill_discount_share": 40000, "service_share": 0, "tax_amount": 0, "tax_included": 0, "net_amount": 0}]}
+    },
+    {
+      "name": "v2: an item amount discount is capped at the line",
+      "input": {"version": 2, "tax_mode": "exclusive", "service_rate_bp": 0, "service_taxable": true,
+        "lines": [{"unit_price": 5000, "quantity": 1, "tax_rate_bp": 1000, "discount": {"kind": "amount", "value": 9000}}]},
+      "expected": {"subtotal": 5000, "discount": 5000, "service_charge": 0, "tax": 0, "tax_included": 0, "rounding": 0, "total": 0,
+        "lines": [{"gross": 5000, "line_discount": 5000, "bill_discount_share": 0, "service_share": 0, "tax_amount": 0, "tax_included": 0, "net_amount": 0}]}
+    }
+  ]
+}

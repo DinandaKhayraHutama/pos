@@ -82,10 +82,9 @@ class OutletRepository {
   Future<int> orderCount(String id) async {
     final db = await AppDatabase.instance.db;
     return Sqflite.firstIntValue(
-          await db.rawQuery(
-            'SELECT COUNT(*) FROM orders WHERE outlet_id = ?',
-            [id],
-          ),
+          await db.rawQuery('SELECT COUNT(*) FROM orders WHERE outlet_id = ?', [
+            id,
+          ]),
         ) ??
         0;
   }

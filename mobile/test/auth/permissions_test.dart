@@ -121,4 +121,49 @@ void main() {
       }
     });
   });
+
+  group('custom roles (Fase 3)', () {
+    test('a custom access lands where it can open, never in a loop', () {
+      final cases = {
+        '/': EmployeeAccess.custom(['sell'], posAccess: true),
+        '/dashboard': EmployeeAccess.custom([
+          'viewDailySummary',
+        ], posAccess: true),
+        '/settings': EmployeeAccess.custom(['adjustStock'], posAccess: true),
+      };
+      cases.forEach((home, access) {
+        expect(homeRouteForAccess(access), home);
+      });
+    });
+
+    test('unknown permission names grant nothing', () {
+      final access = EmployeeAccess.custom([
+        'sell',
+        'launchRockets',
+      ], posAccess: true);
+      expect(access.permissions, {AppPermission.sell});
+    });
+
+    test('an unresolved role is locked, never a cashier', () {
+      expect(EmployeeRoleX.fromWire('supervisor'), EmployeeRole.custom);
+      expect(EmployeeAccess.system(EmployeeRole.custom).permissions, isEmpty);
+      expect(EmployeeAccess.system(EmployeeRole.custom).posAccess, isFalse);
+      expect(EmployeeAccess.locked.can(AppPermission.sell), isFalse);
+    });
+
+    test('enterCustomAmount reaches the owner by derivation only', () {
+      expect(
+        permissionsFor(EmployeeRole.owner),
+        contains(AppPermission.enterCustomAmount),
+      );
+      expect(
+        permissionsFor(EmployeeRole.manager),
+        isNot(contains(AppPermission.enterCustomAmount)),
+      );
+      expect(
+        permissionsFor(EmployeeRole.cashier),
+        isNot(contains(AppPermission.enterCustomAmount)),
+      );
+    });
+  });
 }

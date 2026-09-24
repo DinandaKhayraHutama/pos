@@ -15,11 +15,15 @@ import '../../core/widgets/glass/glass_sheet.dart';
 import '../../core/widgets/glass/glass_text_field.dart';
 import '../../core/widgets/segmented_selector.dart';
 import '../../data/device/till_binding.dart';
+import '../../data/models/employee.dart';
 import '../../data/models/enums.dart';
 import '../../data/models/order.dart';
+import '../../data/models/sales_config.dart';
+import '../../data/repositories/sales_config_repository.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../providers/cart_provider.dart';
 import '../../providers/order_provider.dart';
+import '../../providers/pricing_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../core/widgets/app_snack_bar.dart';
 
@@ -34,7 +38,13 @@ class CheckoutSheet extends ConsumerStatefulWidget {
 
 class _CheckoutSheetState extends ConsumerState<CheckoutSheet> {
   PaymentMethod _method = PaymentMethod.cash;
+  String? _paymentMethodId;
+
+  /// The server picked on this sheet; null until the cashier picks one, when
+  /// the cart's own choice or the signed-in cashier stands in.
+  String? _servedById;
   final _amountCtrl = TextEditingController();
+  final _referenceCtrl = TextEditingController();
   bool _busy = false;
 
   @override
@@ -52,6 +62,7 @@ class _CheckoutSheetState extends ConsumerState<CheckoutSheet> {
   void dispose() {
     _amountCtrl.removeListener(_onAmountChanged);
     _amountCtrl.dispose();
+    _referenceCtrl.dispose();
     super.dispose();
   }
 
@@ -59,16 +70,20 @@ class _CheckoutSheetState extends ConsumerState<CheckoutSheet> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final design = context.design;
-    final cart = ref.watch(cartProvider);
     final settings = ref.watch(settingsProvider).valueOrNull;
-    final pb1Rate = settings?.pb1Rate ?? 0;
-    final serviceChargeRate = (settings?.serviceChargeEnabled ?? false)
-        ? settings!.serviceChargeRate
-        : 0.0;
-    final total = cart.totalFor(
-      pb1Rate: pb1Rate,
-      serviceChargeRate: serviceChargeRate,
-    );
+    // The same quote the cart panel showed and the order will record.
+    final total = ref.watch(cartQuoteProvider).result.total;
+    final pricing =
+        ref.watch(pricingContextProvider).valueOrNull ?? PricingContext.empty;
+    final methods = pricing.paymentMethods;
+    final selectedMethod = _selectedMethod(methods);
+    final servers = pricing.trackServer
+        ? ref.watch(serverCandidatesProvider).valueOrNull ?? const <Employee>[]
+        : const <Employee>[];
+    final servedById =
+        _servedById ??
+        ref.watch(cartProvider).servedById ??
+        settings?.employeeId;
     final paid = _paidValue(total);
     final change = paid - total;
 
@@ -142,30 +157,89 @@ class _CheckoutSheetState extends ConsumerState<CheckoutSheet> {
               ),
             ),
             const SizedBox(height: 8),
-            SegmentedSelector<PaymentMethod>(
-              value: _method,
-              onChanged: (v) => setState(() {
-                _method = v;
-                if (v != PaymentMethod.cash) _amountCtrl.clear();
-              }),
-              segments: [
-                Segment(
-                  value: PaymentMethod.cash,
-                  label: l10n.posCash,
-                  icon: Icons.payments_rounded,
+            if (methods.isEmpty)
+              SegmentedSelector<PaymentMethod>(
+                value: _method,
+                onChanged: (v) => setState(() {
+                  _method = v;
+                  if (v != PaymentMethod.cash) _amountCtrl.clear();
+                }),
+                segments: [
+                  Segment(
+                    value: PaymentMethod.cash,
+                    label: l10n.posCash,
+                    icon: Icons.payments_rounded,
+                  ),
+                  Segment(
+                    value: PaymentMethod.qris,
+                    label: l10n.posQris,
+                    icon: Icons.qr_code_rounded,
+                  ),
+                  Segment(
+                    value: PaymentMethod.card,
+                    label: l10n.posCard,
+                    icon: Icons.credit_card_rounded,
+                  ),
+                ],
+              )
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final method in methods)
+                    ChoiceChip(
+                      label: Text(method.name),
+                      selected: selectedMethod?.id == method.id,
+                      onSelected: (_) => setState(() {
+                        _paymentMethodId = method.id;
+                        _method = PaymentMethodX.fromWire(method.kind);
+                        _referenceCtrl.clear();
+                        if (_method != PaymentMethod.cash) _amountCtrl.clear();
+                      }),
+                    ),
+                ],
+              ),
+            if (_method != PaymentMethod.cash) ...[
+              const SizedBox(height: AppDimensions.space8),
+              Text(
+                l10n.posPaymentManual,
+                style: TextStyle(fontSize: 12, color: design.textMedium),
+              ),
+            ],
+            if (selectedMethod?.requiresReference == true) ...[
+              const SizedBox(height: AppDimensions.space14),
+              GlassTextField(
+                controller: _referenceCtrl,
+                hint: l10n.posPaymentReference,
+                prefix: Icons.tag_rounded,
+              ),
+            ],
+            if (servers.isNotEmpty) ...[
+              const SizedBox(height: AppDimensions.space14),
+              Text(
+                l10n.posServedBy,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: design.textMedium,
                 ),
-                Segment(
-                  value: PaymentMethod.qris,
-                  label: l10n.posQris,
-                  icon: Icons.qr_code_rounded,
-                ),
-                Segment(
-                  value: PaymentMethod.card,
-                  label: l10n.posCard,
-                  icon: Icons.credit_card_rounded,
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final server in servers)
+                    ChoiceChip(
+                      label: Text(server.name),
+                      selected: servedById == server.id,
+                      onSelected: (_) =>
+                          setState(() => _servedById = server.id),
+                    ),
+                ],
+              ),
+            ],
             if (_method == PaymentMethod.cash) ...[
               const SizedBox(height: AppDimensions.space14),
               GlassTextField(
@@ -244,6 +318,7 @@ class _CheckoutSheetState extends ConsumerState<CheckoutSheet> {
   int _paidValue(int total) {
     if (_method != PaymentMethod.cash) return total;
     final raw = _amountCtrl.text.replaceAll(RegExp(r'[^\d]'), '');
+    if (raw.isEmpty) return total;
     return int.tryParse(raw) ?? 0;
   }
 
@@ -260,23 +335,71 @@ class _CheckoutSheetState extends ConsumerState<CheckoutSheet> {
     return list.take(5).toList();
   }
 
+  /// The configured method the cashier picked, or — before they touched
+  /// anything — the one matching the default kind, so a sale left on cash
+  /// still records WHICH cash method it was.
+  PaymentMethodConfig? _selectedMethod(List<PaymentMethodConfig> methods) =>
+      methods
+          .where(
+            (method) =>
+                method.id == _paymentMethodId ||
+                (_paymentMethodId == null && method.kind == _method.wire),
+          )
+          .firstOrNull;
+
   Future<void> _placeOrder() async {
-    final cart = ref.read(cartProvider);
-    final settings = ref.read(settingsProvider).valueOrNull;
-    final pb1Rate = settings?.pb1Rate ?? 0;
-    final serviceChargeRate = (settings?.serviceChargeEnabled ?? false)
-        ? settings!.serviceChargeRate
-        : 0.0;
-    final total = cart.totalFor(
-      pb1Rate: pb1Rate,
-      serviceChargeRate: serviceChargeRate,
-    );
+    final l10n = AppLocalizations.of(context)!;
+    final total = ref.read(cartQuoteProvider).result.total;
+    final pricing =
+        ref.read(pricingContextProvider).valueOrNull ?? PricingContext.empty;
+    final selected = _selectedMethod(pricing.paymentMethods);
+    final reference = _referenceCtrl.text.trim();
+    final String? refusal;
+    if (selected?.requiresReference == true && reference.isEmpty) {
+      refusal = l10n.posPaymentReferenceRequired;
+    } else if (_method == PaymentMethod.cash && _paidValue(total) < total) {
+      // Short cash is a sale the drawer cannot cover: the change owed would
+      // be negative and the drawer expectation would read more than was
+      // handed over.
+      refusal = l10n.posCashShort;
+    } else {
+      refusal = null;
+    }
+    if (refusal != null) {
+      showAppSnackBar(context, refusal, error: true);
+      return;
+    }
+
+    // The server named on the bill, when the outlet tracks one. Written into
+    // the cart just before it is placed, so nothing else reads a half-made
+    // choice.
+    final cart = ref.read(cartProvider.notifier);
+    if (pricing.trackServer) {
+      final servers =
+          ref.read(serverCandidatesProvider).valueOrNull ?? const <Employee>[];
+      final id =
+          _servedById ??
+          ref.read(cartProvider).servedById ??
+          ref.read(settingsProvider).valueOrNull?.employeeId;
+      final server = servers.where((e) => e.id == id).firstOrNull;
+      if (server == null) {
+        showAppSnackBar(context, l10n.posServedByRequired, error: true);
+        return;
+      }
+      cart.setServedBy(id: server.id, name: server.name);
+    } else {
+      cart.setServedBy();
+    }
+
     setState(() => _busy = true);
     try {
       final order = await placeOrderFromCart(
         read: ref.read,
         invalidate: ref.invalidate,
         paymentMethod: _method,
+        paymentMethodId: selected?.id,
+        paymentMethodName: selected?.name,
+        paymentReference: reference.isEmpty ? null : reference,
         amountPaid: _paidValue(total),
       );
       if (!mounted) return;
@@ -431,10 +554,18 @@ class _SuccessReceipt extends ConsumerWidget {
                       MoneyFormatter.format(order.serviceChargeAmount),
                       design: design,
                     ),
-                  if (order.tax > 0)
+                  // The tax added on top; the included part is already in
+                  // the prices and is shown below the total instead.
+                  if (order.tax - order.taxIncluded > 0)
                     _line(
                       l10n.posTax,
-                      MoneyFormatter.format(order.tax),
+                      MoneyFormatter.format(order.tax - order.taxIncluded),
+                      design: design,
+                    ),
+                  if (order.roundingAmount != 0)
+                    _line(
+                      l10n.posRounding,
+                      MoneyFormatter.format(order.roundingAmount),
                       design: design,
                     ),
                   const SizedBox(height: 6),
@@ -459,6 +590,18 @@ class _SuccessReceipt extends ConsumerWidget {
                       ),
                     ],
                   ),
+                  if (order.taxIncluded > 0)
+                    _line(
+                      l10n.posTaxIncluded,
+                      MoneyFormatter.format(order.taxIncluded),
+                      design: design,
+                    ),
+                  if (order.servedByName?.isNotEmpty == true)
+                    _line(
+                      l10n.posServedBy,
+                      order.servedByName!,
+                      design: design,
+                    ),
                 ],
               ),
             ),

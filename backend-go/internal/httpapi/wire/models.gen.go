@@ -7,6 +7,210 @@ import (
 	rawjson "encoding/json"
 )
 
+// Defines values for BillStatus.
+const (
+	BillStatusCancelled BillStatus = "cancelled"
+	BillStatusOpen      BillStatus = "open"
+)
+
+// Valid indicates whether the value is a known member of the BillStatus enum.
+func (e BillStatus) Valid() bool {
+	switch e {
+	case BillStatusCancelled:
+		return true
+	case BillStatusOpen:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BillCancelDecisionsDisposition.
+const (
+	BillCancelDecisionsDispositionRestock BillCancelDecisionsDisposition = "restock"
+	BillCancelDecisionsDispositionWaste   BillCancelDecisionsDisposition = "waste"
+)
+
+// Valid indicates whether the value is a known member of the BillCancelDecisionsDisposition enum.
+func (e BillCancelDecisionsDisposition) Valid() bool {
+	switch e {
+	case BillCancelDecisionsDispositionRestock:
+		return true
+	case BillCancelDecisionsDispositionWaste:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BillLinePriceSource.
+const (
+	BillLinePriceSourceBase            BillLinePriceSource = "base"
+	BillLinePriceSourceCustom          BillLinePriceSource = "custom"
+	BillLinePriceSourceOutletSalesType BillLinePriceSource = "outlet_sales_type"
+	BillLinePriceSourceSalesType       BillLinePriceSource = "sales_type"
+)
+
+// Valid indicates whether the value is a known member of the BillLinePriceSource enum.
+func (e BillLinePriceSource) Valid() bool {
+	switch e {
+	case BillLinePriceSourceBase:
+		return true
+	case BillLinePriceSourceCustom:
+		return true
+	case BillLinePriceSourceOutletSalesType:
+		return true
+	case BillLinePriceSourceSalesType:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BillPricingDiscountSource.
+const (
+	Manual BillPricingDiscountSource = "manual"
+	Named  BillPricingDiscountSource = "named"
+	None   BillPricingDiscountSource = "none"
+	Promo  BillPricingDiscountSource = "promo"
+)
+
+// Valid indicates whether the value is a known member of the BillPricingDiscountSource enum.
+func (e BillPricingDiscountSource) Valid() bool {
+	switch e {
+	case Manual:
+		return true
+	case Named:
+		return true
+	case None:
+		return true
+	case Promo:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BillPricingRoundingMode.
+const (
+	BillPricingRoundingModeDown    BillPricingRoundingMode = "down"
+	BillPricingRoundingModeNearest BillPricingRoundingMode = "nearest"
+	BillPricingRoundingModeUp      BillPricingRoundingMode = "up"
+)
+
+// Valid indicates whether the value is a known member of the BillPricingRoundingMode enum.
+func (e BillPricingRoundingMode) Valid() bool {
+	switch e {
+	case BillPricingRoundingModeDown:
+		return true
+	case BillPricingRoundingModeNearest:
+		return true
+	case BillPricingRoundingModeUp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BillPricingTaxMode.
+const (
+	BillPricingTaxModeExclusive BillPricingTaxMode = "exclusive"
+	BillPricingTaxModeInclusive BillPricingTaxMode = "inclusive"
+)
+
+// Valid indicates whether the value is a known member of the BillPricingTaxMode enum.
+func (e BillPricingTaxMode) Valid() bool {
+	switch e {
+	case BillPricingTaxModeExclusive:
+		return true
+	case BillPricingTaxModeInclusive:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DiscountRowKind.
+const (
+	DiscountRowKindAmount  DiscountRowKind = "amount"
+	DiscountRowKindPercent DiscountRowKind = "percent"
+)
+
+// Valid indicates whether the value is a known member of the DiscountRowKind enum.
+func (e DiscountRowKind) Valid() bool {
+	switch e {
+	case DiscountRowKindAmount:
+		return true
+	case DiscountRowKindPercent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DiscountRowScope.
+const (
+	DiscountRowScopeBill DiscountRowScope = "bill"
+	DiscountRowScopeItem DiscountRowScope = "item"
+)
+
+// Valid indicates whether the value is a known member of the DiscountRowScope enum.
+func (e DiscountRowScope) Valid() bool {
+	switch e {
+	case DiscountRowScopeBill:
+		return true
+	case DiscountRowScopeItem:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DiscountSpecKind.
+const (
+	DiscountSpecKindAmount  DiscountSpecKind = "amount"
+	DiscountSpecKindPercent DiscountSpecKind = "percent"
+)
+
+// Valid indicates whether the value is a known member of the DiscountSpecKind enum.
+func (e DiscountSpecKind) Valid() bool {
+	switch e {
+	case DiscountSpecKindAmount:
+		return true
+	case DiscountSpecKindPercent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for KitchenDispatchStatus.
+const (
+	KitchenDispatchStatusCancelled KitchenDispatchStatus = "cancelled"
+	KitchenDispatchStatusPreparing KitchenDispatchStatus = "preparing"
+	KitchenDispatchStatusQueued    KitchenDispatchStatus = "queued"
+	KitchenDispatchStatusReady     KitchenDispatchStatus = "ready"
+	KitchenDispatchStatusServed    KitchenDispatchStatus = "served"
+)
+
+// Valid indicates whether the value is a known member of the KitchenDispatchStatus enum.
+func (e KitchenDispatchStatus) Valid() bool {
+	switch e {
+	case KitchenDispatchStatusCancelled:
+		return true
+	case KitchenDispatchStatusPreparing:
+		return true
+	case KitchenDispatchStatusQueued:
+		return true
+	case KitchenDispatchStatusReady:
+		return true
+	case KitchenDispatchStatusServed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ManifestEntityApply.
 const (
 	Replace ManifestEntityApply = "replace"
@@ -76,9 +280,139 @@ func (e OrderStatus) Valid() bool {
 	}
 }
 
+// Defines values for OrderItemPriceSource.
+const (
+	OrderItemPriceSourceBase            OrderItemPriceSource = "base"
+	OrderItemPriceSourceCustom          OrderItemPriceSource = "custom"
+	OrderItemPriceSourceOutletSalesType OrderItemPriceSource = "outlet_sales_type"
+	OrderItemPriceSourceSalesType       OrderItemPriceSource = "sales_type"
+)
+
+// Valid indicates whether the value is a known member of the OrderItemPriceSource enum.
+func (e OrderItemPriceSource) Valid() bool {
+	switch e {
+	case OrderItemPriceSourceBase:
+		return true
+	case OrderItemPriceSourceCustom:
+		return true
+	case OrderItemPriceSourceOutletSalesType:
+		return true
+	case OrderItemPriceSourceSalesType:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OutletSettingsRowBillModel.
+const (
+	OutletSettingsRowBillModelLegacy OutletSettingsRowBillModel = "legacy"
+	OutletSettingsRowBillModelV1     OutletSettingsRowBillModel = "v1"
+)
+
+// Valid indicates whether the value is a known member of the OutletSettingsRowBillModel enum.
+func (e OutletSettingsRowBillModel) Valid() bool {
+	switch e {
+	case OutletSettingsRowBillModelLegacy:
+		return true
+	case OutletSettingsRowBillModelV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OutletSettingsRowPricingModel.
+const (
+	OutletSettingsRowPricingModelLegacy OutletSettingsRowPricingModel = "legacy"
+	OutletSettingsRowPricingModelV2     OutletSettingsRowPricingModel = "v2"
+)
+
+// Valid indicates whether the value is a known member of the OutletSettingsRowPricingModel enum.
+func (e OutletSettingsRowPricingModel) Valid() bool {
+	switch e {
+	case OutletSettingsRowPricingModelLegacy:
+		return true
+	case OutletSettingsRowPricingModelV2:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PaymentMethodRowKind.
+const (
+	Card     PaymentMethodRowKind = "card"
+	Cash     PaymentMethodRowKind = "cash"
+	Ewallet  PaymentMethodRowKind = "ewallet"
+	Other    PaymentMethodRowKind = "other"
+	Qris     PaymentMethodRowKind = "qris"
+	Transfer PaymentMethodRowKind = "transfer"
+)
+
+// Valid indicates whether the value is a known member of the PaymentMethodRowKind enum.
+func (e PaymentMethodRowKind) Valid() bool {
+	switch e {
+	case Card:
+		return true
+	case Cash:
+		return true
+	case Ewallet:
+		return true
+	case Other:
+		return true
+	case Qris:
+		return true
+	case Transfer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PricingSnapshotRoundingMode.
+const (
+	PricingSnapshotRoundingModeDown    PricingSnapshotRoundingMode = "down"
+	PricingSnapshotRoundingModeNearest PricingSnapshotRoundingMode = "nearest"
+	PricingSnapshotRoundingModeUp      PricingSnapshotRoundingMode = "up"
+)
+
+// Valid indicates whether the value is a known member of the PricingSnapshotRoundingMode enum.
+func (e PricingSnapshotRoundingMode) Valid() bool {
+	switch e {
+	case PricingSnapshotRoundingModeDown:
+		return true
+	case PricingSnapshotRoundingModeNearest:
+		return true
+	case PricingSnapshotRoundingModeUp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PricingSnapshotTaxMode.
+const (
+	PricingSnapshotTaxModeExclusive PricingSnapshotTaxMode = "exclusive"
+	PricingSnapshotTaxModeInclusive PricingSnapshotTaxMode = "inclusive"
+)
+
+// Valid indicates whether the value is a known member of the PricingSnapshotTaxMode enum.
+func (e PricingSnapshotTaxMode) Valid() bool {
+	switch e {
+	case PricingSnapshotTaxModeExclusive:
+		return true
+	case PricingSnapshotTaxModeInclusive:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PushResultCode.
 const (
 	Archived          PushResultCode = "archived"
+	BillNotOwned      PushResultCode = "bill_not_owned"
 	DependencyPending PushResultCode = "dependency_pending"
 	Duplicate         PushResultCode = "duplicate"
 	RecoveryRequired  PushResultCode = "recovery_required"
@@ -95,6 +429,8 @@ const (
 func (e PushResultCode) Valid() bool {
 	switch e {
 	case Archived:
+		return true
+	case BillNotOwned:
 		return true
 	case DependencyPending:
 		return true
@@ -162,31 +498,31 @@ func (e PushResultStatus) Valid() bool {
 
 // Defines values for StockMovementReason.
 const (
-	Correction StockMovementReason = "correction"
-	Count      StockMovementReason = "count"
-	Opening    StockMovementReason = "opening"
-	Received   StockMovementReason = "received"
-	Sale       StockMovementReason = "sale"
-	VoidReturn StockMovementReason = "voidReturn"
-	Waste      StockMovementReason = "waste"
+	StockMovementReasonCorrection StockMovementReason = "correction"
+	StockMovementReasonCount      StockMovementReason = "count"
+	StockMovementReasonOpening    StockMovementReason = "opening"
+	StockMovementReasonReceived   StockMovementReason = "received"
+	StockMovementReasonSale       StockMovementReason = "sale"
+	StockMovementReasonVoidReturn StockMovementReason = "voidReturn"
+	StockMovementReasonWaste      StockMovementReason = "waste"
 )
 
 // Valid indicates whether the value is a known member of the StockMovementReason enum.
 func (e StockMovementReason) Valid() bool {
 	switch e {
-	case Correction:
+	case StockMovementReasonCorrection:
 		return true
-	case Count:
+	case StockMovementReasonCount:
 		return true
-	case Opening:
+	case StockMovementReasonOpening:
 		return true
-	case Received:
+	case StockMovementReasonReceived:
 		return true
-	case Sale:
+	case StockMovementReasonSale:
 		return true
-	case VoidReturn:
+	case StockMovementReasonVoidReturn:
 		return true
-	case Waste:
+	case StockMovementReasonWaste:
 		return true
 	default:
 		return false
@@ -208,6 +544,54 @@ func (e TableStatusEventStatus) Valid() bool {
 	case Occupied:
 		return true
 	case Reserved:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TillBillSummaryStatus.
+const (
+	TillBillSummaryStatusCancelled TillBillSummaryStatus = "cancelled"
+	TillBillSummaryStatusClosed    TillBillSummaryStatus = "closed"
+	TillBillSummaryStatusOpen      TillBillSummaryStatus = "open"
+)
+
+// Valid indicates whether the value is a known member of the TillBillSummaryStatus enum.
+func (e TillBillSummaryStatus) Valid() bool {
+	switch e {
+	case TillBillSummaryStatusCancelled:
+		return true
+	case TillBillSummaryStatusClosed:
+		return true
+	case TillBillSummaryStatusOpen:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TillDispatchSummaryStatus.
+const (
+	TillDispatchSummaryStatusCancelled TillDispatchSummaryStatus = "cancelled"
+	TillDispatchSummaryStatusPreparing TillDispatchSummaryStatus = "preparing"
+	TillDispatchSummaryStatusQueued    TillDispatchSummaryStatus = "queued"
+	TillDispatchSummaryStatusReady     TillDispatchSummaryStatus = "ready"
+	TillDispatchSummaryStatusServed    TillDispatchSummaryStatus = "served"
+)
+
+// Valid indicates whether the value is a known member of the TillDispatchSummaryStatus enum.
+func (e TillDispatchSummaryStatus) Valid() bool {
+	switch e {
+	case TillDispatchSummaryStatusCancelled:
+		return true
+	case TillDispatchSummaryStatusPreparing:
+		return true
+	case TillDispatchSummaryStatusQueued:
+		return true
+	case TillDispatchSummaryStatusReady:
+		return true
+	case TillDispatchSummaryStatusServed:
 		return true
 	default:
 		return false
@@ -444,12 +828,171 @@ type ActivateResponse struct {
 	} `json:"data"`
 }
 
+// Bill Fase 4. One bill as its owning till last saved it, at a revision. The
+// till numbers revisions itself and every save is a newer one; the server
+// keeps the last accepted snapshot and accepts an exact retry of it. The
+// snapshot is refused as bill_not_owned when this till is not the owner or
+// owner_generation is not the bill's current one; a line already
+// dispatched must appear unchanged in every later revision. status
+// cancelled is terminal and needs cancel; closed is never pushed — the
+// settling receipt closes the bill. Saving takes no money and moves no
+// stock.
+type Bill struct {
+	// Cancel Why an unpaid bill was cancelled, who allowed it and, for every line
+	// already sent to the kitchen, whether it came back to the shelf
+	// (restock) or was made and thrown away (waste). Waste is a
+	// classification of a consumption that already happened, never a second
+	// debit. stock_movements holds only the voidReturn movements of the
+	// restocked lines, bounded by what the bill's dispatches consumed.
+	Cancel          *BillCancel `json:"cancel,omitempty"`
+	CreatedById     *string     `json:"created_by_id,omitempty"`
+	CreatedByName   Name        `json:"created_by_name"`
+	CustomerId      *string     `json:"customer_id,omitempty"`
+	CustomerName    *string     `json:"customer_name,omitempty"`
+	Id              UUID        `json:"id"`
+	Lines           []BillLine  `json:"lines"`
+	Note            *string     `json:"note,omitempty"`
+	Number          string      `json:"number"`
+	OpenedAtMs      Millis      `json:"opened_at_ms"`
+	OwnerGeneration int64       `json:"owner_generation"`
+	PosSessionId    UUID        `json:"pos_session_id"`
+
+	// Pricing The configuration frozen when the bill was first saved, so a sync that changes a rate never re-prices a bill a guest was already quoted.
+	Pricing        BillPricing `json:"pricing"`
+	Revision       int64       `json:"revision"`
+	SalesTypeId    *string     `json:"sales_type_id,omitempty"`
+	SalesTypeName  *string     `json:"sales_type_name,omitempty"`
+	ServedById     *string     `json:"served_by_id,omitempty"`
+	ServedByName   *string     `json:"served_by_name,omitempty"`
+	Status         BillStatus  `json:"status"`
+	TableId        *string     `json:"table_id,omitempty"`
+	TableName      *string     `json:"table_name,omitempty"`
+	TableSessionId *UUID       `json:"table_session_id,omitempty"`
+	Type           string      `json:"type"`
+}
+
+// BillStatus defines model for Bill.Status.
+type BillStatus string
+
+// BillCancel Why an unpaid bill was cancelled, who allowed it and, for every line
+// already sent to the kitchen, whether it came back to the shelf
+// (restock) or was made and thrown away (waste). Waste is a
+// classification of a consumption that already happened, never a second
+// debit. stock_movements holds only the voidReturn movements of the
+// restocked lines, bounded by what the bill's dispatches consumed.
+type BillCancel struct {
+	AuthorizedBy   Name    `json:"authorized_by"`
+	AuthorizedById *string `json:"authorized_by_id,omitempty"`
+	CancelledAtMs  Millis  `json:"cancelled_at_ms"`
+	Decisions      []struct {
+		BillLineId  UUID                           `json:"bill_line_id"`
+		Disposition BillCancelDecisionsDisposition `json:"disposition"`
+	} `json:"decisions"`
+	Reason         string          `json:"reason"`
+	StockMovements []StockMovement `json:"stock_movements"`
+}
+
+// BillCancelDecisionsDisposition defines model for BillCancel.Decisions.Disposition.
+type BillCancelDecisionsDisposition string
+
+// BillLine One line of a bill, priced when it was added. unit_price already includes variant and modifier deltas.
+type BillLine struct {
+	BasePrice                    *Money               `json:"base_price,omitempty"`
+	BrandId                      *string              `json:"brand_id,omitempty"`
+	CategoryId                   *string              `json:"category_id,omitempty"`
+	CategoryName                 *string              `json:"category_name,omitempty"`
+	Custom                       bool                 `json:"custom"`
+	Discount                     *DiscountSpec        `json:"discount,omitempty"`
+	Id                           UUID                 `json:"id"`
+	LineDiscountAuthorizedById   *string              `json:"line_discount_authorized_by_id,omitempty"`
+	LineDiscountAuthorizedByName *string              `json:"line_discount_authorized_by_name,omitempty"`
+	LineDiscountId               *string              `json:"line_discount_id,omitempty"`
+	LineDiscountName             *string              `json:"line_discount_name,omitempty"`
+	Modifiers                    []BillLineModifier   `json:"modifiers"`
+	Note                         *string              `json:"note,omitempty"`
+	PriceSource                  *BillLinePriceSource `json:"price_source,omitempty"`
+	ProductId                    *string              `json:"product_id,omitempty"`
+	ProductName                  Name                 `json:"product_name"`
+	Quantity                     int                  `json:"quantity"`
+	Seq                          int                  `json:"seq"`
+	TaxRateBp                    *int                 `json:"tax_rate_bp,omitempty"`
+	UnitCost                     *int64               `json:"unit_cost,omitempty"`
+	UnitPrice                    Money                `json:"unit_price"`
+	VariantId                    *string              `json:"variant_id,omitempty"`
+	VariantName                  *string              `json:"variant_name,omitempty"`
+}
+
+// BillLinePriceSource defines model for BillLine.PriceSource.
+type BillLinePriceSource string
+
+// BillLineModifier defines model for BillLineModifier.
+type BillLineModifier struct {
+	GroupId    *string `json:"group_id,omitempty"`
+	GroupName  Name    `json:"group_name"`
+	OptionId   *string `json:"option_id,omitempty"`
+	OptionName Name    `json:"option_name"`
+	PriceDelta int64   `json:"price_delta"`
+}
+
+// BillPricing The configuration frozen when the bill was first saved, so a sync that changes a rate never re-prices a bill a guest was already quoted.
+type BillPricing struct {
+	BillDiscount             *DiscountSpec             `json:"bill_discount,omitempty"`
+	DefaultTaxRateBp         int                       `json:"default_tax_rate_bp"`
+	DiscountAuthorizedById   *string                   `json:"discount_authorized_by_id,omitempty"`
+	DiscountAuthorizedByName *string                   `json:"discount_authorized_by_name,omitempty"`
+	DiscountId               *string                   `json:"discount_id,omitempty"`
+	DiscountName             *string                   `json:"discount_name,omitempty"`
+	DiscountSource           BillPricingDiscountSource `json:"discount_source"`
+	PromoId                  *string                   `json:"promo_id,omitempty"`
+	PromoName                *string                   `json:"promo_name,omitempty"`
+	RoundingMode             BillPricingRoundingMode   `json:"rounding_mode"`
+	RoundingUnit             int                       `json:"rounding_unit"`
+	ServiceRateBp            int                       `json:"service_rate_bp"`
+	ServiceTaxable           bool                      `json:"service_taxable"`
+	TaxMode                  BillPricingTaxMode        `json:"tax_mode"`
+	Version                  int                       `json:"version"`
+}
+
+// BillPricingDiscountSource defines model for BillPricing.DiscountSource.
+type BillPricingDiscountSource string
+
+// BillPricingRoundingMode defines model for BillPricing.RoundingMode.
+type BillPricingRoundingMode string
+
+// BillPricingTaxMode defines model for BillPricing.TaxMode.
+type BillPricingTaxMode string
+
 // Binding defines model for Binding.
 type Binding struct {
 	Device      Device   `json:"device"`
 	Outlet      Outlet   `json:"outlet"`
 	PosRegister Register `json:"pos_register"`
 	Tenant      Tenant   `json:"tenant"`
+}
+
+// BrandRow defines model for BrandRow.
+type BrandRow struct {
+	DeletedAtMs *int64 `json:"deleted_at_ms"`
+	Id          string `json:"id"`
+	Name        string `json:"name"`
+	SortOrder   int64  `json:"sort_order"`
+	SyncSeq     int64  `json:"sync_seq"`
+}
+
+// BusinessSettingsRow The merchant's defaults. Its presence is what says the business has been configured in the Backoffice.
+type BusinessSettingsRow struct {
+	DeletedAtMs    *int64  `json:"deleted_at_ms"`
+	Id             string  `json:"id"`
+	ReceiptFooter  *string `json:"receipt_footer"`
+	ReceiptLogoUrl *string `json:"receipt_logo_url"`
+	RoundingMode   string  `json:"rounding_mode"`
+	RoundingUnit   int64   `json:"rounding_unit"`
+	ServiceEnabled bool    `json:"service_enabled"`
+	ServiceRateBp  int64   `json:"service_rate_bp"`
+	ServiceTaxable bool    `json:"service_taxable"`
+	SyncSeq        int64   `json:"sync_seq"`
+	TaxMode        string  `json:"tax_mode"`
+	TaxRateBp      int64   `json:"tax_rate_bp"`
 }
 
 // CategoryRow defines model for CategoryRow.
@@ -471,6 +1014,36 @@ type Changes struct {
 	ServerTimeMs   Millis           `json:"server_time_ms"`
 }
 
+// Customer A customer a till pushes up, created either at the counter or in the
+// Backoffice. Insert-only on arrival — id is chosen by whichever side
+// creates the row and is also its idempotency key; an id that already
+// exists is accepted and left alone (ON CONFLICT DO NOTHING), never
+// overwritten. There is no revision here because there is nothing to
+// revise: editing an existing customer is a Backoffice-only action this
+// entity does not carry, so a till never has to reconcile a second
+// writer's edit against its own.
+type Customer struct {
+	Address *string `json:"address,omitempty"`
+	Email   *string `json:"email,omitempty"`
+	Id      UUID    `json:"id"`
+	Name    string  `json:"name"`
+	Note    *string `json:"note,omitempty"`
+	Phone   *string `json:"phone,omitempty"`
+}
+
+// CustomerRow defines model for CustomerRow.
+type CustomerRow struct {
+	Active      bool    `json:"active"`
+	Address     *string `json:"address"`
+	DeletedAtMs *int64  `json:"deleted_at_ms"`
+	Email       *string `json:"email"`
+	Id          string  `json:"id"`
+	Name        string  `json:"name"`
+	Note        *string `json:"note"`
+	Phone       *string `json:"phone"`
+	SyncSeq     int64   `json:"sync_seq"`
+}
+
 // Device defines model for Device.
 type Device struct {
 	DeviceUuid ID      `json:"device_uuid"`
@@ -478,6 +1051,39 @@ type Device struct {
 	Label      *string `json:"label"`
 	Platform   *string `json:"platform"`
 }
+
+// DiscountRow defines model for DiscountRow.
+type DiscountRow struct {
+	Active                bool             `json:"active"`
+	DeletedAtMs           *int64           `json:"deleted_at_ms"`
+	Id                    string           `json:"id"`
+	Kind                  DiscountRowKind  `json:"kind"`
+	Name                  string           `json:"name"`
+	RequiresAuthorization bool             `json:"requires_authorization"`
+	Scope                 DiscountRowScope `json:"scope"`
+	SortOrder             int64            `json:"sort_order"`
+	SyncSeq               int64            `json:"sync_seq"`
+
+	// Value Basis points or rupiah; null means the cashier types the value.
+	Value *int64 `json:"value"`
+}
+
+// DiscountRowKind defines model for DiscountRow.Kind.
+type DiscountRowKind string
+
+// DiscountRowScope defines model for DiscountRow.Scope.
+type DiscountRowScope string
+
+// DiscountSpec defines model for DiscountSpec.
+type DiscountSpec struct {
+	Kind DiscountSpecKind `json:"kind"`
+
+	// Value Basis points for percent, rupiah for amount.
+	Value int64 `json:"value"`
+}
+
+// DiscountSpecKind defines model for DiscountSpec.Kind.
+type DiscountSpecKind string
 
 // EmployeeRow defines model for EmployeeRow.
 type EmployeeRow struct {
@@ -487,6 +1093,7 @@ type EmployeeRow struct {
 	Name        string  `json:"name"`
 	PinHash     *string `json:"pin_hash"`
 	Role        string  `json:"role"`
+	RoleId      *string `json:"role_id"`
 	SortOrder   int64   `json:"sort_order"`
 	SyncSeq     int64   `json:"sync_seq"`
 }
@@ -509,6 +1116,31 @@ type Health struct {
 
 // ID defines model for ID.
 type ID = string
+
+// KitchenDispatch Fase 4. Lines of one bill confirmed for the kitchen, as one immutable
+// batch, and the sale movements that consumed their stock — committed in
+// one transaction, exactly once. lines repeats each bill line exactly as
+// the bill holds it; a line the server does not hold yet, or holds
+// differently, answers dependency_pending until the bill snapshot
+// arrives. A later revision may change status only, forward (queued,
+// preparing, ready, served); cancelled comes from cancelling the bill.
+type KitchenDispatch struct {
+	BillId            UUID                  `json:"bill_id"`
+	EmployeeId        *string               `json:"employee_id,omitempty"`
+	EmployeeName      string                `json:"employee_name"`
+	Id                UUID                  `json:"id"`
+	Lines             []BillLine            `json:"lines"`
+	OccurredAtMs      Millis                `json:"occurred_at_ms"`
+	OwnerGeneration   int64                 `json:"owner_generation"`
+	PosSessionId      UUID                  `json:"pos_session_id"`
+	Revision          int64                 `json:"revision"`
+	Status            KitchenDispatchStatus `json:"status"`
+	StatusChangedAtMs Millis                `json:"status_changed_at_ms"`
+	StockMovements    []StockMovement       `json:"stock_movements"`
+}
+
+// KitchenDispatchStatus defines model for KitchenDispatch.Status.
+type KitchenDispatchStatus string
 
 // Manifest defines model for Manifest.
 type Manifest struct {
@@ -574,26 +1206,50 @@ type Name = string
 
 // Order defines model for Order.
 type Order struct {
-	AmountPaid          Money       `json:"amount_paid"`
-	AuthorizedBy        *string     `json:"authorized_by,omitempty"`
-	BusinessDate        string      `json:"business_date"`
-	CashierId           *string     `json:"cashier_id,omitempty"`
-	CashierName         Name        `json:"cashier_name"`
-	CustomerName        *string     `json:"customer_name,omitempty"`
-	Discount            Money       `json:"discount"`
-	Id                  UUID        `json:"id"`
-	Items               []OrderItem `json:"items"`
-	Note                *string     `json:"note,omitempty"`
-	Number              string      `json:"number"`
-	OutletName          *string     `json:"outlet_name,omitempty"`
-	PaymentMethod       string      `json:"payment_method"`
-	Pb1Rate             *float64    `json:"pb1_rate,omitempty"`
-	PlacedAtMs          Millis      `json:"placed_at_ms"`
-	PosName             *string     `json:"pos_name,omitempty"`
-	PosSessionId        UUID        `json:"pos_session_id"`
-	PromoName           *string     `json:"promo_name,omitempty"`
-	RefundedAmount      *int64      `json:"refunded_amount,omitempty"`
-	Revision            int64       `json:"revision"`
+	AmountPaid   Money   `json:"amount_paid"`
+	AuthorizedBy *string `json:"authorized_by,omitempty"`
+
+	// BillId Fase 4. The bill this receipt settles. Every line of the bill must already be dispatched on the server, and the receipt carries no sale movement of its own: the dispatches consumed the stock.
+	BillId                   *UUID       `json:"bill_id,omitempty"`
+	BusinessDate             string      `json:"business_date"`
+	CashierId                *string     `json:"cashier_id,omitempty"`
+	CashierName              Name        `json:"cashier_name"`
+	CustomerId               *string     `json:"customer_id,omitempty"`
+	CustomerName             *string     `json:"customer_name,omitempty"`
+	Discount                 Money       `json:"discount"`
+	DiscountAuthorizedById   *string     `json:"discount_authorized_by_id,omitempty"`
+	DiscountAuthorizedByName *string     `json:"discount_authorized_by_name,omitempty"`
+	DiscountId               *string     `json:"discount_id,omitempty"`
+	DiscountName             *string     `json:"discount_name,omitempty"`
+	Id                       UUID        `json:"id"`
+	Items                    []OrderItem `json:"items"`
+	Note                     *string     `json:"note,omitempty"`
+	Number                   string      `json:"number"`
+	OutletName               *string     `json:"outlet_name,omitempty"`
+	PaymentMethod            string      `json:"payment_method"`
+	PaymentMethodId          *string     `json:"payment_method_id,omitempty"`
+	PaymentMethodName        *string     `json:"payment_method_name,omitempty"`
+	PaymentReference         *string     `json:"payment_reference,omitempty"`
+	Pb1Rate                  *float64    `json:"pb1_rate,omitempty"`
+	PlacedAtMs               Millis      `json:"placed_at_ms"`
+	PosName                  *string     `json:"pos_name,omitempty"`
+	PosSessionId             UUID        `json:"pos_session_id"`
+
+	// Pricing The configuration the till priced the bill with, frozen at checkout so the server can recompute it.
+	Pricing *PricingSnapshot `json:"pricing,omitempty"`
+
+	// PricingVersion Absent or 1: the legacy cart math. 2: the Fase 3 engine; its lines must reconcile with the header.
+	PricingVersion *int    `json:"pricing_version,omitempty"`
+	PromoName      *string `json:"promo_name,omitempty"`
+	RefundedAmount *int64  `json:"refunded_amount,omitempty"`
+	Revision       int64   `json:"revision"`
+
+	// RoundingAmount Final rounding of what the customer pays; may be negative.
+	RoundingAmount      *int64      `json:"rounding_amount,omitempty"`
+	SalesTypeId         *string     `json:"sales_type_id,omitempty"`
+	SalesTypeName       *string     `json:"sales_type_name,omitempty"`
+	ServedById          *string     `json:"served_by_id,omitempty"`
+	ServedByName        *string     `json:"served_by_name,omitempty"`
 	ServerTimeDeltaMs   *int64      `json:"server_time_delta_ms,omitempty"`
 	ServiceChargeAmount Money       `json:"service_charge_amount"`
 	ServiceChargeRate   *float64    `json:"service_charge_rate,omitempty"`
@@ -605,9 +1261,15 @@ type Order struct {
 	TableId        *string          `json:"table_id,omitempty"`
 	TableName      *string          `json:"table_name,omitempty"`
 	Tax            Money            `json:"tax"`
-	Total          Money            `json:"total"`
-	Type           string           `json:"type"`
-	VoidReason     *string          `json:"void_reason,omitempty"`
+
+	// TaxIncluded The part of tax already inside the prices (inclusive mode). Never more than tax.
+	TaxIncluded *Money `json:"tax_included,omitempty"`
+	Total       Money  `json:"total"`
+	Type        string `json:"type"`
+
+	// TzOffsetMinutes The merchant clock the business date was read from.
+	TzOffsetMinutes *int    `json:"tz_offset_minutes,omitempty"`
+	VoidReason      *string `json:"void_reason,omitempty"`
 }
 
 // OrderStatus defines model for Order.Status.
@@ -615,18 +1277,43 @@ type OrderStatus string
 
 // OrderItem unit_price is the final per-unit snapshot including variant/modifier deltas; never add modifier price_delta to it again. subtotal equals sum(unit_price * quantity).
 type OrderItem struct {
-	CategoryId   *string             `json:"category_id,omitempty"`
-	CategoryName *string             `json:"category_name,omitempty"`
-	Id           UUID                `json:"id"`
-	Modifiers    []OrderItemModifier `json:"modifiers"`
-	Note         *string             `json:"note,omitempty"`
-	ProductId    *string             `json:"product_id,omitempty"`
-	ProductName  Name                `json:"product_name"`
-	Quantity     int                 `json:"quantity"`
-	UnitCost     *int64              `json:"unit_cost,omitempty"`
-	UnitPrice    Money               `json:"unit_price"`
-	VariantName  *string             `json:"variant_name,omitempty"`
+	// BasePrice The resolved price before variant and modifier deltas.
+	BasePrice         *Money `json:"base_price,omitempty"`
+	BillDiscountShare *Money `json:"bill_discount_share,omitempty"`
+
+	// BillLineId Fase 4. The bill line this receipt line settles, when the receipt names a bill_id.
+	BillLineId   *UUID   `json:"bill_line_id,omitempty"`
+	BrandId      *string `json:"brand_id,omitempty"`
+	CategoryId   *string `json:"category_id,omitempty"`
+	CategoryName *string `json:"category_name,omitempty"`
+
+	// Custom A custom amount typed at the till; no product, no stock effect.
+	Custom                       *bool                 `json:"custom,omitempty"`
+	Discount                     *DiscountSpec         `json:"discount,omitempty"`
+	Id                           UUID                  `json:"id"`
+	LineDiscount                 *Money                `json:"line_discount,omitempty"`
+	LineDiscountAuthorizedById   *string               `json:"line_discount_authorized_by_id,omitempty"`
+	LineDiscountAuthorizedByName *string               `json:"line_discount_authorized_by_name,omitempty"`
+	LineDiscountId               *string               `json:"line_discount_id,omitempty"`
+	LineDiscountName             *string               `json:"line_discount_name,omitempty"`
+	Modifiers                    []OrderItemModifier   `json:"modifiers"`
+	NetAmount                    *Money                `json:"net_amount,omitempty"`
+	Note                         *string               `json:"note,omitempty"`
+	PriceSource                  *OrderItemPriceSource `json:"price_source,omitempty"`
+	ProductId                    *string               `json:"product_id,omitempty"`
+	ProductName                  Name                  `json:"product_name"`
+	Quantity                     int                   `json:"quantity"`
+	ServiceShare                 *Money                `json:"service_share,omitempty"`
+	TaxAmount                    *Money                `json:"tax_amount,omitempty"`
+	TaxIncluded                  *Money                `json:"tax_included,omitempty"`
+	TaxRateBp                    *int                  `json:"tax_rate_bp,omitempty"`
+	UnitCost                     *int64                `json:"unit_cost,omitempty"`
+	UnitPrice                    Money                 `json:"unit_price"`
+	VariantName                  *string               `json:"variant_name,omitempty"`
 }
+
+// OrderItemPriceSource defines model for OrderItem.PriceSource.
+type OrderItemPriceSource string
 
 // OrderItemModifier defines model for OrderItemModifier.
 type OrderItemModifier struct {
@@ -645,6 +1332,16 @@ type Outlet struct {
 	Phone   *string `json:"phone"`
 }
 
+// OutletProductSalesTypePriceRow defines model for OutletProductSalesTypePriceRow.
+type OutletProductSalesTypePriceRow struct {
+	DeletedAtMs *int64 `json:"deleted_at_ms"`
+	OutletId    string `json:"outlet_id"`
+	Price       int64  `json:"price"`
+	ProductId   string `json:"product_id"`
+	SalesTypeId string `json:"sales_type_id"`
+	SyncSeq     int64  `json:"sync_seq"`
+}
+
 // OutletRow defines model for OutletRow.
 type OutletRow struct {
 	Active      bool    `json:"active"`
@@ -656,6 +1353,37 @@ type OutletRow struct {
 	SyncSeq     int64   `json:"sync_seq"`
 }
 
+// OutletSettingsRow One outlet's overrides. Null inherits the business value; zero is a real override.
+type OutletSettingsRow struct {
+	// BillModel Fase 4. v1 turns on saved bills, kitchen dispatch and table seatings at this branch.
+	BillModel          OutletSettingsRowBillModel    `json:"bill_model"`
+	DefaultSalesTypeId *string                       `json:"default_sales_type_id"`
+	DeletedAtMs        *int64                        `json:"deleted_at_ms"`
+	OutletId           string                        `json:"outlet_id"`
+	PaymentGroupId     *string                       `json:"payment_group_id"`
+	PricingModel       OutletSettingsRowPricingModel `json:"pricing_model"`
+	ReceiptFooter      *string                       `json:"receipt_footer"`
+	ReceiptHeader      *string                       `json:"receipt_header"`
+	RoundingMode       *string                       `json:"rounding_mode"`
+	RoundingUnit       *int64                        `json:"rounding_unit"`
+	SalesTypeIds       *string                       `json:"sales_type_ids"`
+	ServiceEnabled     *bool                         `json:"service_enabled"`
+	ServiceRateBp      *int64                        `json:"service_rate_bp"`
+	ServiceTaxable     *bool                         `json:"service_taxable"`
+	ShowAddress        bool                          `json:"show_address"`
+	ShowPhone          bool                          `json:"show_phone"`
+	SyncSeq            int64                         `json:"sync_seq"`
+	TaxMode            *string                       `json:"tax_mode"`
+	TaxRateBp          *int64                        `json:"tax_rate_bp"`
+	TrackServer        bool                          `json:"track_server"`
+}
+
+// OutletSettingsRowBillModel Fase 4. v1 turns on saved bills, kitchen dispatch and table seatings at this branch.
+type OutletSettingsRowBillModel string
+
+// OutletSettingsRowPricingModel defines model for OutletSettingsRow.PricingModel.
+type OutletSettingsRowPricingModel string
+
 // OutletStockRow defines model for OutletStockRow.
 type OutletStockRow struct {
 	DeletedAtMs *int64 `json:"deleted_at_ms"`
@@ -664,6 +1392,49 @@ type OutletStockRow struct {
 	QtyOnHand   int64  `json:"qty_on_hand"`
 	SyncSeq     int64  `json:"sync_seq"`
 }
+
+// PaymentGroupRow defines model for PaymentGroupRow.
+type PaymentGroupRow struct {
+	Active      bool   `json:"active"`
+	DeletedAtMs *int64 `json:"deleted_at_ms"`
+	Id          string `json:"id"`
+	MethodIds   string `json:"method_ids"`
+	Name        string `json:"name"`
+	SortOrder   int64  `json:"sort_order"`
+	SyncSeq     int64  `json:"sync_seq"`
+}
+
+// PaymentMethodRow defines model for PaymentMethodRow.
+type PaymentMethodRow struct {
+	Active            bool                 `json:"active"`
+	DeletedAtMs       *int64               `json:"deleted_at_ms"`
+	Id                string               `json:"id"`
+	Kind              PaymentMethodRowKind `json:"kind"`
+	Name              string               `json:"name"`
+	RequiresReference bool                 `json:"requires_reference"`
+	SortOrder         int64                `json:"sort_order"`
+	SyncSeq           int64                `json:"sync_seq"`
+	SystemKey         *string              `json:"system_key"`
+}
+
+// PaymentMethodRowKind defines model for PaymentMethodRow.Kind.
+type PaymentMethodRowKind string
+
+// PricingSnapshot The configuration the till priced the bill with, frozen at checkout so the server can recompute it.
+type PricingSnapshot struct {
+	BillDiscount   *DiscountSpec               `json:"bill_discount,omitempty"`
+	RoundingMode   PricingSnapshotRoundingMode `json:"rounding_mode"`
+	RoundingUnit   int                         `json:"rounding_unit"`
+	ServiceRateBp  int                         `json:"service_rate_bp"`
+	ServiceTaxable bool                        `json:"service_taxable"`
+	TaxMode        PricingSnapshotTaxMode      `json:"tax_mode"`
+}
+
+// PricingSnapshotRoundingMode defines model for PricingSnapshot.RoundingMode.
+type PricingSnapshotRoundingMode string
+
+// PricingSnapshotTaxMode defines model for PricingSnapshot.TaxMode.
+type PricingSnapshotTaxMode string
 
 // ProductModifierGroupRow defines model for ProductModifierGroupRow.
 type ProductModifierGroupRow struct {
@@ -685,6 +1456,7 @@ type ProductModifierOptionRow struct {
 // ProductRow defines model for ProductRow.
 type ProductRow struct {
 	Available   bool     `json:"available"`
+	BrandId     *string  `json:"brand_id"`
 	CategoryId  *string  `json:"category_id"`
 	Cost        *int64   `json:"cost"`
 	DeletedAtMs *int64   `json:"deleted_at_ms"`
@@ -699,6 +1471,15 @@ type ProductRow struct {
 	SortOrder   int64    `json:"sort_order"`
 	SyncSeq     int64    `json:"sync_seq"`
 	TaxRate     *float32 `json:"tax_rate"`
+}
+
+// ProductSalesTypePriceRow defines model for ProductSalesTypePriceRow.
+type ProductSalesTypePriceRow struct {
+	DeletedAtMs *int64 `json:"deleted_at_ms"`
+	Price       int64  `json:"price"`
+	ProductId   string `json:"product_id"`
+	SalesTypeId string `json:"sales_type_id"`
+	SyncSeq     int64  `json:"sync_seq"`
 }
 
 // PromoOutletRow defines model for PromoOutletRow.
@@ -738,6 +1519,13 @@ type PushBatch struct {
 	Rows   []rawjson.RawMessage `json:"rows"`
 }
 
+// PushEffect defines model for PushEffect.
+type PushEffect struct {
+	BalanceAfter int64 `json:"balance_after"`
+	Id           UUID  `json:"id"`
+	StockSeq     int64 `json:"stock_seq"`
+}
+
 // PushRequest defines model for PushRequest.
 type PushRequest struct {
 	Batches []PushBatch `json:"batches"`
@@ -752,16 +1540,19 @@ type PushResponse struct {
 // PushResult defines model for PushResult.
 type PushResult struct {
 	// BalanceAfter For an accepted stock movement, the outlet's quantity immediately after it (a count's computed delta included).
-	BalanceAfter       *int64          `json:"balance_after,omitempty"`
-	BatchIndex         int             `json:"batch_index"`
-	BusinessDate       *string         `json:"business_date,omitempty"`
-	Code               *PushResultCode `json:"code,omitempty"`
-	Entity             string          `json:"entity"`
-	HolderEmployeeName *string         `json:"holder_employee_name,omitempty"`
-	HolderSessionId    *string         `json:"holder_session_id,omitempty"`
-	Id                 *string         `json:"id,omitempty"`
-	Inserted           *bool           `json:"inserted,omitempty"`
-	Message            *string         `json:"message,omitempty"`
+	BalanceAfter *int64          `json:"balance_after,omitempty"`
+	BatchIndex   int             `json:"batch_index"`
+	BusinessDate *string         `json:"business_date,omitempty"`
+	Code         *PushResultCode `json:"code,omitempty"`
+
+	// Effects For an accepted kitchen dispatch, bill or receipt, what each stock movement it committed did — the same stock_seq and balance_after a standalone movement returns, so the till stops counting it once a snapshot includes it.
+	Effects            *[]PushEffect `json:"effects,omitempty"`
+	Entity             string        `json:"entity"`
+	HolderEmployeeName *string       `json:"holder_employee_name,omitempty"`
+	HolderSessionId    *string       `json:"holder_session_id,omitempty"`
+	Id                 *string       `json:"id,omitempty"`
+	Inserted           *bool         `json:"inserted,omitempty"`
+	Message            *string       `json:"message,omitempty"`
 
 	// Outcome For an accepted table status event, whether the table took its status (applied) or kept a later change by another till (superseded).
 	Outcome    *PushResultOutcome `json:"outcome,omitempty"`
@@ -804,6 +1595,31 @@ type RegisterRow struct {
 	SortOrder    int64  `json:"sort_order"`
 	SyncSeq      int64  `json:"sync_seq"`
 	TableService bool   `json:"table_service"`
+}
+
+// RoleRow A role. System roles (system_key set) take their permissions from the app's own table and publish an empty list; a custom role lists its permission names, comma-separated. A till drops names it does not know.
+type RoleRow struct {
+	BackofficeAccess bool    `json:"backoffice_access"`
+	DeletedAtMs      *int64  `json:"deleted_at_ms"`
+	Id               string  `json:"id"`
+	Name             string  `json:"name"`
+	Permissions      string  `json:"permissions"`
+	PosAccess        bool    `json:"pos_access"`
+	SortOrder        int64   `json:"sort_order"`
+	SyncSeq          int64   `json:"sync_seq"`
+	SystemKey        *string `json:"system_key"`
+}
+
+// SalesTypeRow defines model for SalesTypeRow.
+type SalesTypeRow struct {
+	Active      bool    `json:"active"`
+	DeletedAtMs *int64  `json:"deleted_at_ms"`
+	Id          string  `json:"id"`
+	Name        string  `json:"name"`
+	SortOrder   int64   `json:"sort_order"`
+	SyncSeq     int64   `json:"sync_seq"`
+	SystemKey   *string `json:"system_key"`
+	UsesTable   bool    `json:"uses_table"`
 }
 
 // ServerTime defines model for ServerTime.
@@ -890,6 +1706,31 @@ type TableRow struct {
 	SyncSeq     int64  `json:"sync_seq"`
 }
 
+// TableSession defines model for TableSession.
+type TableSession struct {
+	ClosedAtMs    *int64  `json:"closed_at_ms,omitempty"`
+	ClosedByName  *string `json:"closed_by_name,omitempty"`
+	GuestCount    *int    `json:"guest_count,omitempty"`
+	Id            UUID    `json:"id"`
+	OpenBillCount int     `json:"open_bill_count"`
+	OpenedAtMs    Millis  `json:"opened_at_ms"`
+	OpenedByName  string  `json:"opened_by_name"`
+	TableId       UUID    `json:"table_id"`
+	TableName     string  `json:"table_name"`
+}
+
+// TableSessionOpenRequest defines model for TableSessionOpenRequest.
+type TableSessionOpenRequest struct {
+	GuestCount *int `json:"guest_count,omitempty"`
+	Id         UUID `json:"id"`
+	TableId    UUID `json:"table_id"`
+}
+
+// TableSessionResponse defines model for TableSessionResponse.
+type TableSessionResponse struct {
+	Data TableSession `json:"data"`
+}
+
 // TableStatusEvent One immutable change of a table's live status, applied at the token's
 // outlet. basis_seq is the table_status sync_seq the till had pulled for
 // the table when it made the change (0 if it had none). An event made
@@ -935,13 +1776,110 @@ type TableStatusRow struct {
 type Tenant struct {
 	Id   ID     `json:"id"`
 	Name string `json:"name"`
+
+	// Timezone The merchant's trading clock (IANA name; the Backoffice offers Asia/Jakarta, Asia/Makassar and Asia/Jayapura). A till dates its receipts by it when it recognises the zone; absent from a server older than 2.8.0, and an unrecognised zone, both leave the device clock in charge as before.
+	Timezone *string `json:"timezone,omitempty"`
 }
+
+// TillBillBoard defines model for TillBillBoard.
+type TillBillBoard struct {
+	Bills         []TillBillSummary `json:"bills"`
+	ServerTimeMs  Millis            `json:"server_time_ms"`
+	TableSessions []TableSession    `json:"table_sessions"`
+}
+
+// TillBillBoardResponse defines model for TillBillBoardResponse.
+type TillBillBoardResponse struct {
+	Data TillBillBoard `json:"data"`
+}
+
+// TillBillDetail defines model for TillBillDetail.
+type TillBillDetail struct {
+	// Bill Fase 4. One bill as its owning till last saved it, at a revision. The
+	// till numbers revisions itself and every save is a newer one; the server
+	// keeps the last accepted snapshot and accepts an exact retry of it. The
+	// snapshot is refused as bill_not_owned when this till is not the owner or
+	// owner_generation is not the bill's current one; a line already
+	// dispatched must appear unchanged in every later revision. status
+	// cancelled is terminal and needs cancel; closed is never pushed — the
+	// settling receipt closes the bill. Saving takes no money and moves no
+	// stock.
+	Bill       Bill                  `json:"bill"`
+	Dispatches []TillDispatchSummary `json:"dispatches"`
+	Summary    TillBillSummary       `json:"summary"`
+}
+
+// TillBillDetailResponse defines model for TillBillDetailResponse.
+type TillBillDetailResponse struct {
+	Data TillBillDetail `json:"data"`
+}
+
+// TillBillParkData defines model for TillBillParkData.
+type TillBillParkData struct {
+	BillId          UUID   `json:"bill_id"`
+	OwnerGeneration int64  `json:"owner_generation"`
+	ParkedAtMs      Millis `json:"parked_at_ms"`
+}
+
+// TillBillParkRequest defines model for TillBillParkRequest.
+type TillBillParkRequest struct {
+	ExpectedDispatches int   `json:"expected_dispatches"`
+	ExpectedRevision   int64 `json:"expected_revision"`
+	OperationId        UUID  `json:"operation_id"`
+}
+
+// TillBillParkResponse defines model for TillBillParkResponse.
+type TillBillParkResponse struct {
+	Data TillBillParkData `json:"data"`
+}
+
+// TillBillSummary defines model for TillBillSummary.
+type TillBillSummary struct {
+	CustomerName *string `json:"customer_name,omitempty"`
+
+	// Dispatches How many of the bill's dispatches are at each kitchen status.
+	Dispatches        map[string]int        `json:"dispatches"`
+	Id                UUID                  `json:"id"`
+	LineCount         int                   `json:"line_count"`
+	Number            string                `json:"number"`
+	OpenedAtMs        Millis                `json:"opened_at_ms"`
+	OwnedByThisDevice bool                  `json:"owned_by_this_device"`
+	OwnerDeviceLabel  *string               `json:"owner_device_label,omitempty"`
+	OwnerGeneration   int64                 `json:"owner_generation"`
+	OwnerRegisterName *string               `json:"owner_register_name,omitempty"`
+	Parked            bool                  `json:"parked"`
+	Revision          int64                 `json:"revision"`
+	Status            TillBillSummaryStatus `json:"status"`
+	Subtotal          Money                 `json:"subtotal"`
+	TableName         *string               `json:"table_name,omitempty"`
+	TableSessionId    *string               `json:"table_session_id,omitempty"`
+	UpdatedAtMs       Millis                `json:"updated_at_ms"`
+}
+
+// TillBillSummaryStatus defines model for TillBillSummary.Status.
+type TillBillSummaryStatus string
 
 // TillCurrentResponse defines model for TillCurrentResponse.
 type TillCurrentResponse struct {
 	Data     *TillSessionData     `json:"data"`
 	Recovery *TillRecoveryPointer `json:"recovery,omitempty"`
 }
+
+// TillDispatchSummary defines model for TillDispatchSummary.
+type TillDispatchSummary struct {
+	// Dispatch The dispatch exactly as it was accepted, at its current status and revision. A till that claims the bill keeps it, so it can report later kitchen progress for a batch another till sent — a status change must repeat the batch's lines and stock unchanged.
+	Dispatch          *KitchenDispatch          `json:"dispatch,omitempty"`
+	EmployeeName      string                    `json:"employee_name"`
+	Id                UUID                      `json:"id"`
+	LineIds           []UUID                    `json:"line_ids"`
+	OccurredAtMs      Millis                    `json:"occurred_at_ms"`
+	Revision          int64                     `json:"revision"`
+	Status            TillDispatchSummaryStatus `json:"status"`
+	StatusChangedAtMs Millis                    `json:"status_changed_at_ms"`
+}
+
+// TillDispatchSummaryStatus defines model for TillDispatchSummary.Status.
+type TillDispatchSummaryStatus string
 
 // TillHandoverRequest defines model for TillHandoverRequest.
 type TillHandoverRequest struct {
@@ -983,6 +1921,11 @@ type TillLoginRequest struct {
 // TillLoginResponse defines model for TillLoginResponse.
 type TillLoginResponse struct {
 	Data TillLoginData `json:"data"`
+}
+
+// TillOperationRequest defines model for TillOperationRequest.
+type TillOperationRequest struct {
+	OperationId UUID `json:"operation_id"`
 }
 
 // TillRecovery defines model for TillRecovery.
@@ -1034,6 +1977,7 @@ type TillReport struct {
 
 	// AnomalyCount Receipts whose own arithmetic does not close. Reported, never repaired.
 	AnomalyCount        *int64                    `json:"anomaly_count,omitempty"`
+	ByBrand             *[]map[string]interface{} `json:"by_brand,omitempty"`
 	ByCashier           *[]map[string]interface{} `json:"by_cashier,omitempty"`
 	ByCategory          *[]map[string]interface{} `json:"by_category,omitempty"`
 	ByDay               *[]map[string]interface{} `json:"by_day,omitempty"`
@@ -1042,6 +1986,9 @@ type TillReport struct {
 	ByPayment           *[]map[string]interface{} `json:"by_payment,omitempty"`
 	ByProduct           *[]map[string]interface{} `json:"by_product,omitempty"`
 	ByProductInCategory *[]map[string]interface{} `json:"by_product_in_category,omitempty"`
+
+	// BySalesType Fase 3. Net sales and revenue per sales type.
+	BySalesType *[]map[string]interface{} `json:"by_sales_type,omitempty"`
 
 	// ByWeekday Derived from the business date, so a sale after midnight belongs to its trading day. weekday is 0 for Sunday.
 	ByWeekday *[]map[string]interface{} `json:"by_weekday,omitempty"`
@@ -1103,9 +2050,15 @@ type TillReportSales struct {
 	RefundedAmount  *Money `json:"refunded_amount,omitempty"`
 	RefundedCount   *int64 `json:"refunded_count,omitempty"`
 	Revenue         Money  `json:"revenue"`
-	SalesReturns    Money  `json:"sales_returns"`
-	ServiceCharge   Money  `json:"service_charge"`
-	Tax             Money  `json:"tax"`
+
+	// Rounding Fase 3. Final rounding collected (may be negative); part of revenue, never of sales.
+	Rounding      *int64 `json:"rounding,omitempty"`
+	SalesReturns  Money  `json:"sales_returns"`
+	ServiceCharge Money  `json:"service_charge"`
+	Tax           Money  `json:"tax"`
+
+	// TaxIncluded Fase 3. Tax already inside inclusive prices; taken out of net sales, so gross - discounts - sales_returns - tax_included = net_sales.
+	TaxIncluded *Money `json:"tax_included,omitempty"`
 }
 
 // TillReportScope defines model for TillReportScope.
@@ -1145,6 +2098,9 @@ type VariantRow struct {
 // CashierToken defines model for CashierToken.
 type CashierToken = string
 
+// DeviceCapabilities defines model for DeviceCapabilities.
+type DeviceCapabilities = string
+
 // ReportFrom defines model for ReportFrom.
 type ReportFrom = string
 
@@ -1163,16 +2119,34 @@ type SchemaVersion = int
 // Error defines model for Error.
 type Error = ErrorResponse
 
+// ActivateDeviceParams defines parameters for ActivateDevice.
+type ActivateDeviceParams struct {
+	// XDeviceCapabilities Comma-separated feature tokens this build honours (pricing-v2, roles-v1, bills-v1). Recorded per device only when the set changes; unknown tokens are ignored. Absent means an app older than Fase 3, which is exactly what the Backoffice needs to know before it enables a feature.
+	XDeviceCapabilities *DeviceCapabilities `json:"X-Device-Capabilities,omitempty"`
+}
+
+// GetDeviceParams defines parameters for GetDevice.
+type GetDeviceParams struct {
+	// XDeviceCapabilities Comma-separated feature tokens this build honours (pricing-v2, roles-v1, bills-v1). Recorded per device only when the set changes; unknown tokens are ignored. Absent means an app older than Fase 3, which is exactly what the Backoffice needs to know before it enables a feature.
+	XDeviceCapabilities *DeviceCapabilities `json:"X-Device-Capabilities,omitempty"`
+}
+
 // GetChangesParams defines parameters for GetChanges.
 type GetChangesParams struct {
 	// XSchemaVersion Missing/obsolete returns 409 device_schema_outdated; invalid returns 400.
 	XSchemaVersion SchemaVersion `json:"X-Schema-Version"`
+
+	// XDeviceCapabilities Comma-separated feature tokens this build honours (pricing-v2, roles-v1, bills-v1). Recorded per device only when the set changes; unknown tokens are ignored. Absent means an app older than Fase 3, which is exactly what the Backoffice needs to know before it enables a feature.
+	XDeviceCapabilities *DeviceCapabilities `json:"X-Device-Capabilities,omitempty"`
 }
 
 // GetManifestParams defines parameters for GetManifest.
 type GetManifestParams struct {
 	// XSchemaVersion Missing/obsolete returns 409 device_schema_outdated; invalid returns 400.
 	XSchemaVersion SchemaVersion `json:"X-Schema-Version"`
+
+	// XDeviceCapabilities Comma-separated feature tokens this build honours (pricing-v2, roles-v1, bills-v1). Recorded per device only when the set changes; unknown tokens are ignored. Absent means an app older than Fase 3, which is exactly what the Backoffice needs to know before it enables a feature.
+	XDeviceCapabilities *DeviceCapabilities `json:"X-Device-Capabilities,omitempty"`
 }
 
 // PullChangesParams defines parameters for PullChanges.
@@ -1183,12 +2157,42 @@ type PullChangesParams struct {
 
 	// XSchemaVersion Missing/obsolete returns 409 device_schema_outdated; invalid returns 400.
 	XSchemaVersion SchemaVersion `json:"X-Schema-Version"`
+
+	// XDeviceCapabilities Comma-separated feature tokens this build honours (pricing-v2, roles-v1, bills-v1). Recorded per device only when the set changes; unknown tokens are ignored. Absent means an app older than Fase 3, which is exactly what the Backoffice needs to know before it enables a feature.
+	XDeviceCapabilities *DeviceCapabilities `json:"X-Device-Capabilities,omitempty"`
 }
 
 // PushChangesParams defines parameters for PushChanges.
 type PushChangesParams struct {
 	// XSchemaVersion Missing/obsolete returns 409 device_schema_outdated; invalid returns 400.
 	XSchemaVersion SchemaVersion `json:"X-Schema-Version"`
+
+	// XDeviceCapabilities Comma-separated feature tokens this build honours (pricing-v2, roles-v1, bills-v1). Recorded per device only when the set changes; unknown tokens are ignored. Absent means an app older than Fase 3, which is exactly what the Backoffice needs to know before it enables a feature.
+	XDeviceCapabilities *DeviceCapabilities `json:"X-Device-Capabilities,omitempty"`
+}
+
+// TillBillBoardParams defines parameters for TillBillBoard.
+type TillBillBoardParams struct {
+	// XCashierToken Short-lived cashier credential returned by POST /till/login.
+	XCashierToken CashierToken `json:"X-Cashier-Token"`
+}
+
+// TillBillDetailParams defines parameters for TillBillDetail.
+type TillBillDetailParams struct {
+	// XCashierToken Short-lived cashier credential returned by POST /till/login.
+	XCashierToken CashierToken `json:"X-Cashier-Token"`
+}
+
+// ClaimTillBillParams defines parameters for ClaimTillBill.
+type ClaimTillBillParams struct {
+	// XCashierToken Short-lived cashier credential returned by POST /till/login.
+	XCashierToken CashierToken `json:"X-Cashier-Token"`
+}
+
+// ParkTillBillParams defines parameters for ParkTillBill.
+type ParkTillBillParams struct {
+	// XCashierToken Short-lived cashier credential returned by POST /till/login.
+	XCashierToken CashierToken `json:"X-Cashier-Token"`
 }
 
 // TillOrderHistoryParams defines parameters for TillOrderHistory.
@@ -1296,11 +2300,29 @@ type OpenTillSessionParams struct {
 	XCashierToken CashierToken `json:"X-Cashier-Token"`
 }
 
+// OpenTableSessionParams defines parameters for OpenTableSession.
+type OpenTableSessionParams struct {
+	// XCashierToken Short-lived cashier credential returned by POST /till/login.
+	XCashierToken CashierToken `json:"X-Cashier-Token"`
+}
+
+// CloseTableSessionParams defines parameters for CloseTableSession.
+type CloseTableSessionParams struct {
+	// XCashierToken Short-lived cashier credential returned by POST /till/login.
+	XCashierToken CashierToken `json:"X-Cashier-Token"`
+}
+
 // ActivateDeviceJSONRequestBody defines body for ActivateDevice for application/json ContentType.
 type ActivateDeviceJSONRequestBody = ActivateRequest
 
 // PushChangesJSONRequestBody defines body for PushChanges for application/json ContentType.
 type PushChangesJSONRequestBody = PushRequest
+
+// ClaimTillBillJSONRequestBody defines body for ClaimTillBill for application/json ContentType.
+type ClaimTillBillJSONRequestBody = TillOperationRequest
+
+// ParkTillBillJSONRequestBody defines body for ParkTillBill for application/json ContentType.
+type ParkTillBillJSONRequestBody = TillBillParkRequest
 
 // TillLoginJSONRequestBody defines body for TillLogin for application/json ContentType.
 type TillLoginJSONRequestBody = TillLoginRequest
@@ -1310,3 +2332,9 @@ type HandoverTillSessionJSONRequestBody = TillHandoverRequest
 
 // OpenTillSessionJSONRequestBody defines body for OpenTillSession for application/json ContentType.
 type OpenTillSessionJSONRequestBody = Session
+
+// OpenTableSessionJSONRequestBody defines body for OpenTableSession for application/json ContentType.
+type OpenTableSessionJSONRequestBody = TableSessionOpenRequest
+
+// CloseTableSessionJSONRequestBody defines body for CloseTableSession for application/json ContentType.
+type CloseTableSessionJSONRequestBody = TillOperationRequest

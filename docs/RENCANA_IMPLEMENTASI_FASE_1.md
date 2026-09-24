@@ -1,5 +1,8 @@
 # Rencana Implementasi Fase 1 — Visibilitas Transaksi dan Koreksi Laporan
 
+**Status implementasi:** selesai pada 23 September 2026. Bukti aktual tersedia
+di [FASE_1_VERIFICATION.md](FASE_1_VERIFICATION.md).
+
 ## 1. Ringkasan dan keputusan
 
 F1 membuat histori transaksi dapat ditelusuri, laporan penjualan memiliki rumus yang konsisten, dan angka POS, Backoffice, serta ekspor dapat dicocokkan untuk periode dan cakupan yang sama.

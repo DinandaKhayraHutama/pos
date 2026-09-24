@@ -46,7 +46,7 @@ func TestPullPublishesOnlyTheColumnsOnTheAllowList(t *testing.T) {
 	row := decode(t, page.Rows[0])
 
 	require.ElementsMatch(t,
-		[]string{"id", "name", "pin_hash", "role", "active", "sort_order", "sync_seq", "deleted_at_ms"},
+		[]string{"id", "name", "pin_hash", "role", "role_id", "active", "sort_order", "sync_seq", "deleted_at_ms"},
 		keysOf(row))
 
 	require.NotContains(t, row, "password", "a browser credential is of no use to a till")
@@ -262,6 +262,16 @@ func TestPullUsesAnIndexOnlyScan(t *testing.T) {
 	var outletID string
 	require.NoError(t, f.db.Owner.QueryRow(ctx, syncfixture.FeedOutletSQL, f.tenantID).Scan(&outletID))
 	for _, e := range syncfeed.Entities() {
+		if e.Singleton {
+			// One row per scope: see Entity.Singleton for why the plan is not
+			// asserted. Its covering index must still exist under the name the
+			// fleet-wide table relies on.
+			var exists bool
+			require.NoError(t, f.db.Owner.QueryRow(ctx,
+				`SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = $1)`, e.Table+"_sync_feed_idx").Scan(&exists))
+			require.True(t, exists, e.Name)
+			continue
+		}
 		t.Run(e.Name, func(t *testing.T) {
 			_, err := f.db.Owner.Exec(ctx, "VACUUM (ANALYZE) "+e.Table, pgx.QueryExecModeSimpleProtocol)
 			require.NoError(t, err)

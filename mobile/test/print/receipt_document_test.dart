@@ -29,6 +29,7 @@ void main() {
     amountPaid: 'Dibayar',
     change: 'Kembali',
     cashier: 'Kasir',
+    note: 'Catatan',
     thankYou: 'Terima kasih',
     orderTypes: {
       OrderType.dineIn: 'Dine-in',
@@ -40,6 +41,10 @@ void main() {
       PaymentMethod.qris: 'QRIS',
       PaymentMethod.card: 'Kartu',
     },
+    servedBy: 'Pelayan',
+    taxIncluded: 'PB1 termasuk harga',
+    rounding: 'Pembulatan',
+    manualPayment: '(manual)',
   );
 
   Order order({
@@ -95,95 +100,182 @@ void main() {
     expect(String.fromCharCodes(bytes.take(5)), '%PDF-');
   }
 
+  test(
+    'builds a version 2 receipt: included tax, rounding, item discount, '
+    'server, custom sales type, manual payment and a snapshot footer',
+    () async {
+      const lines = [
+        OrderItem(
+          id: 'i1',
+          orderId: 'o1',
+          productId: 'p_kopi',
+          productName: 'Kopi Susu',
+          unitPrice: 16500,
+          quantity: 2,
+          taxRateBp: 1000,
+          lineDiscount: 3300,
+          lineDiscountName: 'Happy hour',
+        ),
+        OrderItem(
+          id: 'i2',
+          orderId: 'o1',
+          productId: 'custom:1',
+          productName: 'Ongkos titip',
+          unitPrice: 7300,
+          quantity: 1,
+          custom: true,
+          taxRateBp: 1000,
+        ),
+      ];
+      final receipt = Order(
+        id: 'o1',
+        number: 'ORD-0002',
+        createdAt: DateTime(2026, 9, 24, 12, 5),
+        type: OrderType.custom,
+        salesTypeName: 'GoFood',
+        subtotal: 40300,
+        discount: 4300,
+        tax: 3456,
+        serviceChargeAmount: 1636,
+        total: 37700,
+        amountPaid: 37700,
+        paymentMethod: PaymentMethod.ewallet,
+        paymentMethodName: 'GoPay',
+        status: OrderStatus.paid,
+        cashierId: 'cashier',
+        cashierName: 'Kasir Demo',
+        servedByName: 'Budi',
+        pricingVersion: 2,
+        taxIncluded: 3273,
+        roundingAmount: -119,
+        pb1Rate: 10,
+        items: lines,
+      );
+      expectValidPdf(
+        await buildReceiptPdf(
+          order: receipt,
+          store: const ReceiptStore(
+            name: 'Warung Demo',
+            address: '',
+            phone: '0812-0000-0000',
+            currency: 'Rp',
+            header: 'Cabang Kemang',
+            footer: 'Sampai jumpa lagi',
+          ),
+          labels: labels,
+        ),
+      );
+    },
+  );
+
   test('builds a receipt for a plain cash takeaway order', () async {
-    expectValidPdf(await buildReceiptPdf(
-      order: order(),
-      store: store,
-      labels: labels,
-    ));
+    expectValidPdf(
+      await buildReceiptPdf(order: order(), store: store, labels: labels),
+    );
   });
 
   test('builds a receipt for a dine-in order with a table', () async {
-    expectValidPdf(await buildReceiptPdf(
-      order: order(
-        type: OrderType.dineIn,
-        table: const TableAssignment(tableId: 't_1', tableName: 'Meja 1'),
+    expectValidPdf(
+      await buildReceiptPdf(
+        order: order(
+          type: OrderType.dineIn,
+          table: const TableAssignment(tableId: 't_1', tableName: 'Meja 1'),
+        ),
+        store: store,
+        labels: labels,
       ),
-      store: store,
-      labels: labels,
-    ));
+    );
   });
 
   test('builds a receipt for a delivery order with a customer name', () async {
-    expectValidPdf(await buildReceiptPdf(
-      order: order(type: OrderType.delivery, customerName: 'Mas Yoga'),
-      store: store,
-      labels: labels,
-    ));
+    expectValidPdf(
+      await buildReceiptPdf(
+        order: order(type: OrderType.delivery, customerName: 'Mas Yoga'),
+        store: store,
+        labels: labels,
+      ),
+    );
   });
 
   test('builds a receipt carrying a discount and tax', () async {
-    expectValidPdf(await buildReceiptPdf(
-      order: order(discount: 5000, tax: 4500),
-      store: store,
-      labels: labels,
-    ));
+    expectValidPdf(
+      await buildReceiptPdf(
+        order: order(discount: 5000, tax: 4500),
+        store: store,
+        labels: labels,
+      ),
+    );
   });
 
-  test('builds a receipt carrying PB1 and a service charge together',
-      () async {
-    expectValidPdf(await buildReceiptPdf(
-      order: order(serviceCharge: 2500, tax: 5250),
-      store: store,
-      labels: labels,
-    ));
+  test('builds a receipt carrying PB1 and a service charge together', () async {
+    expectValidPdf(
+      await buildReceiptPdf(
+        order: order(serviceCharge: 2500, tax: 5250),
+        store: store,
+        labels: labels,
+      ),
+    );
   });
 
-  test('builds a receipt with no service charge line when the amount is zero',
-      () async {
-    // serviceCharge defaults to 0 — this pins that the conditional line in
-    // buildReceiptPdf does not crash or render for the common case where the
-    // feature is off.
-    expectValidPdf(await buildReceiptPdf(
-      order: order(tax: 4500),
-      store: store,
-      labels: labels,
-    ));
-  });
+  test(
+    'builds a receipt with no service charge line when the amount is zero',
+    () async {
+      // serviceCharge defaults to 0 — this pins that the conditional line in
+      // buildReceiptPdf does not crash or render for the common case where the
+      // feature is off.
+      expectValidPdf(
+        await buildReceiptPdf(
+          order: order(tax: 4500),
+          store: store,
+          labels: labels,
+        ),
+      );
+    },
+  );
 
   test('builds a receipt for a non-cash order (no change line)', () async {
-    expectValidPdf(await buildReceiptPdf(
-      order: order(payment: PaymentMethod.qris, amountPaid: 50000),
-      store: store,
-      labels: labels,
-    ));
+    expectValidPdf(
+      await buildReceiptPdf(
+        order: order(payment: PaymentMethod.qris, amountPaid: 50000),
+        store: store,
+        labels: labels,
+      ),
+    );
   });
 
   test('builds a receipt when the store has no address', () async {
-    expectValidPdf(await buildReceiptPdf(
-      order: order(),
-      store: const ReceiptStore(name: 'Warung Demo', address: '', currency: 'Rp'),
-      labels: labels,
-    ));
+    expectValidPdf(
+      await buildReceiptPdf(
+        order: order(),
+        store: const ReceiptStore(
+          name: 'Warung Demo',
+          address: '',
+          currency: 'Rp',
+        ),
+        labels: labels,
+      ),
+    );
   });
 
   test('builds a receipt for a long multi-line order', () async {
-    expectValidPdf(await buildReceiptPdf(
-      order: order(
-        items: [
-          for (var i = 0; i < 25; i++)
-            OrderItem(
-              id: 'i$i',
-              orderId: 'o1',
-              productId: 'p$i',
-              productName: 'Produk dengan nama yang cukup panjang $i',
-              unitPrice: 12000 + i * 500,
-              quantity: (i % 4) + 1,
-            ),
-        ],
+    expectValidPdf(
+      await buildReceiptPdf(
+        order: order(
+          items: [
+            for (var i = 0; i < 25; i++)
+              OrderItem(
+                id: 'i$i',
+                orderId: 'o1',
+                productId: 'p$i',
+                productName: 'Produk dengan nama yang cukup panjang $i',
+                unitPrice: 12000 + i * 500,
+                quantity: (i % 4) + 1,
+              ),
+          ],
+        ),
+        store: store,
+        labels: labels,
       ),
-      store: store,
-      labels: labels,
-    ));
+    );
   });
 }

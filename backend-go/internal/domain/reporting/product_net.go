@@ -25,7 +25,9 @@ SELECT o.id::text, o.discount, o.subtotal, o.placed_at_ms,
 	COALESCE(it.payload->>'category_id', ''), COALESCE(it.category_name, ''),
 	COALESCE(NULLIF(it.payload->>'product_id', ''), 'name:' || it.product_name),
 	(array_agg(it.product_name ORDER BY it.id DESC))[1],
-	sum(it.unit_price * it.quantity)::bigint, sum(it.quantity)::bigint
+	sum(it.unit_price * it.quantity)::bigint, sum(it.quantity)::bigint,
+	CASE WHEN bool_and(it.payload ? 'net_amount')
+	     THEN sum((it.payload->>'net_amount')::bigint)::bigint END
 ` + orderLines + `
 GROUP BY o.id, o.discount, o.subtotal, o.placed_at_ms, 5, 6, 7
 ORDER BY o.placed_at_ms, o.id, 5, 6, 7`
@@ -57,6 +59,7 @@ type productLine struct {
 	CategoryLine
 	ProductKey  string
 	ProductName string
+	NetTotal    *int64
 }
 
 // productCategoryRow is one row of daily_product_category_rollup.
@@ -81,7 +84,11 @@ func writeCategoryAndProduct(ctx context.Context, tx pgx.Tx, tenantID, outletID,
 	lines, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (productLine, error) {
 		var l productLine
 		err := row.Scan(&l.OrderID, &l.OrderDiscount, &l.OrderSubtotal, &l.PlacedAtMs,
-			&l.CategoryID, &l.SnapshotName, &l.ProductKey, &l.ProductName, &l.LineTotal, &l.Quantity)
+			&l.CategoryID, &l.SnapshotName, &l.ProductKey, &l.ProductName, &l.LineTotal, &l.Quantity,
+			&l.NetTotal)
+		if l.NetTotal != nil {
+			l.CategoryLine.NetTotal, l.CategoryLine.NetKnown = *l.NetTotal, true
+		}
 		return l, err
 	})
 	if err != nil {
@@ -125,6 +132,11 @@ func allocateSlice(lines []productLine) ([]CategoryLine, []productCategoryRow) {
 			for j < len(order) && order[j].CategoryID == order[i].CategoryID &&
 				order[j].SnapshotName == order[i].SnapshotName {
 				row.LineTotal += order[j].LineTotal
+				if row.NetKnown && order[j].NetKnown {
+					row.NetTotal += order[j].CategoryLine.NetTotal
+				} else {
+					row.NetKnown = false
+				}
 				row.Quantity += order[j].Quantity
 				j++
 			}
@@ -155,7 +167,11 @@ func allocateSlice(lines []productLine) ([]CategoryLine, []productCategoryRow) {
 				}
 				row.Gross += p.LineTotal
 				row.Quantity += p.Quantity
-				row.Net += p.LineTotal - inner[j]
+				if p.NetKnown {
+					row.Net += p.CategoryLine.NetTotal
+				} else {
+					row.Net += p.LineTotal - inner[j]
+				}
 				// The newest snapshot names the product, the same rule the
 				// category split uses; the id breaks a same-millisecond tie.
 				if p.PlacedAtMs > row.NameAtMs || (p.PlacedAtMs == row.NameAtMs && p.ProductName > row.Name) {

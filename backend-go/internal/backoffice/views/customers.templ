@@ -1,0 +1,89 @@
+package views
+
+import (
+	"net/url"
+	"strconv"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/customer"
+)
+
+templ CustomersPage(s Session, page customer.Page, query string, f Form) {
+	@Shell("Pelanggan", s) {
+		<h1>Pelanggan</h1>
+		<p class="sub">Kontak yang sama ditandai untuk diperiksa; penggabungan selalu dilakukan secara eksplisit.</p>
+		<div class="actions"><a href="/backoffice/customers/export">Ekspor CSV</a><form method="post" action="/backoffice/customers/import" enctype="multipart/form-data" class="inline"><input type="file" name="file" accept=".csv,text/csv" required/><button type="submit">Impor CSV</button></form></div>
+		<div class="card">
+			<form method="get" class="inline">
+				<input name="q" value={ query } placeholder="Cari nama, telepon, atau email"/>
+				<button type="submit">Cari</button>
+			</form>
+		</div>
+		<div class="card">
+			<h2>Tambah pelanggan</h2>
+			<form class="grid" method="post" action="/backoffice/customers">
+				@Field(f, "Nama", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+				@Field(f, "Telepon", "phone", "text", templ.Attributes{"maxlength": "32"})
+				@Field(f, "Email", "email", "email", templ.Attributes{"maxlength": "255"})
+				<div class="actions wide"><button class="primary" type="submit">Tambah</button></div>
+			</form>
+		</div>
+		<div class="card"><table><thead><tr><th>Nama</th><th>Kontak</th><th>Status</th><th></th></tr></thead><tbody>
+			for _, row := range page.Rows {
+				<tr><td>{ row.Name }</td><td>
+					if row.Phone != nil {
+						<div>{ *row.Phone }</div>
+					}
+					if row.Email != nil {
+						<div>{ *row.Email }</div>
+					}
+					if row.DuplicatePhone || row.DuplicateEmail {
+						<span class="badge">kontak duplikat</span>
+					}
+				</td><td>{ map[bool]string{true:"Aktif", false:"Nonaktif"}[row.Active] }</td><td><a href={ templ.URL("/backoffice/customers/"+row.ID) }>Detail</a></td></tr>
+			}
+			if len(page.Rows) == 0 {
+				<tr><td colspan="4" class="sub">Belum ada pelanggan.</td></tr>
+			}
+		</tbody></table></div>
+		<div class="actions">
+			if page.Page > 1 {
+				<a href={ templ.URL("?q="+url.QueryEscape(query)+"&page="+strconv.Itoa(page.Page-1)) }>Sebelumnya</a>
+			}
+			if page.HasMore {
+				<a href={ templ.URL("?q="+url.QueryEscape(query)+"&page="+strconv.Itoa(page.Page+1)) }>Berikutnya</a>
+			}
+		</div>
+	}
+}
+
+templ CustomerPage(s Session, c customer.Customer, purchases []customer.Purchase, f Form) {
+	@Shell("Detail pelanggan", s) {
+		<p><a href="/backoffice/customers">← Pelanggan</a></p><h1>{ c.Name }</h1>
+		<div class="card">@CustomerForm(c.ID, f)</div>
+		<div class="card"><h2>Riwayat pembelian 12 bulan</h2><table><thead><tr><th>Tanggal</th><th>Struk</th><th>Status</th><th class="num">Total</th></tr></thead><tbody>
+			for _, p := range purchases {
+				<tr><td>{ p.BusinessDate.Format("2006-01-02") }</td><td>{ p.Number }</td><td>{ p.Status }</td><td class="num">{ strconv.FormatInt(p.Total,10) }</td></tr>
+			}
+			if len(purchases) == 0 {
+				<tr><td colspan="4" class="sub">Belum ada transaksi pada periode ini.</td></tr>
+			}
+		</tbody></table></div>
+		<div class="card"><h2>Status</h2><form method="post" action={ "/backoffice/customers/"+c.ID+"/active" }>
+			<input type="hidden" name="active" value={ map[bool]string{true:"false", false:"true"}[c.Active] }/>
+			<button type="submit">{ map[bool]string{true:"Nonaktifkan", false:"Aktifkan"}[c.Active] }</button>
+		</form></div>
+		<div class="card"><h2>Gabungkan pelanggan</h2><p class="sub">Masukkan UUID pelanggan pemenang. Riwayat order tetap menyimpan identitas asli.</p>
+			<form method="post" action={ "/backoffice/customers/"+c.ID+"/merge" } class="inline"><input name="winner_id" required placeholder="UUID pelanggan pemenang"/><button class="danger" type="submit">Gabungkan</button></form>
+		</div>
+	}
+}
+
+templ CustomerForm(id string, f Form) {
+	<form class="grid" hx-post={ "/backoffice/customers/"+id } hx-swap="outerHTML">
+		@Field(f, "Nama", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+		@Field(f, "Telepon", "phone", "text", templ.Attributes{"maxlength": "32"})
+		@Field(f, "Email", "email", "email", templ.Attributes{"maxlength": "255"})
+		@Field(f, "Alamat", "address", "text", templ.Attributes{"maxlength": "255"})
+		@Field(f, "Catatan", "note", "text", templ.Attributes{"maxlength": "500"})
+		<div class="actions wide"><button class="primary" type="submit">Simpan</button></div>
+	</form>
+}

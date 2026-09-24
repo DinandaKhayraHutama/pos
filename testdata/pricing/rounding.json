@@ -1,0 +1,54 @@
+{
+  "note": "Final rounding of what the customer pays. rounding = total - (subtotal - discount + service + tax - tax_included); it may be negative.",
+  "vectors": [
+    {
+      "name": "nearest 100 rounds 12345 down to 12300",
+      "input": {"version": 2, "tax_mode": "exclusive", "service_rate_bp": 0, "service_taxable": true, "rounding_unit": 100, "rounding_mode": "nearest",
+        "lines": [{"unit_price": 12345, "quantity": 1, "tax_rate_bp": 0}]},
+      "expected": {"subtotal": 12345, "discount": 0, "service_charge": 0, "tax": 0, "tax_included": 0, "rounding": -45, "total": 12300,
+        "lines": [{"gross": 12345, "line_discount": 0, "bill_discount_share": 0, "service_share": 0, "tax_amount": 0, "tax_included": 0, "net_amount": 12345}]}
+    },
+    {
+      "name": "nearest 100 takes exactly half up (12350 to 12400)",
+      "input": {"version": 2, "tax_mode": "exclusive", "service_rate_bp": 0, "service_taxable": true, "rounding_unit": 100, "rounding_mode": "nearest",
+        "lines": [{"unit_price": 12350, "quantity": 1, "tax_rate_bp": 0}]},
+      "expected": {"subtotal": 12350, "discount": 0, "service_charge": 0, "tax": 0, "tax_included": 0, "rounding": 50, "total": 12400,
+        "lines": [{"gross": 12350, "line_discount": 0, "bill_discount_share": 0, "service_share": 0, "tax_amount": 0, "tax_included": 0, "net_amount": 12350}]}
+    },
+    {
+      "name": "up 500 (12001 to 12500)",
+      "input": {"version": 2, "tax_mode": "exclusive", "service_rate_bp": 0, "service_taxable": true, "rounding_unit": 500, "rounding_mode": "up",
+        "lines": [{"unit_price": 12001, "quantity": 1, "tax_rate_bp": 0}]},
+      "expected": {"subtotal": 12001, "discount": 0, "service_charge": 0, "tax": 0, "tax_included": 0, "rounding": 499, "total": 12500,
+        "lines": [{"gross": 12001, "line_discount": 0, "bill_discount_share": 0, "service_share": 0, "tax_amount": 0, "tax_included": 0, "net_amount": 12001}]}
+    },
+    {
+      "name": "down 1000 (12999 to 12000)",
+      "input": {"version": 2, "tax_mode": "exclusive", "service_rate_bp": 0, "service_taxable": true, "rounding_unit": 1000, "rounding_mode": "down",
+        "lines": [{"unit_price": 12999, "quantity": 1, "tax_rate_bp": 0}]},
+      "expected": {"subtotal": 12999, "discount": 0, "service_charge": 0, "tax": 0, "tax_included": 0, "rounding": -999, "total": 12000,
+        "lines": [{"gross": 12999, "line_discount": 0, "bill_discount_share": 0, "service_share": 0, "tax_amount": 0, "tax_included": 0, "net_amount": 12999}]}
+    },
+    {
+      "name": "rounding applies after service and tax (38462 to 38500)",
+      "input": {"version": 2, "tax_mode": "exclusive", "service_rate_bp": 500, "service_taxable": true, "rounding_unit": 100, "rounding_mode": "nearest",
+        "lines": [{"unit_price": 33300, "quantity": 1, "tax_rate_bp": 1000}]},
+      "expected": {"subtotal": 33300, "discount": 0, "service_charge": 1665, "tax": 3497, "tax_included": 0, "rounding": 38, "total": 38500,
+        "lines": [{"gross": 33300, "line_discount": 0, "bill_discount_share": 0, "service_share": 1665, "tax_amount": 3497, "tax_included": 0, "net_amount": 33300}]}
+    },
+    {
+      "name": "a unit of 1 means no rounding",
+      "input": {"version": 2, "tax_mode": "exclusive", "service_rate_bp": 0, "service_taxable": true, "rounding_unit": 1, "rounding_mode": "nearest",
+        "lines": [{"unit_price": 12345, "quantity": 1, "tax_rate_bp": 0}]},
+      "expected": {"subtotal": 12345, "discount": 0, "service_charge": 0, "tax": 0, "tax_included": 0, "rounding": 0, "total": 12345,
+        "lines": [{"gross": 12345, "line_discount": 0, "bill_discount_share": 0, "service_share": 0, "tax_amount": 0, "tax_included": 0, "net_amount": 12345}]}
+    },
+    {
+      "name": "a zero bill is never rounded up",
+      "input": {"version": 2, "tax_mode": "exclusive", "service_rate_bp": 0, "service_taxable": true, "rounding_unit": 1000, "rounding_mode": "up",
+        "lines": [{"unit_price": 5000, "quantity": 1, "tax_rate_bp": 0, "discount": {"kind": "percent", "value": 10000}}]},
+      "expected": {"subtotal": 5000, "discount": 5000, "service_charge": 0, "tax": 0, "tax_included": 0, "rounding": 0, "total": 0,
+        "lines": [{"gross": 5000, "line_discount": 5000, "bill_discount_share": 0, "service_share": 0, "tax_amount": 0, "tax_included": 0, "net_amount": 0}]}
+    }
+  ]
+}

@@ -222,6 +222,15 @@ class AppLocalizationsId extends AppLocalizations {
   String get posNoteHint => 'mis. tanpa cabai, saus extra';
 
   @override
+  String get posOrderDetails => 'Pelanggan & catatan';
+
+  @override
+  String get posLineNote => 'Catatan item';
+
+  @override
+  String get posLineNoteHint => 'mis. matang sempurna, tanpa bawang';
+
+  @override
   String get posOrderType => 'Tipe pesanan';
 
   @override
@@ -2008,4 +2017,363 @@ class AppLocalizationsId extends AppLocalizations {
 
   @override
   String get reportNotPermitted => 'Akun Anda tidak bisa membuka laporan ini.';
+
+  @override
+  String get posCreateCustomer => 'Buat pelanggan ini';
+
+  @override
+  String get reportByBrand => 'Penjualan per brand';
+
+  @override
+  String get posPaymentEwallet => 'E-wallet';
+
+  @override
+  String get posPaymentTransfer => 'Transfer bank';
+
+  @override
+  String get posPaymentOther => 'Lainnya';
+
+  @override
+  String get posSalesTypeCustom => 'Jenis penjualan lain';
+
+  @override
+  String get posPaymentReference => 'Nomor referensi';
+
+  @override
+  String get posPaymentReferenceRequired => 'Isi nomor referensi pembayaran';
+
+  @override
+  String get posPaymentManual =>
+      'Dicatat manual: pastikan pembayaran sudah masuk sebelum menyelesaikan penjualan';
+
+  @override
+  String get posCashShort => 'Uang tunai yang diterima kurang dari total';
+
+  @override
+  String get posServedBy => 'Dilayani oleh';
+
+  @override
+  String get posServedByRequired => 'Pilih siapa yang melayani pesanan ini';
+
+  @override
+  String get posTaxIncluded => 'PB1 termasuk harga';
+
+  @override
+  String get posRounding => 'Pembulatan';
+
+  @override
+  String get posCustomAmount => 'Nominal bebas';
+
+  @override
+  String get posCustomAmountLabel => 'Keterangan';
+
+  @override
+  String get posCustomAmountValue => 'Nominal';
+
+  @override
+  String get authorizeReasonCustomAmount =>
+      'Nominal bebas perlu persetujuan dari yang berwenang memasukkannya.';
+
+  @override
+  String get posItemDiscount => 'Diskon item';
+
+  @override
+  String get posItemDiscountLocked => 'Diskon item perlu persetujuan manajer';
+
+  @override
+  String get authorizeReasonItemDiscount =>
+      'Diskon item perlu PIN manajer atau pemilik.';
+
+  @override
+  String get posNamedDiscounts => 'Diskon tersimpan';
+
+  @override
+  String posNamedDiscountValue(String name) {
+    return 'Isi nilai untuk $name';
+  }
+
+  @override
+  String get posDiscountNeedsApproval => 'Perlu persetujuan';
+
+  @override
+  String get receiptServedBy => 'Pelayan';
+
+  @override
+  String get receiptManualPayment => '(manual)';
+
+  @override
+  String get employeeRoleCustom => 'Peran khusus';
+
+  @override
+  String get employeeRoleCustomHint => 'Izin peran ini diatur di Backoffice.';
+
+  @override
+  String get settingsBusinessDeviceOnly =>
+      'Nilai ini hanya berlaku di perangkat ini, sampai pemilik menyimpan pengaturan bisnis di Backoffice.';
+
+  @override
+  String get settingsBusinessManaged =>
+      'Pajak, biaya layanan, pembulatan, dan struk diatur di Backoffice.';
+
+  @override
+  String get settingsTaxMode => 'Mode PB1';
+
+  @override
+  String get settingsTaxModeInclusive => 'Termasuk harga';
+
+  @override
+  String get settingsTaxModeExclusive => 'Ditambahkan saat bayar';
+
+  @override
+  String get settingsRoundingNone => 'Tanpa pembulatan';
+
+  @override
+  String get billSave => 'Simpan bill';
+
+  @override
+  String billSendToKitchen(int count) {
+    return 'Kirim dapur ($count)';
+  }
+
+  @override
+  String billSaved(String number) {
+    return 'Bill $number tersimpan';
+  }
+
+  @override
+  String get billSentToKitchen => 'Terkirim ke dapur';
+
+  @override
+  String get billLineInKitchen => 'Di dapur';
+
+  @override
+  String get billNothingToSend => 'Semua item sudah dikirim ke dapur';
+
+  @override
+  String get billOpenBills => 'Bill terbuka';
+
+  @override
+  String billOpenBillsCount(int count) {
+    return 'Bill terbuka ($count)';
+  }
+
+  @override
+  String get billThisTill => 'Di till ini';
+
+  @override
+  String get billOtherTills => 'Till lain';
+
+  @override
+  String get billParkedWaiting => 'Diparkir, menunggu diambil alih';
+
+  @override
+  String billHeldBy(String register) {
+    return 'Dipegang $register';
+  }
+
+  @override
+  String get billOpenAction => 'Buka';
+
+  @override
+  String get billClaim => 'Ambil alih';
+
+  @override
+  String get billPark => 'Parkir bill';
+
+  @override
+  String get billParkHint =>
+      'Melepas bill agar till lain, atau till ini setelah ganti shift, dapat mengambil alih.';
+
+  @override
+  String get billParked => 'Bill diparkir';
+
+  @override
+  String billClaimed(String number) {
+    return 'Bill $number kini di till ini';
+  }
+
+  @override
+  String get billCancel => 'Batalkan bill';
+
+  @override
+  String get billCancelReason => 'Alasan';
+
+  @override
+  String get billCancelInKitchen => 'Item yang sudah dikirim ke dapur';
+
+  @override
+  String get billCancelRestock => 'Kembali ke stok';
+
+  @override
+  String get billCancelWaste => 'Terbuang';
+
+  @override
+  String get billCancelled => 'Bill dibatalkan';
+
+  @override
+  String get billCloseEditor => 'Tutup bill (tetap tersimpan)';
+
+  @override
+  String get billPrebill => 'Cetak pre-bill';
+
+  @override
+  String get billPrebillUnpaid => 'BELUM LUNAS';
+
+  @override
+  String get billPrebillTitle => 'PRE-BILL';
+
+  @override
+  String billPrebillRevision(int revision) {
+    return 'Revisi $revision';
+  }
+
+  @override
+  String get billPrebillEstimate =>
+      'Perkiraan. Nominal final tercantum pada struk lunas.';
+
+  @override
+  String get billNoOpenBills => 'Tidak ada bill terbuka';
+
+  @override
+  String billBoardCached(String time) {
+    return 'Offline. Daftar per $time';
+  }
+
+  @override
+  String get billBoardUnavailable => 'Bill di till lain memerlukan koneksi';
+
+  @override
+  String billItems(int count) {
+    return '$count item';
+  }
+
+  @override
+  String get billSavedLabel => 'Tersimpan';
+
+  @override
+  String get billUnsaved => 'Belum disimpan';
+
+  @override
+  String get billErrorNotEditable =>
+      'Bill ini tidak dapat diubah lagi di till ini.';
+
+  @override
+  String get billErrorOtherSession =>
+      'Bill ini milik laci lain. Parkir, lalu ambil alih dari laci yang sedang terbuka.';
+
+  @override
+  String get billErrorNeedsServer => 'Perlu koneksi ke server.';
+
+  @override
+  String get billErrorSyncFirst =>
+      'Masih ada perubahan yang belum sampai ke server. Sinkronkan, lalu coba lagi.';
+
+  @override
+  String get billErrorNotParked => 'Bill ini sudah dipegang till lain.';
+
+  @override
+  String get billErrorTableBusy =>
+      'Meja ini baru saja didudukkan oleh till lain.';
+
+  @override
+  String get billErrorOpenBillsRemaining =>
+      'Lunasi atau batalkan semua bill di meja ini dulu.';
+
+  @override
+  String get billErrorDecisionMissing =>
+      'Pilih kembali ke stok atau terbuang untuk setiap item yang sudah di dapur.';
+
+  @override
+  String get billErrorNetwork =>
+      'Tidak ada koneksi ke server. Coba lagi saat koneksi kembali.';
+
+  @override
+  String billErrorGeneric(String code) {
+    return 'Tidak dapat diselesaikan ($code).';
+  }
+
+  @override
+  String get kitchenBoard => 'Dapur';
+
+  @override
+  String get kitchenEmpty => 'Tidak ada pesanan di dapur';
+
+  @override
+  String get kitchenStatusQueued => 'Antre';
+
+  @override
+  String get kitchenStatusPreparing => 'Diproses';
+
+  @override
+  String get kitchenStatusReady => 'Siap';
+
+  @override
+  String get kitchenStatusServed => 'Tersaji';
+
+  @override
+  String get kitchenStatusCancelled => 'Dibatalkan';
+
+  @override
+  String get kitchenStart => 'Mulai';
+
+  @override
+  String get kitchenMarkReady => 'Siap';
+
+  @override
+  String get kitchenMarkServed => 'Tersaji';
+
+  @override
+  String kitchenSentAt(String time, String name) {
+    return 'Dikirim $time oleh $name';
+  }
+
+  @override
+  String get tableSeat => 'Dudukkan tamu';
+
+  @override
+  String tableSeatedFor(String duration) {
+    return 'Duduk $duration';
+  }
+
+  @override
+  String get tableClear => 'Kosongkan meja';
+
+  @override
+  String get tableCleared => 'Meja dikosongkan';
+
+  @override
+  String get tableNewBill => 'Bill baru';
+
+  @override
+  String get tablePaidStillSeated => 'Sudah dibayar, meja masih terpakai';
+
+  @override
+  String tableBillsOpen(int count) {
+    return '$count bill terbuka';
+  }
+
+  @override
+  String get tableMoveLater =>
+      'Memindahkan bill yang sudah duduk ke meja lain belum tersedia.';
+
+  @override
+  String shiftOpenBillsBlock(int count) {
+    return '$count bill terbuka masih milik laci ini. Lunasi, batalkan, atau parkir dulu sebelum menutup.';
+  }
+
+  @override
+  String get refundRestock => 'Barang kembali ke stok';
+
+  @override
+  String get refundRestockHint =>
+      'Biarkan mati untuk makanan yang sudah dibuat: itu bukan stok lagi.';
+
+  @override
+  String get deadLetterBillNotOwned =>
+      'Till ini tidak lagi memegang bill tersebut. Perubahannya disimpan di sini sebagai bukti dan tidak dapat dikirim ulang.';
+
+  @override
+  String orderFromBill(String number) {
+    return 'Melunasi bill $number';
+  }
 }

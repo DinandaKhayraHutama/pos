@@ -256,8 +256,12 @@ func run() error {
 	p50, p95, worst = percentiles(timings)
 	fmt.Printf("  INFO  Backoffice report page: p50 %s, p95 %s, max %s\n", p50, p95, worst)
 	check("the month's report page returns in under 200 ms (HTTP, p95)", p95 < budget, "p95 %s", p95)
-	check("the page shows the month's revenue", strings.Contains(page, views.Rupiah(report.Revenue)),
+	check("the page shows the month's receipts", strings.Contains(page, views.Rupiah(report.Revenue)),
 		"%s not on the page", views.Rupiah(report.Revenue))
+	check("the page shows the month's net sales", strings.Contains(page, views.Rupiah(report.NetSales)),
+		"%s not on the page", views.Rupiah(report.NetSales))
+	check("the page shows the waterfall", strings.Contains(page, "Waterfall penjualan"), "no waterfall section")
+	check("the page shows the brand breakdown", strings.Contains(page, "Per brand"), "no brand section")
 	check("the page says when its figures were computed", strings.Contains(page, "Data per"), "no freshness line")
 
 	// ---- consistency ---------------------------------------------------------------------
@@ -326,13 +330,27 @@ func run() error {
 			continue
 		}
 		revenue := strconv.FormatInt(report.Revenue, 10)
+		net := strconv.FormatInt(report.NetSales, 10)
 		switch format {
 		case reporting.FormatCSV:
-			check("the CSV carries the month's revenue", strings.Contains(body, "Pendapatan,"+revenue), "not found")
+			// Both ends of the waterfall, so an export that silently reverted
+			// to the old single-revenue summary fails here rather than in a
+			// meeting. The scope block is checked too: a file has to say what
+			// it covers and under which rules.
+			check("the CSV carries the month's net sales",
+				strings.Contains(body, "Penjualan bersih,"+net), "not found")
+			check("the CSV carries the month's receipts",
+				strings.Contains(body, "Total penerimaan penjualan,"+revenue), "not found")
+			check("the CSV names its calculation version",
+				strings.Contains(body, "Versi perhitungan,2"), "not found")
+			check("the CSV exports the brand dimension",
+				strings.Contains(body, "Brand") && strings.Contains(body, "Tanpa brand"), "not found")
 		case reporting.FormatXLSX:
-			sheet, err := firstSheet([]byte(body))
-			check("the XLSX carries the month's revenue as a number", err == nil && strings.Contains(sheet, "<v>"+revenue+"</v>"),
-				"not found (%v)", err)
+			sheet, err := sheetNamed([]byte(body), 2)
+			check("the XLSX carries the month's receipts as a number",
+				err == nil && strings.Contains(sheet, "<v>"+revenue+"</v>"), "not found (%v)", err)
+			check("the XLSX carries the month's net sales as a number",
+				err == nil && strings.Contains(sheet, "<v>"+net+"</v>"), "not found (%v)", err)
 		case reporting.FormatPDF:
 			check("the PDF is a PDF", strings.HasPrefix(body, "%PDF-"), "not a PDF")
 		}
@@ -636,12 +654,20 @@ func reference(ctx context.Context, owner *pgxpool.Pool, tenant, outlet string, 
 		       count(*) FILTER (WHERE o.status = 'cancelled'),
 		       COALESCE(sum(COALESCE(o.refunded_amount, o.total)) FILTER (WHERE o.status = 'cancelled'), 0)::bigint,
 		       count(*) FILTER (WHERE o.status = 'refunded'),
-		       COALESCE(sum(COALESCE(o.refunded_amount, o.total)) FILTER (WHERE o.status = 'refunded'), 0)::bigint
+		       COALESCE(sum(COALESCE(o.refunded_amount, o.total)) FILTER (WHERE o.status = 'refunded'), 0)::bigint,
+		       COALESCE(sum(o.subtotal) FILTER (WHERE o.status <> 'cancelled'), 0)::bigint,
+		       COALESCE(sum(o.discount) FILTER (WHERE o.status <> 'cancelled'), 0)::bigint,
+		       COALESCE(sum(o.subtotal - o.discount) FILTER (WHERE o.status = 'refunded'), 0)::bigint,
+		       count(*) FILTER (WHERE o.total <> o.subtotal - o.discount + o.tax + o.service_charge_amount
+		                          OR (o.status = 'refunded' AND o.refunded_amount > o.total))
 		FROM orders o WHERE `+where, args...).Scan(
 		&r.OrderCount, &r.Subtotal, &r.Discount, &r.Tax, &r.ServiceCharge, &r.Revenue, &r.DiscountedOrders,
-		&r.CancelledCount, &r.CancelledAmount, &r.RefundedCount, &r.RefundedAmount); err != nil {
+		&r.CancelledCount, &r.CancelledAmount, &r.RefundedCount, &r.RefundedAmount,
+		&r.GrossSales, &r.AllDiscount, &r.SalesReturns, &r.AnomalyCount); err != nil {
 		return r, err
 	}
+	r.CalculationVersion = 2
+	r.NetSales = r.Subtotal - r.Discount
 	if err := owner.QueryRow(ctx, `
 		SELECT COALESCE(sum(i.quantity), 0)::bigint,
 		       COALESCE(sum(COALESCE(i.unit_cost, 0) * i.quantity), 0)::bigint,
@@ -649,35 +675,43 @@ func reference(ctx context.Context, owner *pgxpool.Pool, tenant, outlet string, 
 		`+lineJoin+` WHERE `+where+` AND `+revenue, args...).Scan(&r.ItemsSold, &r.CostOfGoods, &r.CostedItems); err != nil {
 		return r, err
 	}
+	// The F1 definitions, spelled out again from the raw tables: the average
+	// is over NET SALES, and profit is net sales minus cost — tax and service
+	// charge raise what was collected and nothing else.
 	if r.OrderCount > 0 {
-		r.AverageOrder = r.Revenue / r.OrderCount
+		r.AverageOrder = r.NetSales / r.OrderCount
 	}
 	if r.ItemsSold > 0 {
 		r.CostCoverage = float64(r.CostedItems) / float64(r.ItemsSold)
 	}
-	r.GrossProfit = r.Revenue - r.CostOfGoods
+	r.GrossProfit = r.NetSales - r.CostOfGoods
 
 	var err error
 	scanLine := func(row pgx.CollectableRow) (reporting.Line, error) {
 		var l reporting.Line
-		return l, row.Scan(&l.Key, &l.Label, &l.Value, &l.Count)
+		return l, row.Scan(&l.Key, &l.Label, &l.Value, &l.Net, &l.Count)
 	}
+	// Branches and cashiers rank on NET, like the report: a branch charging
+	// service must not come out ahead on tariff alone.
 	if r.ByOutlet, err = query(ctx, owner, `
-		SELECT o.outlet_id::text, ot.name, sum(o.total)::bigint, count(*)
+		SELECT o.outlet_id::text, ot.name, sum(o.total)::bigint,
+		       sum(o.subtotal - o.discount)::bigint, count(*)
 		FROM orders o JOIN outlets ot ON ot.id = o.outlet_id
 		WHERE `+where+` AND `+revenue+`
-		GROUP BY 1, 2 ORDER BY 3 DESC, 2, 1`, args, scanLine); err != nil {
+		GROUP BY 1, 2 ORDER BY 4 DESC, 2, 1`, args, scanLine); err != nil {
 		return r, err
 	}
 	if r.ByCashier, err = query(ctx, owner, `
 		SELECT COALESCE(o.payload->>'cashier_id', 'name:' || o.cashier_name),
-		       (array_agg(o.cashier_name ORDER BY o.placed_at_ms DESC))[1], sum(o.total)::bigint, count(*)
+		       (array_agg(o.cashier_name ORDER BY o.placed_at_ms DESC))[1], sum(o.total)::bigint,
+		       sum(o.subtotal - o.discount)::bigint, count(*)
 		FROM orders o WHERE `+where+` AND `+revenue+`
-		GROUP BY 1 ORDER BY 3 DESC, 1`, args, scanLine); err != nil {
+		GROUP BY 1 ORDER BY 4 DESC, 1`, args, scanLine); err != nil {
 		return r, err
 	}
+	// A tender has no net: money arrives as a receipt total.
 	if r.ByPayment, err = query(ctx, owner, `
-		SELECT o.payment_method, o.payment_method, sum(o.total)::bigint, count(*)
+		SELECT o.payment_method, o.payment_method, sum(o.total)::bigint, 0::bigint, count(*)
 		FROM orders o WHERE `+where+` AND `+revenue+`
 		GROUP BY 1 ORDER BY 3 DESC, 1`, args, scanLine); err != nil {
 		return r, err
@@ -686,25 +720,45 @@ func reference(ctx context.Context, owner *pgxpool.Pool, tenant, outlet string, 
 		r.ByPayment[i].Label = reporting.PaymentLabel(r.ByPayment[i].Key)
 	}
 	if r.Daily, err = query(ctx, owner, `
-		SELECT o.business_date, sum(o.total)::bigint, count(*)
+		SELECT o.business_date, sum(o.total)::bigint, sum(o.subtotal - o.discount)::bigint, count(*)
 		FROM orders o WHERE `+where+` AND `+revenue+` GROUP BY 1 ORDER BY 1`, args,
 		func(row pgx.CollectableRow) (reporting.DayLine, error) {
 			var d reporting.DayLine
-			return d, row.Scan(&d.Date, &d.Revenue, &d.Orders)
+			return d, row.Scan(&d.Date, &d.Revenue, &d.NetSales, &d.Orders)
+		}); err != nil {
+		return r, err
+	}
+	// The weekday comes from the BUSINESS date, never from a timestamp: a sale
+	// rung up after midnight belongs to the trading day it was part of.
+	if r.ByWeekday, err = query(ctx, owner, `
+		SELECT extract(isodow FROM o.business_date)::int, sum(o.total)::bigint,
+		       sum(o.subtotal - o.discount)::bigint, count(*), count(DISTINCT o.business_date)::bigint
+		FROM orders o WHERE `+where+` AND `+revenue+` GROUP BY 1 ORDER BY 1`, args,
+		func(row pgx.CollectableRow) (reporting.WeekdayLine, error) {
+			var w reporting.WeekdayLine
+			var isoDow int
+			err := row.Scan(&isoDow, &w.Revenue, &w.NetSales, &w.Orders, &w.Days)
+			w.Weekday = time.Weekday(isoDow % 7)
+			return w, err
 		}); err != nil {
 		return r, err
 	}
 	if r.ByHour, err = query(ctx, owner, `
 		SELECT extract(hour FROM (to_timestamp(o.placed_at_ms / 1000.0) AT TIME ZONE t.timezone))::int,
-		       sum(o.total)::bigint, count(*)
+		       sum(o.total)::bigint, sum(o.subtotal - o.discount)::bigint, count(*)
 		FROM orders o JOIN tenants t ON t.id = o.tenant_id
 		WHERE `+where+` AND `+revenue+` GROUP BY 1 ORDER BY 1`, args,
 		func(row pgx.CollectableRow) (reporting.HourLine, error) {
 			var h reporting.HourLine
-			return h, row.Scan(&h.Hour, &h.Revenue, &h.Orders)
+			return h, row.Scan(&h.Hour, &h.Revenue, &h.NetSales, &h.Orders)
 		}); err != nil {
 		return r, err
 	}
+	// Product NET is left at zero here on purpose: recomputing the
+	// largest-remainder allocation a second time would only prove the script
+	// agrees with itself. The report's own product net is checked as an
+	// INVARIANT instead — it must sum to net sales, and each category's items
+	// must sum to that category — in compare() below.
 	if r.ByProduct, err = query(ctx, owner, `
 		SELECT COALESCE(i.payload->>'product_id', 'name:' || i.product_name),
 		       COALESCE(p.name, (array_agg(i.product_name ORDER BY o.placed_at_ms DESC))[1]),
@@ -802,10 +856,16 @@ func compare(scope string, got, want reporting.Report) {
 		{"discounted orders", got.DiscountedOrders, want.DiscountedOrders},
 		{"cancelled", [2]int64{got.CancelledCount, got.CancelledAmount}, [2]int64{want.CancelledCount, want.CancelledAmount}},
 		{"refunded", [2]int64{got.RefundedCount, got.RefundedAmount}, [2]int64{want.RefundedCount, want.RefundedAmount}},
+		{"gross sales", got.GrossSales, want.GrossSales},
+		{"waterfall discounts", got.AllDiscount, want.AllDiscount},
+		{"sales returns", got.SalesReturns, want.SalesReturns},
+		{"net sales", got.NetSales, want.NetSales},
+		{"anomalies", got.AnomalyCount, want.AnomalyCount},
 		{"by outlet", got.ByOutlet, want.ByOutlet},
 		{"daily", got.Daily, want.Daily},
+		{"by weekday", got.ByWeekday, want.ByWeekday},
 		{"by category", got.ByCategory, want.ByCategory},
-		{"by product", got.ByProduct, want.ByProduct},
+		{"by product", withoutProductNet(got.ByProduct), withoutProductNet(want.ByProduct)},
 		{"by cashier", got.ByCashier, want.ByCashier},
 		{"by payment", got.ByPayment, want.ByPayment},
 		{"by hour", got.ByHour, want.ByHour},
@@ -813,14 +873,96 @@ func compare(scope string, got, want reporting.Report) {
 	} {
 		check(scope+": "+f.name, reflect.DeepEqual(f.got, f.want), "rollup %s, raw %s", brief(f.got), brief(f.want))
 	}
-	var net int64
-	for _, c := range got.ByCategory {
-		net += c.Net
+
+	// The waterfall has to close on its own terms, and land on the same net
+	// sales the revenue transactions give. These are the two equations F1
+	// exists to make true.
+	check(scope+": the waterfall closes",
+		got.GrossSales-got.AllDiscount-got.SalesReturns == got.NetSales,
+		"%d - %d - %d != %d", got.GrossSales, got.AllDiscount, got.SalesReturns, got.NetSales)
+	check(scope+": receipts are net sales plus tax and service",
+		got.NetSales+got.Tax+got.ServiceCharge == got.Revenue,
+		"%d + %d + %d != %d", got.NetSales, got.Tax, got.ServiceCharge, got.Revenue)
+	check(scope+": profit is net sales minus cost, never takings minus cost",
+		got.GrossProfit == got.NetSales-got.CostOfGoods,
+		"%d != %d - %d", got.GrossProfit, got.NetSales, got.CostOfGoods)
+
+	// Every breakdown that carries net must add up to the same net. Checked as
+	// an invariant rather than against a second implementation of the
+	// largest-remainder split: recomputing the allocation here would only
+	// prove the script agrees with itself.
+	for _, d := range []struct {
+		name  string
+		total int64
+	}{
+		{"categories", sumOf(got.ByCategory, func(c reporting.CategorySales) int64 { return c.Net })},
+		{"brands", sumOf(got.ByBrand, func(c reporting.CategorySales) int64 { return c.Net })},
+		{"products", sumOf(got.ByProduct, func(p reporting.ProductLine) int64 { return p.NetSales })},
+		{"cashiers", sumOf(got.ByCashier, func(l reporting.Line) int64 { return l.Net })},
+		{"outlets", sumOf(got.ByOutlet, func(l reporting.Line) int64 { return l.Net })},
+		{"hours", sumOf(got.ByHour, func(h reporting.HourLine) int64 { return h.NetSales })},
+		{"days", sumOf(got.Daily, func(d reporting.DayLine) int64 { return d.NetSales })},
+		{"weekdays", sumOf(got.ByWeekday, func(w reporting.WeekdayLine) int64 { return w.NetSales })},
+	} {
+		check(scope+": "+d.name+" add up to net sales", d.total == got.NetSales,
+			"%d vs %d", d.total, got.NetSales)
 	}
-	check(scope+": category net adds up to subtotal minus discount", net == got.Subtotal-got.Discount,
-		"%d vs %d", net, got.Subtotal-got.Discount)
-	fmt.Printf("  INFO  %s: %d orders, revenue %s, %d categories, %d products\n",
-		scope, got.OrderCount, views.Rupiah(got.Revenue), len(got.ByCategory), len(got.ByProduct))
+	if len(got.ByBrand) == 1 {
+		check(scope+": receipts without a brand snapshot remain unbranded",
+			got.ByBrand[0].Key == reporting.Uncategorised, "brand key is %q", got.ByBrand[0].Key)
+	}
+
+	// And the items inside a category add up to that category's own net: the
+	// two splits come out of one allocation, so a remainder cannot land in one
+	// and not the other.
+	byCategory := map[string]int64{}
+	for _, c := range got.ByCategory {
+		byCategory[c.Key] = c.Net
+	}
+	mismatched := 0
+	for _, g := range got.ByProductInCategory {
+		inside := sumOf(g.Products, func(p reporting.ProductLine) int64 { return p.NetSales })
+		// Only the top items are listed, so a category with more than the cap
+		// legitimately sums to less than its own net.
+		if len(g.Products) < reporting.MaxProductsPerCategory && inside != byCategory[g.CategoryKey] {
+			mismatched++
+		}
+	}
+	check(scope+": items inside a category add up to that category", mismatched == 0,
+		"%d categories disagree", mismatched)
+
+	fmt.Printf("  INFO  %s: %d orders, net sales %s, receipts %s, %d categories, %d products\n",
+		scope, got.OrderCount, views.Rupiah(got.NetSales), views.Rupiah(got.Revenue),
+		len(got.ByCategory), len(got.ByProduct))
+}
+
+func sumOf[T any](rows []T, of func(T) int64) int64 {
+	var total int64
+	for _, row := range rows {
+		total += of(row)
+	}
+	return total
+}
+
+// withoutProductNet drops the allocated net and re-sorts on what the raw
+// builder can produce, so the struct comparison stays about the figures both
+// sides compute the same way.
+func withoutProductNet(lines []reporting.ProductLine) []reporting.ProductLine {
+	out := make([]reporting.ProductLine, len(lines))
+	copy(out, lines)
+	for i := range out {
+		out[i].NetSales = 0
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Revenue != out[j].Revenue {
+			return out[i].Revenue > out[j].Revenue
+		}
+		if out[i].Quantity != out[j].Quantity {
+			return out[i].Quantity > out[j].Quantity
+		}
+		return out[i].Key < out[j].Key
+	})
+	return out
 }
 
 func brief(v any) string {
@@ -840,13 +982,16 @@ func percentiles(ds []time.Duration) (p50, p95, worst time.Duration) {
 	return at(0.5), at(0.95), at(1)
 }
 
-func firstSheet(xlsx []byte) (string, error) {
+// sheetNamed reads one worksheet by its position. Sheet 1 is the scope block
+// — what the file covers and under which rules — and the figures start on 2.
+func sheetNamed(xlsx []byte, index int) (string, error) {
 	zr, err := zip.NewReader(bytes.NewReader(xlsx), int64(len(xlsx)))
 	if err != nil {
 		return "", err
 	}
+	want := fmt.Sprintf("xl/worksheets/sheet%d.xml", index)
 	for _, f := range zr.File {
-		if f.Name == "xl/worksheets/sheet1.xml" {
+		if f.Name == want {
 			rc, err := f.Open()
 			if err != nil {
 				return "", err
@@ -856,7 +1001,7 @@ func firstSheet(xlsx []byte) (string, error) {
 			return string(b), err
 		}
 	}
-	return "", fmt.Errorf("no first sheet")
+	return "", fmt.Errorf("no sheet %d", index)
 }
 
 func envOr(key, fallback string) string {

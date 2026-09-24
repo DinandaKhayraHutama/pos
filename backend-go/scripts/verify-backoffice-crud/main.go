@@ -169,6 +169,10 @@ func run() error {
 	categoryID := firstMatch(regexp.MustCompile(`/backoffice/catalogue/categories/(`+uuid+`)"`), body)
 	check("a category is created", status == http.StatusOK && categoryID != "", "got %d: %s", status, truncate(body))
 
+	status, _, body = s.post("/backoffice/catalogue/brands", url.Values{"name": {"Indomilk"}})
+	brandID := firstMatch(regexp.MustCompile(`/backoffice/catalogue/brands/(`+uuid+`)"`), body)
+	check("a brand is created", status == http.StatusOK && brandID != "", "got %d: %s", status, truncate(body))
+
 	status, headers, body := s.post("/backoffice/catalogue/products", url.Values{
 		"name": {"Kopi Susu"}, "category_id": {categoryID}, "price": {"25000.50"}, "icon_key": {"restaurant"},
 	})
@@ -177,7 +181,7 @@ func run() error {
 		"got %d redirect=%q: %s", status, headers.Get("HX-Redirect"), truncate(body))
 
 	status, headers, _ = s.post("/backoffice/catalogue/products", url.Values{
-		"name": {"Kopi Susu"}, "category_id": {categoryID}, "price": {"25.000"}, "sku": {"KS-01"},
+		"name": {"Kopi Susu"}, "category_id": {categoryID}, "brand_id": {brandID}, "price": {"25.000"}, "sku": {"KS-01"},
 		"icon_key": {"restaurant"}, "available": {"on"},
 	})
 	productID := firstMatch(regexp.MustCompile(`/backoffice/catalogue/products/(`+uuid+`)$`), headers.Get("HX-Redirect"))
@@ -188,6 +192,8 @@ func run() error {
 	s.refresh(body)
 	check("the product page renders with its price as typed", status == http.StatusOK && strings.Contains(body, `value="25000"`),
 		"got %d", status)
+	check("the product page renders with its brand selected",
+		strings.Contains(body, `value="`+brandID+`" selected`), "brand not selected in %s", truncate(body))
 
 	status, _, body = s.post("/backoffice/catalogue/products/"+productID+"/variants",
 		url.Values{"name": {"Large"}, "price_delta": {"5.000"}})
@@ -313,6 +319,53 @@ func run() error {
 		status == http.StatusOK && strings.Contains(body, "PIN harus tepat 4 angka"), "got %d: %s", status, truncate(body))
 	check("a refused PIN is not echoed back into the page", !strings.Contains(body, `value="98a7"`), "the PIN came back")
 
+	// ---- Fase 3: roles and business settings ------------------------------------
+
+	fmt.Println("roles and business settings")
+
+	status, headers, _ = s.post("/backoffice/staff/roles", url.Values{
+		"name": {"Gudang"}, "permissions": {"adjustStock", "viewDailySummary"}, "pos_access": {"on"},
+	})
+	roleID := firstMatch(regexp.MustCompile(`/backoffice/staff/roles/(`+uuid+`)$`), headers.Get("HX-Redirect"))
+	check("a custom role is created", status == http.StatusOK && roleID != "", "got %d", status)
+
+	// The till activated above never reported roles-v1: it would read a custom
+	// role as a cashier who may sell, so none may be handed out yet.
+	status, _, body = s.post("/backoffice/staff/"+cashierID, url.Values{"name": {"Sari"}, "role": {roleID}})
+	check("a custom role is not handed out while a till cannot read it",
+		status == http.StatusOK && strings.Contains(body, "belum mendukung peran kustom"), "got %d: %s", status, truncate(body))
+
+	s.post("/backoffice/staff/roles", url.Values{
+		"name": {"Terlalu Kuasa"}, "permissions": {"launchRockets"}, "pos_access": {"on"},
+	})
+	var unknown int
+	_ = owner.QueryRow(ctx, `SELECT count(*) FROM roles WHERE tenant_id = $1 AND 'launchRockets' = ANY(permissions)`,
+		provisioned.TenantID).Scan(&unknown)
+	check("an unknown permission is never stored", unknown == 0, "found %d", unknown)
+
+	_, body = s.get("/backoffice/settings")
+	s.refresh(body)
+	status, _, _ = s.post("/backoffice/settings/business", url.Values{
+		"tax_rate": {"11"}, "tax_mode": {"exclusive"}, "service_rate": {"5"}, "service_taxable": {"on"},
+		"rounding_unit": {"0"}, "rounding_mode": {"nearest"},
+	})
+	settingsRows := till.pull("business_settings")
+	var business map[string]any
+	for _, row := range settingsRows {
+		business = row
+	}
+	check("the business settings reach the till", status == http.StatusOK && business != nil &&
+		business["tax_rate_bp"] == float64(1100), "got %d %v", status, business)
+
+	status, _, _ = s.post("/backoffice/settings/profile", url.Values{"name": {"Verify CRUD"}, "timezone": {"Asia/Jayapura"}})
+	var zone string
+	_ = owner.QueryRow(ctx, `SELECT timezone FROM tenants WHERE id = $1`, provisioned.TenantID).Scan(&zone)
+	check("the owner moves the business to WIT", status == http.StatusOK && zone == "Asia/Jayapura",
+		"got %d %q", status, zone)
+	status, _, _ = s.post("/backoffice/settings/profile", url.Values{"name": {"Verify CRUD"}, "timezone": {"Europe/London"}})
+	_ = owner.QueryRow(ctx, `SELECT timezone FROM tenants WHERE id = $1`, provisioned.TenantID).Scan(&zone)
+	check("a zone outside the three Indonesian ones is refused", zone == "Asia/Jayapura", "got %d %q", status, zone)
+
 	// ---- what the till pulls -------------------------------------------------
 
 	fmt.Println("what the till pulls")
@@ -327,10 +380,14 @@ func run() error {
 	categories := till.pull("categories")
 	check("the category reaches the till", categories[categoryID]["name"] == "Minuman", "got %v", categories[categoryID])
 
+	brands := till.pull("brands")
+	check("the brand reaches the till", brands[brandID]["name"] == "Indomilk", "got %v", brands[brandID])
+
 	products := till.pull("products")
 	product := products[productID]
 	check("the product reaches the till with the price the owner typed",
 		product["price"] == float64(25_000) && product["sku"] == "KS-01", "got %v", product)
+	check("the product's brand reaches the till", product["brand_id"] == brandID, "got %v", product["brand_id"])
 
 	variants := till.pull("product_variants")
 	var large map[string]any
@@ -466,6 +523,115 @@ func run() error {
 		status == http.StatusOK && strings.Contains(body, "tidak ada harga yang diubah"), "got %d: %s", status, truncate(body))
 	check("and the till sees no change", len(till.pullAfter("products", till.cursor("products"))) == 0, "a row moved")
 
+	// ---- catalogue import/export (Fase 2) --------------------------------------
+
+	fmt.Println("catalogue import/export")
+
+	status, exported := s.get("/backoffice/catalogue/products/export")
+	check("the catalogue exports as CSV, header first with no title row",
+		status == http.StatusOK && strings.Contains(exported[:min(200, len(exported))], "id,name,category_id"),
+		"got %d: %s", status, truncate(exported))
+	check("the export carries the product's stable id, sku and brand",
+		strings.Contains(exported, productID) && strings.Contains(exported, "KS-01") && strings.Contains(exported, brandID),
+		"got %s", truncate(exported))
+
+	// Re-uploading the export completely unmodified must be a pure no-op —
+	// "ekspor–impor tanpa menggandakan entitas", the phase's own pass
+	// criterion, made concrete — and with nothing to apply, no confirm form
+	// is even offered.
+	status, body = s.upload("/backoffice/catalogue/products/import", "file", "produk.csv", []byte(exported))
+	check("re-uploading the unmodified export previews as a pure no-op",
+		status == http.StatusOK && strings.Contains(body, "0 produk baru, 0 diperbarui, 1 tidak berubah") &&
+			strings.Contains(body, "Tidak ada yang perlu diterapkan"),
+		"got %d: %s", status, truncate(body))
+	check("and no confirm form is offered for nothing to apply",
+		!strings.Contains(body, "file_b64"), "a confirm form appeared: %s", truncate(body))
+
+	// A real change: reprice the existing product AND add a brand-new one in
+	// the same file, by editing the export rather than typing UUIDs by hand —
+	// the shape a merchant bulk-editing a downloaded export actually has.
+	edited := strings.Replace(exported, ",27500,", ",29000,", 1)
+	check("the price cell was actually found and replaced", edited != exported, "export did not contain ,27500,")
+	edited += "," + "Es Teh," + categoryID + ",,,,ET-01,5000,,,,restaurant,0,ya,tidak\n"
+
+	status, body = s.upload("/backoffice/catalogue/products/import", "file", "produk.csv", []byte(edited))
+	check("a file that both updates and creates previews with both counts",
+		status == http.StatusOK && strings.Contains(body, "1 produk baru, 1 diperbarui, 0 tidak berubah"),
+		"got %d: %s", status, truncate(body))
+
+	fileB64 := firstMatch(regexp.MustCompile(`name="file_b64" value="([^"]*)"`), body)
+	fileSHA256 := firstMatch(regexp.MustCompile(`name="file_sha256" value="([^"]*)"`), body)
+	check("the preview carries the file forward to confirm", fileB64 != "", "no file_b64 in %s", truncate(body))
+
+	cursor = till.cursor("products")
+	status, _, body = s.post("/backoffice/catalogue/products/import/confirm", url.Values{"file_b64": {fileB64}, "file_sha256": {fileSHA256}})
+	check("the preview is confirmed and applied",
+		status == http.StatusOK && strings.Contains(body, "1 produk baru, 1 diperbarui, 0 tidak berubah"),
+		"got %d: %s", status, truncate(body))
+
+	changed = till.pullAfter("products", cursor)
+	check("the repriced product reaches the till", changed[productID]["price"] == float64(29_000), "got %v", changed[productID])
+	var newProductID string
+	for id, p := range changed {
+		if p["sku"] == "ET-01" {
+			newProductID = id
+		}
+	}
+	check("the new product from the same file also reaches the till",
+		newProductID != "" && changed[newProductID]["name"] == "Es Teh" && changed[newProductID]["price"] == float64(5_000),
+		"got %v", changed)
+
+	status, body = s.upload("/backoffice/catalogue/products/import", "file", "bad.csv", []byte("id,name,fantasi\n"+productID+",X,Y\n"))
+	check("an unknown column is refused by name, not silently ignored",
+		status == http.StatusOK && strings.Contains(body, "fantasi") && strings.Contains(body, "tidak dikenal"),
+		"got %d: %s", status, truncate(body))
+
+	// Three columns, not the legacy two — this is the general importer, and
+	// its header lacks name/category_id, so a row with no existing match
+	// cannot become a product.
+	status, body = s.upload("/backoffice/catalogue/products/import", "file", "bad2.csv",
+		[]byte("sku,price,description\nNEW-SKU-NOT-CREATABLE,1000,x\n"))
+	check("a create-shaped row is refused when the header cannot create",
+		status == http.StatusOK && strings.Contains(body, "kolom"),
+		"got %d: %s", status, truncate(body))
+
+	// ---- customers -----------------------------------------------------------
+
+	fmt.Println("customers")
+	cursor = till.cursor("customers")
+	status, _, _ = s.post("/backoffice/customers", url.Values{"name": {"Sari"}, "phone": {"0812-3456"}, "email": {"sari@example.test"}})
+	status, body = s.get("/backoffice/customers?q=Sari")
+	customerID := firstMatch(regexp.MustCompile(`/backoffice/customers/(`+uuid+`)`), body)
+	check("a customer is created and searchable", status == http.StatusOK && customerID != "", "got %d: %s", status, truncate(body))
+	changed = till.pullAfter("customers", cursor)
+	check("the customer reaches the till feed", changed[customerID]["name"] == "Sari", "got %v", changed[customerID])
+	status, exportedCustomers := s.get("/backoffice/customers/export")
+	check("customers export with stable ids", status == http.StatusOK && strings.Contains(exportedCustomers, customerID) && strings.Contains(exportedCustomers, "Sari"), "got %d: %s", status, truncate(exportedCustomers))
+	var exportAudits int
+	if err := owner.QueryRow(ctx, `SELECT count(*) FROM customer_export_events WHERE tenant_id=$1`, provisioned.TenantID).Scan(&exportAudits); err != nil {
+		return err
+	}
+	check("exporting customer personal data writes one audit row", exportAudits == 1, "got %d", exportAudits)
+	status, _ = s.upload("/backoffice/customers/import", "file", "pelanggan.csv", []byte(exportedCustomers))
+	check("an unchanged customer export imports without duplication", status == http.StatusOK, "got %d", status)
+	status, _, _ = s.post("/backoffice/customers", url.Values{"name": {"Sari Duplikat"}, "phone": {"0812 3456"}})
+	status, body = s.get("/backoffice/customers?q=Sari")
+	loserID := ""
+	for _, candidate := range allMatches(regexp.MustCompile(`/backoffice/customers/(`+uuid+`)`), body) {
+		if candidate != customerID {
+			loserID = candidate
+			break
+		}
+	}
+	check("duplicate contacts are visibly flagged", status == http.StatusOK && loserID != "" && strings.Contains(body, "kontak duplikat"), "got %d: %s", status, truncate(body))
+	if loserID != "" {
+		cursor = till.cursor("customers")
+		status, _, _ = s.post("/backoffice/customers/"+loserID+"/merge", url.Values{"winner_id": {customerID}})
+		check("an explicit merge tombstones the loser", status == http.StatusOK, "got %d", status)
+		changed = till.pullAfter("customers", cursor)
+		check("the merged customer reaches the till as a tombstone", changed[loserID]["deleted_at_ms"] != nil, "got %v", changed[loserID])
+	}
+
 	// ---- a manager's view ------------------------------------------------------
 
 	fmt.Println("a manager's view")
@@ -498,6 +664,8 @@ func run() error {
 		strings.Contains(body, `href="/backoffice/stock"`), "no stock link")
 	status, _ = manager.get("/backoffice/stock")
 	check("a manager can open stock", status == http.StatusOK, "got %d", status)
+	status, body = manager.get("/backoffice/customers")
+	check("a manager can manage customers", status == http.StatusOK && strings.Contains(body, "Pelanggan"), "got %d", status)
 
 	status, _, _ = manager.post("/backoffice/outlets/"+outletID+"/active", url.Values{"active": {""}})
 	check("the manager closes the branch", status == http.StatusOK, "got %d", status)
@@ -510,14 +678,20 @@ func run() error {
 
 	for _, path := range []string{
 		"/backoffice/catalogue/categories", "/backoffice/catalogue/categories/" + categoryID,
+		"/backoffice/catalogue/brands", "/backoffice/catalogue/brands/" + brandID,
 		"/backoffice/catalogue/products", "/backoffice/catalogue/products/new",
 		"/backoffice/catalogue/products/import", "/backoffice/catalogue/products?q=kopi",
 		"/backoffice/catalogue/modifiers", "/backoffice/catalogue/modifiers/" + groupID,
 		"/backoffice/promos", "/backoffice/promos/new", "/backoffice/promos/" + promoID,
 		"/backoffice/staff", "/backoffice/staff/new", "/backoffice/staff/" + cashierID,
 		"/backoffice/outlets", "/backoffice/outlets/" + outletID, "/backoffice/devices",
+		"/backoffice/customers", "/backoffice/customers/" + customerID,
 		floorPath,
 		"/backoffice/stock", "/backoffice/stock?outlet=" + outletID + "&q=kopi", stockPath,
+		"/backoffice/settings", "/backoffice/settings/outlets", "/backoffice/settings/outlets/" + outletID,
+		"/backoffice/settings/sales-types", "/backoffice/settings/payments", "/backoffice/discounts",
+		"/backoffice/staff/roles", "/backoffice/staff/roles/new", "/backoffice/staff/roles/" + roleID,
+		"/backoffice/account",
 	} {
 		status, _ := s.get(path)
 		check(path+" renders", status == http.StatusOK, "got %d", status)
@@ -527,6 +701,20 @@ func run() error {
 	check("an unknown product is a 404, not a 500", status == http.StatusNotFound, "got %d", status)
 	status, _ = s.get("/backoffice/catalogue/products/not-a-uuid")
 	check("a malformed id is a 404, not a 500", status == http.StatusNotFound, "got %d", status)
+
+	// ---- the account (Fase 3) --------------------------------------------------
+
+	fmt.Println("the account")
+
+	const newPass = "verify-owner-new-password"
+	_, body = s.get("/backoffice/account")
+	s.refresh(body)
+	s.post("/backoffice/account/password", url.Values{"current_password": {"not-the-password"}, "password": {newPass}})
+	_, err = signIn(baseURL, ownerEmail, newPass)
+	check("a wrong current password changes nothing", err != nil, "the new password was accepted")
+	status, _, _ = s.post("/backoffice/account/password", url.Values{"current_password": {ownerPass}, "password": {newPass}})
+	_, err = signIn(baseURL, ownerEmail, newPass)
+	check("the owner changes their own password", status == http.StatusOK && err == nil, "got %d, %v", status, err)
 
 	return nil
 }

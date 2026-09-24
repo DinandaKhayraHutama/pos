@@ -40,12 +40,12 @@ class SplashPage extends ConsumerWidget {
                       const SizedBox(height: AppDimensions.space20),
                       Text(
                         'JustClick POS',
-                        style:
-                            Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          color: design.textHigh,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 2,
-                        ),
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(
+                              color: design.textHigh,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 2,
+                            ),
                       ),
                       const SizedBox(height: AppDimensions.space6),
                       Text(

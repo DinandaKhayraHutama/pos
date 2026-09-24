@@ -112,3 +112,52 @@ func (h *Handler) tillRecovery(w http.ResponseWriter, r *http.Request) {
 	out, err := h.ingest.RecoveryStatus(r.Context(), bindingFrom(r.Context()), r.Header.Get("X-Cashier-Token"), chi.URLParam(r, "recoveryID"))
 	h.tillReply(w, out, err)
 }
+
+// Fase 4: saved bills and table seatings. Each handler only translates; the
+// domain decides who may do what and answers a refusal as a 409 with its code.
+
+func (h *Handler) tillBillBoard(w http.ResponseWriter, r *http.Request) {
+	out, err := h.ingest.BillBoard(r.Context(), bindingFrom(r.Context()), r.Header.Get("X-Cashier-Token"))
+	h.tillReply(w, out, err)
+}
+
+func (h *Handler) tillBillDetail(w http.ResponseWriter, r *http.Request) {
+	out, err := h.ingest.BillDetail(r.Context(), bindingFrom(r.Context()), r.Header.Get("X-Cashier-Token"), chi.URLParam(r, "billID"))
+	h.tillReply(w, out, err)
+}
+
+func (h *Handler) tillBillPark(w http.ResponseWriter, r *http.Request) {
+	var in wire.TillBillParkRequest
+	if !h.tillBody(w, r, &in) {
+		return
+	}
+	out, err := h.ingest.ParkBill(r.Context(), bindingFrom(r.Context()), r.Header.Get("X-Cashier-Token"), chi.URLParam(r, "billID"), in)
+	h.tillReply(w, out, err)
+}
+
+func (h *Handler) tillBillClaim(w http.ResponseWriter, r *http.Request) {
+	var in wire.TillOperationRequest
+	if !h.tillBody(w, r, &in) {
+		return
+	}
+	out, err := h.ingest.ClaimBill(r.Context(), bindingFrom(r.Context()), r.Header.Get("X-Cashier-Token"), chi.URLParam(r, "billID"), in.OperationId)
+	h.tillReply(w, out, err)
+}
+
+func (h *Handler) tillTableOpen(w http.ResponseWriter, r *http.Request) {
+	var in wire.TableSessionOpenRequest
+	if !h.tillBody(w, r, &in) {
+		return
+	}
+	out, err := h.ingest.OpenTableSession(r.Context(), bindingFrom(r.Context()), r.Header.Get("X-Cashier-Token"), in)
+	h.tillReply(w, out, err)
+}
+
+func (h *Handler) tillTableClose(w http.ResponseWriter, r *http.Request) {
+	var in wire.TillOperationRequest
+	if !h.tillBody(w, r, &in) {
+		return
+	}
+	out, err := h.ingest.CloseTableSession(r.Context(), bindingFrom(r.Context()), r.Header.Get("X-Cashier-Token"), chi.URLParam(r, "sessionID"), in.OperationId)
+	h.tillReply(w, out, err)
+}

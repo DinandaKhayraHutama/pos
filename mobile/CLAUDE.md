@@ -27,7 +27,7 @@ A `== EmployeeRole.manager` comparison in the UI is a bug waiting for the fourth
 
 **The till belongs to cashiers only.** `sell` and `openCloseShift` are the `_till` set, and neither a manager nor an owner holds them — their focus is the data and the money. A manager or owner covering the counter signs in on a cashier account, which is also the honest outcome for attribution: the sale belongs to whoever was actually at the till and the drawer to whoever counted it. Consequences that are easy to miss:
 
-- `homeRouteFor` sends **everyone except a cashier** to `/dashboard`; a manager landing on `/` would be bounced straight back out.
+- `homeRouteFor` sends **everyone except a cashier** to `/dashboard`; a manager landing on `/` would be bounced straight back out. A custom role (Fase 3) lands through `homeRouteForAccess`: `/` if it may sell, `/dashboard` if it may read the summary, else `/settings`.
 - `'/'` is in `routePermissions`. Hiding the tab is presentation; the router is what stops an owner typing `/` — one keystroke away on the web demo.
 - Anything added to `routePermissions` must keep every role's `homeRouteFor` reachable, or `redirect` ping-pongs between two closed doors.
 - `_owner` is `AppPermission.values.toSet().difference(_till)` — still derived, so a new permission still reaches the owner automatically.
@@ -174,6 +174,28 @@ The product form shows attached-group summaries. `ProductModifierConfigPage` own
 
 **`orders` snapshots both the rate AND the amount for each charge, not just the amount** — the gap the old single `tax` column had (no way to know what rate produced it, so a later Settings change couldn't be told apart from history on an old receipt). `pb1_rate` / `service_charge_rate` are nullable and stay NULL for a pre-v19 row: the exact rate in effect back then is genuinely unrecoverable if the store's configured rate ever changed, the same reasoning that already leaves `order_items.category_id` NULL for an orphaned pre-migration line rather than guessing. `service_charge_amount` is NOT NULL, defaulting to `0` for those same old rows — that zero is a fact (the feature did not exist yet), not a guess. None of the three are touched by void/refund, exactly like `subtotal`/`discount`/`tax` already weren't — pure historical snapshot.
 
+## Pricing, business settings and custom roles (Fase 3, v32)
+
+**One quote, read by everything.** `cartQuoteProvider` (`lib/providers/pricing_provider.dart`) prices the cart with the shared engine (`lib/core/pricing/pricing.dart`, the port of the Go one, held to it by `../testdata/pricing/*.json`). The cart panel, the open-cart bar, the checkout sheet, `placeOrderFromCart` and the order row all read that ONE object — the total on screen, the total charged and the total pushed cannot disagree. `computeCartQuote` is pure and unit-tested (`test/providers/cart_quote_test.dart`). `CartState`'s old getters (`totalFor`, `pb1For`, `serviceChargeFor`) stay only because `test/cart/cart_math_test.dart` pins them; version 1 of the engine reproduces them exactly.
+
+**What the outlet runs decides what the till offers.** `pricingContextProvider` reads the pulled Fase 3 feeds through `SalesConfigRepository.context(outletId)`. An outlet is legacy until the owner switches it to v2 in the Backoffice (allowed only once every till there reports `pricing-v2`). A legacy outlet gets the version 1 engine and none of what only v2 honours: no merchant sales types, no sales-type prices, no item discounts, no custom amounts, no ewallet/transfer/other methods. `PosPage` drops item discounts and custom amounts from a cart when the outlet turns out to be legacy, and starts a fresh cart on the outlet's default sales type.
+
+**D8: an unconfigured merchant keeps the till's own rates.** `business_settings` has no row until the owner saves it in the Backoffice; until then `PricingContext.config` is null, the quote prices with the till's `SharedPreferences` PB1/service values, and the Settings page keeps the Bisnis section editable with a "this device only" note. Once a row arrives the section turns read-only (`_ManagedBusinessCard`) and the server's values are in force. NULL in `outlet_settings` inherits; 0 is a real override.
+
+**What a sale records.** A version 2 order stores `pricing_version = 2`, the pricing snapshot (including the bill discount spec), `tax_included`, `rounding_amount` and each line's breakdown (`base_price`, `price_source`, `tax_rate_bp`, `discount_spec`, line/bill/service shares, tax, `net_amount`). A legacy order stores NONE of those — the server refuses a v1 receipt carrying a snapshot, included tax or rounding. Every order stores the names that were chosen (sales type, payment method id/name/reference, served by, discount id/name, who approved the discount) and a `receipt_snapshot` (store name, address, phone, header, footer, logo) so a reprint says what the original said. `order_push.dart` sends the v2 figures only for `pricing_version == 2`, and the new names only when the manifest lists `business_settings`.
+
+**`promo_name` is a promo's name, and only a promo's.** A manual or named discount's approver goes to `discount_authorized_by_*`; the receipt prints the discount's name (or just "Diskon"), never the approver.
+
+**Custom amounts and item discounts need permission.** A custom amount (`enterCustomAmount`, owner by derivation, never the manager) and any item discount (`applyManualDiscount`) are approved by the signed-in person when they hold it, otherwise by `requestAuthorization`. A custom line's product id is `custom:<uuid>` locally and goes up as `product_id: null, custom: true`; it has no stock effect.
+
+**Money on the wire stays the KIND.** `payment_method` is `cash|card|qris|ewallet|transfer|other`; the configured method's own id and name travel beside it. Unknown wire values fall back to `other` (payments), `custom` (order types) and `custom` = locked (roles) — never to cash, dine-in or cashier. Checkout refuses cash below the total and a missing reference where the method requires one; non-cash is marked "recorded manually".
+
+**Custom roles.** `EmployeeAccess` is what a session holds: a system role's set from `permissionsFor`, a custom role's stored list (unknown names dropped), or `locked` when the role row is missing or has no POS access. `homeRouteForAccess` is `sell → /`, `viewDailySummary → /dashboard`, else `/settings` (unguarded, so no redirect loop). `SettingsNotifier.refreshSignedInEmployee` runs after every pull (`invalidateSyncedData`): a removed, deactivated or POS-less employee is signed out — never promoted to the standalone owner default — and losing `viewAllOrders` forgets the downloaded order cache. A cold start with such an identity starts signed out.
+
+**Timezone.** The merchant's zone arrives in the device binding (`tenant.timezone`); `wire_values.dart` maps WIB/WITA/WIT to a fixed offset for `business_date` and stores `tz_offset_minutes` on the order. An unknown zone or an older server leaves the device clock in charge, as before.
+
+**Reports on the till.** Local net sales are `subtotal − discount − tax_included`, v2 lines contribute their own `net_amount` to category net, and custom sales types group by name. `ServerReport` reads `tax_included`, `rounding` and `by_sales_type` (absent from a pre-2.8.0 server, which reads as zero/empty).
+
 ## Demo mode vs connected mode
 
 The app now has **two modes, chosen at build time**, and the demo one is
@@ -266,6 +288,54 @@ a key — the UUID `id` is the key, on the device and on the server. Orders writ
 before v24 keep their `ORD-xxxx` and are never renumbered; a receipt in a
 customer's hand must not change.
 
+### Transaction history and reports (v30, paritas F1)
+
+**One page per request.** `RemoteOrderRepository.page` fetches a single page and
+returns it; the old `load()` looped until the server ran out of pages, which on
+a busy month froze the app for minutes before showing anything.
+`orderHistoryProvider` merges TWO sources with TWO cursors — this device's own
+orders and the server's — deduplicates by UUID with the **local row winning**,
+and re-sorts. Local wins because a sale still in the outbox exists here and
+nowhere else, and a status this device changed is newer than the server's copy.
+
+**Changing a filter resets to the first page.** A cursor names a position in one
+ordering; carrying it into another pages through a list nobody asked for. The
+filter lives in `orderHistoryFilterProvider` so watching it makes the reset
+automatic. `OrderHistoryNotifier` also carries a `_generation` counter: a
+response that arrives carrying an older generation is dropped, because switching
+filters twice quickly used to let the first, slower answer land on top of the
+second.
+
+**The screen always says where its rows came from.** An offline list and a live
+one look identical, and a period that was never downloaded looks exactly like a
+period with no sales. `_SourceNotice` names cache age, incompleteness, and the
+case where the server NARROWED a scope the account may not have — a cashier who
+asked for the whole branch is given their own register and has to be told.
+
+**A server report and a local one are different types on purpose.**
+`ServerReport` is the outlet's rollup across every register; `SalesReport` is
+this device's own SQLite. `ServerReport.asPresentation()` exists only so the
+shared sections can be rendered once, and nothing renders it without also
+rendering `ReportSource` beside it. Demo mode computes locally with the SAME
+formulas — `report_waterfall_test.dart` pins the same hand-worked numbers the Go
+fixture uses, so the two implementations cannot drift.
+
+**Net sales, not takings, is the headline.** `SalesReport.grossProfit` is
+`netSales - costOfGoods`, and `averageOrder` is over net sales: PB1 and service
+charge are collected on somebody else's behalf, and counting them inflated every
+margin by whatever the tariff was. `grossMargin` returns `(value, defined)` —
+a margin over no sales is undefined, and drawing it as 0% reads as a bad period
+rather than an empty one.
+
+**Unsynced local orders are reported BESIDE the server totals, never added.**
+Topping an outlet aggregate up with one device's queue produces a number that
+matches neither.
+
+**Signing out forgets the cache.** `RemoteOrderRepository.forget` drops the
+receipts, the fetch metadata and the report bodies for that employee: the next
+person at the till may not be allowed the same view. The device's own orders are
+untouched — those are the till's, not the person's.
+
 ### Catalogue sync (connected mode only)
 
 `lib/data/sync/` pulls the merchant's menu down. One direction only: the
@@ -284,7 +354,7 @@ Entities are applied in the order the server publishes at `/sync/manifest`, not
 an order hardcoded here: `PRAGMA foreign_keys` is ON, so a product arriving
 before its category fails with SQLite error 787. The v2 manifest lists objects
 (`name`, `key`, `pull`, `apply`); only `pull: true` feeds this build knows how to
-store are requested — `CatalogueSync.supportedEntities` now covers all 16
+store are requested — `CatalogueSync.supportedEntities` now covers all 18
 feeds, including stock, modifiers, promo scoping, tables and table_status.
 Schema v27 adds `promos.all_outlets` / `promo_outlets`; active promos are filtered
 to the bound outlet (no current outlet means none offered). Connected table,
@@ -842,7 +912,25 @@ Edit `lib/l10n/app_en.arb` and `lib/l10n/app_id.arb`, then run `flutter gen-l10n
 
 ### DB migrations
 
-`lib/data/database/app_database.dart` — bump `currentVersion` and add the step in `_onUpgrade`. Current version: **29**.
+`lib/data/database/app_database.dart` — bump `currentVersion` and add the step in `_onUpgrade`. Current version: **32**.
+
+**v32 (paritas F3) added the pricing, settings and role tables.** Nine feed tables (`roles`, `business_settings`, `sales_types`, `payment_methods`, `payment_groups`, `discounts`, `outlet_settings`, `product_sales_type_prices`, `outlet_product_sales_type_prices`), `employees.role_id`, and the Fase 3 columns on `orders` and `order_items` (see "Pricing, business settings and custom roles"). Additive: every new money column defaults to 0 or NULL, which is exactly what a legacy receipt is, so no row is rewritten and `_outbox` is untouched. No foreign key from orders or employees to the new masters — a tombstone must never cascade into financial history (the F2 lesson). `test/repositories/f3_migration_test.dart` upgrades a real v31 file with an unsent sale.
+
+**v31 (paritas F2) added brands and customers.** `brands` and `customers` are
+company-scoped feed tables, `products.brand_id` and `order_items.brand_id`
+carry the brand master and sale-time snapshot, and `orders.customer_id` links a
+sale to a customer without a foreign key. That missing FK is intentional: a
+customer merge publishes a tombstone, and applying it must never cascade-delete
+financial history. Customer creation is queued before its order and is
+create-only/idempotent on the server. Order payloads include `customer_id` and
+`brand_id` only when the server manifest advertises those entities, preserving
+compatibility with pre-F2 servers.
+
+**v30 (paritas F1) added the history and report caches.** Additive for everything that holds money or owes the server work — `_outbox`, `_dead_letter`, `_till_sessions`, `orders` and the stock ledger are not touched at all. Two new tables: `_remote_history_meta` (what was fetched, for whom, and whether the fetch FINISHED) and `_remote_reports` (the last server report body per viewer, endpoint and filter).
+
+**`_remote_orders` is the one table rebuilt, and only because its primary key had to gain the VIEWER.** Keyed by receipt alone, a manager's wider fetch overwrote a cashier's row with a different `employee_id`, and the cashier's own history then came back empty after a handover. SQLite cannot add a column to a primary key in place, so `_rebuildRemoteOrders` recreates the table and copies every row across, re-deriving `scope` / `register_id` / `cashier_id` / `status` / `placed_at_ms` from the payload the server had already sent. Nothing is invented and nothing is dropped; `test/repositories/history_migration_test.dart` opens a real v29 file holding a queued sale, a refused row, a receipt block and a cached receipt, and asserts all four survive.
+
+**`_remote_history_meta` exists to tell "no transactions" from "not downloaded".** Without it an empty period and a period nobody has ever fetched render identically, which is the difference between a fact and a gap. `complete` says whether the range was paged to its end.
 
 **v29 (paritas F0) added manager-mediated recovery:** `recovery_id` on `_dead_letter`, and `recovery_id` / `recovery_detected_at` on `_till_sessions`. Purely additive through `_addColumnIfMissing`, and deliberately so — the whole point of F0 is that no queue row, till state, receipt number or dead-letter payload is ever dropped to make a migration simpler. `test/repositories/recovery_migration_test.dart` opens a real v28 file holding a queued sale and a refused row, upgrades it, and asserts both survive. `_till_sessions.state` gained one value, `recovery_required`: a drawer the server force-closed. It blocks checkout (`assertSellable`) and, unlike `conflict`, it names the case a manager has to decide.
 

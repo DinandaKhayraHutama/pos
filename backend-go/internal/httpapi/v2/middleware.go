@@ -35,6 +35,15 @@ type seenRecorder interface {
 	Touch(ctx context.Context, b devices.Binding)
 }
 
+// capabilitiesHeader carries the feature tokens a till build honours (Fase 3).
+const capabilitiesHeader = "X-Device-Capabilities"
+
+// capabilityRecorder is the cached authenticator's capability write, asked for
+// by type for the same reason as seenRecorder.
+type capabilityRecorder interface {
+	RecordCapabilities(ctx context.Context, plainToken string, b devices.Binding, caps []string) error
+}
+
 func bindingFrom(ctx context.Context) devices.Binding {
 	b, _ := ctx.Value(bindingKey).(devices.Binding)
 	return b
@@ -93,6 +102,8 @@ func (h *Handler) authenticate(next http.Handler) http.Handler {
 			seen.Touch(r.Context(), binding)
 		}
 
+		binding = h.recordCapabilities(r, token, binding)
+
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), bindingKey, binding)))
 	})
 }
@@ -132,4 +143,35 @@ func clientIP(r *http.Request) string {
 	}
 
 	return host
+}
+
+// recordCapabilities keeps devices.capabilities current. A new build sends the
+// header on every call; on the sync routes an ABSENT header is itself a report
+// — every Fase 3 build sends it there, so its absence means an older app,
+// which is exactly what the Backoffice must know before enabling a model.
+// Elsewhere absence changes nothing, so a call path that forgets the header
+// cannot make a capable till look incapable.
+//
+// Written only when the set differs from the cached binding, so a steady
+// fleet writes nothing. A failure is logged and never fails the request: the
+// report is advisory, and the Backoffice errs towards refusing a switch.
+func (h *Handler) recordCapabilities(r *http.Request, token string, b devices.Binding) devices.Binding {
+	rec, ok := h.devices.(capabilityRecorder)
+	if !ok {
+		return b
+	}
+	_, present := r.Header[http.CanonicalHeaderKey(capabilitiesHeader)]
+	if !present && !strings.Contains(r.URL.Path, "/sync/") {
+		return b
+	}
+	caps := devices.ParseCapabilities(r.Header.Get(capabilitiesHeader))
+	if devices.SameCapabilities(caps, b.Capabilities) {
+		return b
+	}
+	if err := rec.RecordCapabilities(r.Context(), token, b, caps); err != nil {
+		h.logger.Warn("record device capabilities", "error", err)
+		return b
+	}
+	b.Capabilities = caps
+	return b
 }

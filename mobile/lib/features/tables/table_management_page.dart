@@ -356,7 +356,8 @@ class _TableFormSheetState extends ConsumerState<_TableFormSheet> {
         left: AppDimensions.space16,
         right: AppDimensions.space16,
         top: AppDimensions.space16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + AppDimensions.space16,
+        bottom:
+            MediaQuery.of(context).viewInsets.bottom + AppDimensions.space16,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -474,7 +475,9 @@ class _TableFormSheetState extends ConsumerState<_TableFormSheet> {
         .read(tableManagementProvider(widget.outletId).notifier)
         .save(
           RestaurantTable(
-            id: existing?.id ?? 'table_${DateTime.now().millisecondsSinceEpoch}',
+            id:
+                existing?.id ??
+                'table_${DateTime.now().millisecondsSinceEpoch}',
             outletId: widget.outletId,
             name: name,
             capacity: capacity,

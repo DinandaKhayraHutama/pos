@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
@@ -53,8 +55,12 @@ class OrderRepository {
   }) async {
     if (TillCoordinator.current != null) {
       final allocated = await TillCoordinator.nextReceipt(txn, sessionId);
-      return (allocated == null ? TillCoordinator.uniqueReceipt()
-          : '${_registerPrefix(posName)}-${allocated.toString().padLeft(6, '0')}', allocated ?? 0);
+      return (
+        allocated == null
+            ? TillCoordinator.uniqueReceipt()
+            : '${_registerPrefix(posName)}-${allocated.toString().padLeft(6, '0')}',
+        allocated ?? 0,
+      );
     }
     final rows = await txn.rawQuery(
       'SELECT COALESCE(MAX(number_seq), 0) AS n FROM orders WHERE pos_id IS ?',
@@ -126,7 +132,40 @@ class OrderRepository {
     String? tableId,
     String? tableName,
     String? customerName,
+    String? customerId,
     String? note,
+    int? pricingVersion,
+    Map<String, Object?>? pricing,
+    int taxIncluded = 0,
+    int roundingAmount = 0,
+    int? timezoneOffsetMinutes,
+    String? salesTypeId,
+    String? salesTypeName,
+    String? paymentMethodId,
+    String? paymentMethodName,
+    String? paymentReference,
+    String? servedById,
+    String? servedByName,
+    String? discountId,
+    String? discountName,
+    String? receiptHeader,
+    String? receiptFooter,
+    String? receiptLogoUrl,
+    String? receiptStoreName,
+    String? receiptAddress,
+    String? receiptPhone,
+    // Who approved the bill discount: the audit half, kept apart from the
+    // discount's own name, which is what a receipt prints.
+    String? discountAuthorizedById,
+    String? discountAuthorizedByName,
+    // Fase 4: the saved bill this receipt settles. Its lines' stock was
+    // consumed by their kitchen dispatches and its table is held by a
+    // seating, so a bill's receipt moves no stock and no table status.
+    String? billId,
+    // The caller's transaction, when the receipt has to commit together with
+    // something else — a bill's settlement writes its last dispatch, the
+    // receipt and the bill's closing in one. Null opens one here.
+    DatabaseExecutor? within,
   }) async {
     // On an activated device the server attributes the sale to the till and
     // branch the token is bound to. A sale naming any other is refused before
@@ -146,6 +185,10 @@ class OrderRepository {
     }
 
     final db = await AppDatabase.instance.db;
+    // Inside the caller's transaction when there is one: sqflite serialises
+    // a transaction, so a read on the bare database from inside it would wait
+    // for itself.
+    final DatabaseExecutor reader = within ?? db;
     final id = _uuid.v4();
 
     // Resolved here, deterministically, from `productId` alone — never from
@@ -157,21 +200,23 @@ class OrderRepository {
     // every line regardless of how many products are on the order.
     final productIds = {for (final item in items) item.productId};
     final categoryByProduct = <String, String?>{};
+    final brandByProduct = <String, String?>{};
     if (productIds.isNotEmpty) {
-      final rows = await db.query(
+      final rows = await reader.query(
         'products',
-        columns: ['id', 'category_id'],
+        columns: ['id', 'category_id', 'brand_id'],
         where: 'id IN (${List.filled(productIds.length, '?').join(',')})',
         whereArgs: productIds.toList(),
       );
       for (final r in rows) {
         categoryByProduct[r['id'] as String] = r['category_id'] as String?;
+        brandByProduct[r['id'] as String] = r['brand_id'] as String?;
       }
     }
     final categoryIds = categoryByProduct.values.whereType<String>().toSet();
     final categoryNames = <String, String>{};
     if (categoryIds.isNotEmpty) {
-      final rows = await db.query(
+      final rows = await reader.query(
         'categories',
         columns: ['id', 'name'],
         where: 'id IN (${List.filled(categoryIds.length, '?').join(',')})',
@@ -214,6 +259,25 @@ class OrderRepository {
           ],
           categoryId: categoryId,
           categoryName: categoryId == null ? null : categoryNames[categoryId],
+          brandId: brandByProduct[item.productId],
+          custom: item.custom,
+          basePrice: item.basePrice,
+          priceSource: item.priceSource,
+          taxRateBp: item.taxRateBp,
+          lineDiscount: item.lineDiscount,
+          billDiscountShare: item.billDiscountShare,
+          serviceShare: item.serviceShare,
+          taxAmount: item.taxAmount,
+          taxIncluded: item.taxIncluded,
+          netAmount: item.netAmount,
+          discountSpec: item.discountSpec == null
+              ? null
+              : jsonEncode(item.discountSpec),
+          lineDiscountId: item.lineDiscountId,
+          lineDiscountName: item.lineDiscountName,
+          lineDiscountAuthorizedById: item.lineDiscountAuthorizedById,
+          lineDiscountAuthorizedByName: item.lineDiscountAuthorizedByName,
+          billLineId: item.billLineId,
         ),
       );
     }
@@ -234,6 +298,7 @@ class OrderRepository {
           ? TableAssignment(tableId: tableId, tableName: tableName ?? '')
           : null,
       customerName: customerName,
+      customerId: customerId,
       note: note,
       subtotal: subtotal,
       discount: discount,
@@ -244,7 +309,9 @@ class OrderRepository {
       total: total,
       amountPaid: amountPaid,
       paymentMethod: paymentMethod,
-      status: OrderStatus.preparing,
+      // A bill's receipt is final at once: its kitchen progress lives on
+      // the bill's dispatches, never on the receipt (paritas F4).
+      status: billId == null ? OrderStatus.preparing : OrderStatus.paid,
       cashierId: cashierId,
       cashierName: cashierName,
       outletId: outletId,
@@ -253,10 +320,33 @@ class OrderRepository {
       posName: posName,
       posSessionId: posSessionId,
       promoName: promoName,
+      pricingVersion: pricingVersion,
+      taxIncluded: taxIncluded,
+      roundingAmount: roundingAmount,
+      timezoneOffsetMinutes: timezoneOffsetMinutes,
+      salesTypeId: salesTypeId,
+      salesTypeName: salesTypeName,
+      paymentMethodId: paymentMethodId,
+      paymentMethodName: paymentMethodName,
+      paymentReference: paymentReference,
+      servedById: servedById,
+      servedByName: servedByName,
+      discountId: discountId,
+      discountName: discountName,
+      receiptSnapshot: jsonEncode({
+        'outlet_name': outletName,
+        'store_name': receiptStoreName,
+        'address': receiptAddress,
+        'header': receiptHeader,
+        'footer': receiptFooter,
+        'logo_url': receiptLogoUrl,
+        'phone': receiptPhone,
+      }),
+      billId: billId,
       items: persistedItems,
     );
 
-    await db.transaction((txn) async {
+    Future<void> write(DatabaseExecutor txn) async {
       if (binding != null) {
         await TillCoordinator.assertSellable(txn, posSessionId, cashierId);
         // The drawer the sale lands in has to be one of this till's. A session
@@ -289,11 +379,20 @@ class OrderRepository {
 
       await txn.insert('orders', {
         ...order.toMap(),
+        'pricing': pricing == null ? null : jsonEncode(pricing),
+        'discount_authorized_by_id': discountAuthorizedById,
+        'discount_authorized_by_name': discountAuthorizedByName,
         // Both chosen once, here, and never recomputed (v25). The business
         // day is the one printed on the receipt, so a sale pushed the next
         // morning still lands in yesterday's report; the clock offset lets
         // the server flag a tablet whose clock is out.
-        'business_date': businessDateFor(order.createdAt),
+        'business_date': businessDateFor(
+          timezoneOffsetMinutes == null
+              ? order.createdAt
+              : order.createdAt.toUtc().add(
+                  Duration(minutes: timezoneOffsetMinutes),
+                ),
+        ),
         'server_time_delta_ms': await SyncMetaStore.serverTimeDeltaWithin(txn),
       }, conflictAlgorithm: ConflictAlgorithm.replace);
       for (final oi in persistedItems) {
@@ -304,31 +403,37 @@ class OrderRepository {
       }
       // Draw down stock inside the same transaction as the order, so a
       // failure cannot leave a sale recorded with the stock untouched (or the
-      // reverse), and the ledger row lands with it.
-      await _applyStock(
-        txn,
-        outletId: outletId,
-        // Several modifier selections can create distinct lines for one SKU.
-        quantities: persistedItems.fold<Map<String, int>>({}, (quantities, oi) {
-          quantities.update(
-            oi.productId,
-            (qty) => qty - oi.quantity,
-            ifAbsent: () => -oi.quantity,
-          );
-          return quantities;
-        }),
-        reason: StockReason.sale,
-        orderId: TillCoordinator.current == null ? null : order.id,
-        employeeId: cashierId,
-        employeeName: cashierName,
-        note: order.number,
-      );
+      // reverse), and the ledger row lands with it. A bill's receipt takes
+      // none: every line was consumed by the dispatch that sent it.
+      if (billId == null) {
+        await _applyStock(
+          txn,
+          outletId: outletId,
+          // Several modifier selections can create distinct lines for one SKU.
+          quantities: persistedItems.fold<Map<String, int>>({}, (
+            quantities,
+            oi,
+          ) {
+            quantities.update(
+              oi.productId,
+              (qty) => qty - oi.quantity,
+              ifAbsent: () => -oi.quantity,
+            );
+            return quantities;
+          }),
+          reason: StockReason.sale,
+          orderId: TillCoordinator.current == null ? null : order.id,
+          employeeId: cashierId,
+          employeeName: cashierName,
+          note: order.number,
+        );
+      }
 
       // Queued in the same transaction that records the sale. Recording it and
       // queueing afterwards leaves a window where a crash produces takings the
       // server is never told about — nothing goes red, and the money is simply
       // absent from every report until someone counts a drawer by hand.
-      if (order.type == OrderType.dineIn && tableId != null) {
+      if (billId == null && order.type == OrderType.dineIn && tableId != null) {
         await TableRepository.setStatusWithin(
           txn,
           tableId,
@@ -337,8 +442,13 @@ class OrderRepository {
         );
       }
       await OutboxStore.enqueueWithin(txn, OrderPush.entity, order.id);
-    });
+    }
 
+    if (within != null) {
+      await write(within);
+    } else {
+      await db.transaction(write);
+    }
     return order;
   }
 
@@ -358,60 +468,16 @@ class OrderRepository {
     required String employeeName,
     String? note,
     String? orderId,
-  }) async {
-    if (quantities.isEmpty) return;
-    // A sale that cannot say which branch it came from must not move any
-    // shelf: guessing an outlet here would draw stock down in a shop that
-    // never served the customer.
-    if (outletId == null) return;
-    final movements = <String, ({String name, int delta, int balanceAfter})>{};
-
-    for (final e in quantities.entries) {
-      final rows = await txn.query(
-        'products',
-        columns: ['name'],
-        where: 'id = ?',
-        whereArgs: [e.key],
-        limit: 1,
-      );
-      if (rows.isEmpty) continue;
-      final current = await StockRepository.countAt(
-        txn,
-        outletId: outletId,
-        productId: e.key,
-      );
-      if (current == null) continue; // untracked
-
-      // Floored at zero in the demo; exact on an activated till, where a sale
-      // past an empty shelf is a shortfall the server has to record.
-      final next = StockRepository.landing(current, e.value);
-      if (next == current) continue;
-      await StockRepository.setCountAt(
-        txn,
-        outletId: outletId,
-        productId: e.key,
-        stock: next,
-      );
-      movements[e.key] = (
-        name: rows.first['name'] as String,
-        // The clamped delta, not the requested one: the ledger records what
-        // happened to the shelf, not what was asked for.
-        delta: next - current,
-        balanceAfter: next,
-      );
-    }
-
-    await StockRepository.recordWithin(
-      txn,
-      outletId: outletId,
-      movements: movements,
-      reason: reason,
-      employeeId: employeeId,
-      employeeName: employeeName,
-      note: note,
-      orderId: orderId,
-    );
-  }
+  }) => StockRepository.moveWithin(
+    txn,
+    outletId: outletId,
+    quantities: quantities,
+    reason: reason,
+    employeeId: employeeId,
+    employeeName: employeeName,
+    note: note,
+    orderId: orderId,
+  );
 
   /// Puts stock back for an order that was voided or refunded.
   ///
@@ -580,7 +646,9 @@ class OrderRepository {
     }
     if (from != null) {
       clauses.add('o.created_at >= ?');
-      args.add(DateTime(from.year, from.month, from.day).millisecondsSinceEpoch);
+      args.add(
+        DateTime(from.year, from.month, from.day).millisecondsSinceEpoch,
+      );
     }
     if (to != null) {
       clauses.add('o.created_at < ?');
@@ -601,7 +669,8 @@ class OrderRepository {
       args.addAll([beforeCreatedAt, beforeCreatedAt, beforeId]);
     }
     final where = clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}';
-    final rows = await db.rawQuery('''
+    final rows = await db.rawQuery(
+      '''
       SELECT o.*, COUNT(oi.id) AS item_count
       FROM orders o
       LEFT JOIN order_items oi ON oi.order_id = o.id
@@ -609,7 +678,9 @@ class OrderRepository {
       GROUP BY o.id
       ORDER BY o.created_at DESC, o.id DESC
       LIMIT ?
-      ''', [...args, limit]);
+      ''',
+      [...args, limit],
+    );
     return rows.map((m) => Order.fromMapRow(m)).toList();
   }
 
@@ -722,6 +793,7 @@ class OrderRepository {
     required String reason,
     int? amount,
     String authorizedById = '',
+    bool? restock,
   }) => _settle(
     orderId: orderId,
     status: OrderStatus.refunded,
@@ -729,6 +801,7 @@ class OrderRepository {
     authorizedById: authorizedById,
     reason: reason,
     refundAmount: amount,
+    restock: restock,
   );
 
   /// The shared body of void and refund.
@@ -744,12 +817,18 @@ class OrderRepository {
     required String authorizedById,
     required String reason,
     int? refundAmount,
+    // Whether the goods go back on the shelf. Null keeps the behaviour every
+    // receipt had before Fase 4 — a void or refund always restocked. A saved
+    // bill's receipt (paritas F4) is different: its food was made when it was
+    // sent to the kitchen, and a plate the guest sent back is waste, not
+    // stock. It restocks only when somebody says the goods came back.
+    bool? restock,
   }) async {
     final db = await AppDatabase.instance.db;
     await db.transaction((txn) async {
       final rows = await txn.query(
         'orders',
-        columns: ['status', 'total'],
+        columns: ['status', 'total', 'bill_id'],
         where: 'id = ?',
         whereArgs: [orderId],
         limit: 1,
@@ -772,13 +851,16 @@ class OrderRepository {
         whereArgs: [orderId],
       );
 
-      await _restockWithin(
-        txn,
-        orderId,
-        employeeId: authorizedById,
-        employeeName: authorizedBy,
-        note: reason,
-      );
+      final fromBill = rows.first['bill_id'] != null;
+      if (restock ?? !fromBill) {
+        await _restockWithin(
+          txn,
+          orderId,
+          employeeId: authorizedById,
+          employeeName: authorizedBy,
+          note: reason,
+        );
+      }
 
       // Re-queued in the same transaction that settles it. The entry may
       // already be there from the sale itself — the outbox is keyed on the row,
@@ -882,6 +964,10 @@ class OrderRepository {
         COALESCE(SUM(discount), 0)  AS discount,
         COALESCE(SUM(tax), 0)       AS tax,
         COALESCE(SUM(service_charge_amount), 0) AS service_charge,
+        -- Fase 3: tax already inside inclusive prices comes out of net sales;
+        -- rounding is collected, never sold. Both zero on a legacy receipt.
+        COALESCE(SUM(tax_included), 0) AS tax_included,
+        COALESCE(SUM(rounding_amount), 0) AS rounding,
         COUNT(*)                    AS order_count
       FROM orders
       WHERE $kRevenueStatusSql AND created_at >= ? AND created_at < ?
@@ -903,11 +989,15 @@ class OrderRepository {
 
     final byType = await db.rawQuery(
       '''
-      SELECT type AS k, COALESCE(SUM(total), 0) AS v, COUNT(*) AS c
+      -- A merchant's own sales type travels as `custom`; its name is what
+      -- tells GoFood from GrabFood, so it is the bucket.
+      SELECT CASE WHEN type = 'custom' THEN COALESCE(sales_type_name, type)
+                  ELSE type END AS k,
+             COALESCE(SUM(total), 0) AS v, COUNT(*) AS c
       FROM orders
       WHERE $kRevenueStatusSql AND created_at >= ? AND created_at < ?
         ${_outletSql(outletId)}
-      GROUP BY type
+      GROUP BY k
       ''',
       [start, end, ..._outletArgs(outletId)],
     );
@@ -1023,11 +1113,13 @@ class OrderRepository {
         o.id AS order_id,
         o.discount AS order_discount,
         o.subtotal AS order_subtotal,
+        o.pricing_version AS pricing_version,
         o.created_at AS order_created_at,
         oi.category_id AS category_id,
         oi.category_name AS snapshot_name,
         c.name AS live_name,
         COALESCE(SUM(oi.unit_price * oi.quantity), 0) AS line_total,
+        COALESCE(SUM(oi.net_amount), 0) AS line_net,
         COALESCE(SUM(oi.quantity), 0) AS qty
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
@@ -1054,6 +1146,8 @@ class OrderRepository {
       salesReturns: (w['returns'] as num).toInt(),
       tax: (t['tax'] as num).toInt(),
       serviceCharge: (t['service_charge'] as num).toInt(),
+      taxIncluded: (t['tax_included'] as num).toInt(),
+      rounding: (t['rounding'] as num).toInt(),
       orderCount: (t['order_count'] as num).toInt(),
       itemsSold: itemsSold,
       cancelledCount: undoneCount('cancelled'),
@@ -1085,6 +1179,8 @@ class OrderRepository {
   ///     subtotal)`, and the few rupiah a floor drops are handed to the
   ///     category with the largest line total in that same order. This is
   ///     what guarantees `Σ netSales == Σ (orders.subtotal - orders.discount)`
+  ///     (less `tax_included`, which only a version 2 receipt has and whose
+  ///     lines already carry their own net)
   ///     EXACTLY for the whole report, not approximately — floors alone would
   ///     drift low by up to `categories_in_that_order - 1` rupiah per order.
   ///
@@ -1112,6 +1208,18 @@ class OrderRepository {
     final items = <String, int>{};
 
     for (final orderRows in byOrder.values) {
+      // A version 2 receipt carries each line's own net — item discounts are
+      // not proportional, and included tax is already out of it — so its
+      // lines are read, never re-allocated. Exactly what the server does.
+      if (orderRows.first['pricing_version'] == 2) {
+        for (final r in orderRows) {
+          final key = keyOf(r);
+          gross[key] = (gross[key] ?? 0) + (r['line_total'] as num).toInt();
+          net[key] = (net[key] ?? 0) + (r['line_net'] as num).toInt();
+          items[key] = (items[key] ?? 0) + (r['qty'] as num).toInt();
+        }
+        continue;
+      }
       final discount = (orderRows.first['order_discount'] as num).toInt();
       final subtotal = (orderRows.first['order_subtotal'] as num).toInt();
 
@@ -1255,6 +1363,25 @@ class OrderItemDraft {
   /// resolves them itself from [productId], so a caller never needs to know
   /// about categories to place an order.
   final List<({String groupName, String optionName, int priceDelta})> modifiers;
+  final bool custom;
+  final int? basePrice;
+  final String? priceSource;
+  final int? taxRateBp;
+  final int lineDiscount;
+  final int billDiscountShare;
+  final int serviceShare;
+  final int taxAmount;
+  final int taxIncluded;
+  final int? netAmount;
+  final Map<String, Object>? discountSpec;
+  final String? lineDiscountId;
+  final String? lineDiscountName;
+  final String? lineDiscountAuthorizedById;
+  final String? lineDiscountAuthorizedByName;
+
+  /// The bill line this receipt line settles, when the receipt settles a
+  /// saved bill (paritas F4).
+  final String? billLineId;
 
   const OrderItemDraft({
     required this.productId,
@@ -1265,5 +1392,21 @@ class OrderItemDraft {
     this.unitCost,
     this.note,
     this.modifiers = const [],
+    this.custom = false,
+    this.basePrice,
+    this.priceSource,
+    this.taxRateBp,
+    this.lineDiscount = 0,
+    this.billDiscountShare = 0,
+    this.serviceShare = 0,
+    this.taxAmount = 0,
+    this.taxIncluded = 0,
+    this.netAmount,
+    this.discountSpec,
+    this.lineDiscountId,
+    this.lineDiscountName,
+    this.lineDiscountAuthorizedById,
+    this.lineDiscountAuthorizedByName,
+    this.billLineId,
   });
 }

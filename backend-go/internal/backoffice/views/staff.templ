@@ -9,19 +9,25 @@ templ StaffPage(s Session, list []staff.Profile) {
 				<h1>Karyawan</h1>
 				<p class="sub">Siapa yang bisa masuk ke till dengan PIN, dan ke Backoffice dengan email.</p>
 			</div>
-			<a class="button primary" href="/backoffice/staff/new">Tambah karyawan</a>
+			<div class="actions">
+				<a class="button" href="/backoffice/staff/roles">Peran &amp; akses</a>
+				<a class="button primary" href="/backoffice/staff/new">Tambah karyawan</a>
+			</div>
 		</div>
 		<div class="card">
 			<table>
-				<thead><tr><th>Nama</th><th>Peran</th><th>Email</th><th>PIN</th><th>Status</th><th></th></tr></thead>
+				<thead><tr><th>Nama</th><th>Peran</th><th>Kontak</th><th>PIN</th><th>Status</th><th></th></tr></thead>
 				<tbody>
 					for _, p := range list {
 						<tr>
 							<td>{ p.Name }</td>
-							<td>{ RoleLabel(string(p.Role)) }</td>
+							<td>{ p.RoleName }</td>
 							<td>
 								if p.Email != nil {
 									{ *p.Email }
+								}
+								if p.Phone != nil {
+									<br/>{ *p.Phone }
 								}
 							</td>
 							<td>
@@ -43,14 +49,14 @@ templ StaffPage(s Session, list []staff.Profile) {
 	}
 }
 
-templ StaffNewPage(s Session, f Form) {
+templ StaffNewPage(s Session, f Form, roles []Option) {
 	@Shell("Tambah karyawan", s) {
 		<p><a href="/backoffice/staff">← Karyawan</a></p>
 		<h1>Tambah karyawan</h1>
 		<p class="sub">PIN 4 angka dipakai untuk masuk ke till, dan harus berbeda dari PIN karyawan aktif lain.</p>
 		<div class="card">
 			<form class="grid" hx-post="/backoffice/staff" hx-swap="outerHTML">
-				@profileFields(f)
+				@profileFields(f, roles)
 				@Field(f, "PIN (4 angka)", "pin", "password", templ.Attributes{
 					"required": true, "inputmode": "numeric", "pattern": "[0-9]{4}", "maxlength": "4", "autocomplete": "off"})
 				<div class="actions wide"><button type="submit" class="primary">Tambah</button></div>
@@ -59,33 +65,34 @@ templ StaffNewPage(s Session, f Form) {
 	}
 }
 
-templ profileFields(f Form) {
+templ profileFields(f Form, roles []Option) {
 	@Field(f, "Nama", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
-	@Select(f, "Peran", "role", RoleOptions)
+	@Select(f, "Peran", "role", roles)
 	<div>
 		@Field(f, "Email", "email", "email", templ.Attributes{"maxlength": "254", "autocomplete": "off"})
-		<span class="hint">Untuk masuk ke Backoffice. Kasir tidak memerlukannya.</span>
+		<span class="hint">Untuk masuk ke Backoffice. Peran tanpa akses Backoffice tidak memerlukannya.</span>
 	</div>
+	@Field(f, "Telepon", "phone", "tel", templ.Attributes{"maxlength": "32", "autocomplete": "off"})
 	@Field(f, "Urutan", "sort_order", "number", templ.Attributes{"step": "1"})
 }
 
-templ StaffMemberPage(s Session, p staff.Profile, self bool, f Form) {
+templ StaffMemberPage(s Session, p staff.Profile, self bool, f Form, roles []Option) {
 	@Shell("Ubah karyawan", s) {
 		<p><a href="/backoffice/staff">← Karyawan</a></p>
 		<h1>{ p.Name }</h1>
 		<p class="sub">
-			{ RoleLabel(string(p.Role)) } ·
+			{ p.RoleName } ·
 			@ActiveBadge(p.Active)
 		</p>
 		<div class="card">
 			<h2>Profil</h2>
-			@ProfileForm(p.ID, f)
+			@ProfileForm(p.ID, f, roles)
 		</div>
 		<div class="card">
 			<h2>PIN till</h2>
 			@PINForm(p.ID, NewForm(), p.HasPIN)
 		</div>
-		if p.Role.UsesBackoffice() {
+		if p.Access.Backoffice {
 			<div class="card">
 				<h2>Kata sandi Backoffice</h2>
 				@PasswordForm(p.ID, NewForm(), p.HasPassword)
@@ -97,9 +104,9 @@ templ StaffMemberPage(s Session, p staff.Profile, self bool, f Form) {
 	}
 }
 
-templ ProfileForm(id string, f Form) {
+templ ProfileForm(id string, f Form, roles []Option) {
 	<form class="grid" hx-post={ "/backoffice/staff/" + id } hx-swap="outerHTML">
-		@profileFields(f)
+		@profileFields(f, roles)
 		<div class="actions wide"><button type="submit" class="primary">Simpan</button></div>
 	</form>
 }

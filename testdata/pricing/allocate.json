@@ -1,0 +1,12 @@
+{
+  "note": "Hamilton largest-remainder allocation: floor each share, then one rupiah each to the largest remainders, ties to the lowest index. No share ever exceeds its weight when total <= sum(weights).",
+  "cases": [
+    {"name": "two rupiah over three equal weights", "total": 2, "weights": [1, 1, 1], "expected": [1, 1, 0]},
+    {"name": "exact split", "total": 100, "weights": [3, 3, 4], "expected": [30, 30, 40]},
+    {"name": "larger remainder wins", "total": 10, "weights": [1, 2], "expected": [3, 7]},
+    {"name": "nothing to allocate", "total": 0, "weights": [5, 5], "expected": [0, 0]},
+    {"name": "no weight at all", "total": 7, "weights": [0, 0], "expected": [0, 0]},
+    {"name": "a zero weight takes nothing", "total": 7, "weights": [5, 0, 5], "expected": [4, 0, 3]},
+    {"name": "empty", "total": 0, "weights": [], "expected": []}
+  ]
+}

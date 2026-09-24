@@ -32,7 +32,9 @@ func TestFrozenContractHasOnlyObjectSuccessResponses(t *testing.T) {
 		}
 	}
 	// Two more since 2.5.0: the till's summary and sales reports.
-	require.Equal(t, 16, checked)
+	// Six more since 2.9.0: the bill board and detail, park, claim, and
+	// opening and closing a table seating.
+	require.Equal(t, 22, checked)
 }
 
 func TestGeneratedTillSuccessModelsValidateAgainstOpenAPI(t *testing.T) {
@@ -40,10 +42,13 @@ func TestGeneratedTillSuccessModelsValidateAgainstOpenAPI(t *testing.T) {
 	require.NoError(t, err)
 	id := wire.UUID("00000000-0000-4000-8000-000000000001")
 	session := wire.Session{Id: string(id), Revision: 1, EmployeeName: "Sari", OpenedAtMs: 1, OpeningCash: 0}
+	billSummary := wire.TillBillSummary{Id: id, Number: "B-1", Status: "open", OwnerGeneration: 1, Revision: 1,
+		OwnedByThisDevice: true, Subtotal: 25000, LineCount: 1, OpenedAtMs: 1, UpdatedAtMs: 2,
+		Dispatches: map[string]int{"queued": 1}}
 	models := map[string]any{
-		"TillLoginResponse":    wire.TillLoginResponse{Data: wire.TillLoginData{Token: strings.Repeat("a", 64), ExpiresAtMs: 2}},
-		"TillSessionResponse":  wire.TillSessionResponse{Data: wire.TillSessionData{Session: session, ReceiptStart: 1, ReceiptEnd: 100}},
-		"TillCurrentResponse":  wire.TillCurrentResponse{Data: nil},
+		"TillLoginResponse":   wire.TillLoginResponse{Data: wire.TillLoginData{Token: strings.Repeat("a", 64), ExpiresAtMs: 2}},
+		"TillSessionResponse": wire.TillSessionResponse{Data: wire.TillSessionData{Session: session, ReceiptStart: 1, ReceiptEnd: 100}},
+		"TillCurrentResponse": wire.TillCurrentResponse{Data: nil},
 		// The history page always carries the scope and range the server
 		// actually applied, so the model is only valid with them filled in.
 		"TillHistoryResponse": wire.TillHistoryResponse{Data: wire.TillHistoryPage{
@@ -65,6 +70,21 @@ func TestGeneratedTillSuccessModelsValidateAgainstOpenAPI(t *testing.T) {
 				OrderCount: 2, AverageSale: 34750, ItemsSold: 5,
 			},
 		}},
+		"TillBillBoardResponse": wire.TillBillBoardResponse{Data: wire.TillBillBoard{
+			Bills:         []wire.TillBillSummary{billSummary},
+			TableSessions: []wire.TableSession{{Id: id, TableId: id, TableName: "Meja 1", OpenedAtMs: 1, OpenedByName: "Sari", OpenBillCount: 1}},
+			ServerTimeMs:  6,
+		}},
+		"TillBillDetailResponse": wire.TillBillDetailResponse{Data: wire.TillBillDetail{
+			Summary: billSummary,
+			Bill: wire.Bill{Id: id, Revision: 1, OwnerGeneration: 1, Number: "B-1", Status: wire.BillStatusOpen,
+				PosSessionId: id, OpenedAtMs: 1, Type: "dineIn", CreatedByName: "Sari",
+				Pricing: wire.BillPricing{Version: 1, TaxMode: "exclusive", RoundingMode: "nearest", DiscountSource: "none"},
+				Lines:   []wire.BillLine{{Id: id, ProductName: "Nasi", Quantity: 1, UnitPrice: 25000, Modifiers: []wire.BillLineModifier{}}}},
+			Dispatches: []wire.TillDispatchSummary{{Id: id, Revision: 1, Status: "queued", OccurredAtMs: 1, EmployeeName: "Sari", StatusChangedAtMs: 1, LineIds: []wire.UUID{id}}},
+		}},
+		"TillBillParkResponse": wire.TillBillParkResponse{Data: wire.TillBillParkData{BillId: id, OwnerGeneration: 2, ParkedAtMs: 7}},
+		"TableSessionResponse": wire.TableSessionResponse{Data: wire.TableSession{Id: id, TableId: id, TableName: "Meja 1", OpenedAtMs: 1, OpenedByName: "Sari"}},
 	}
 	for schema, model := range models {
 		raw, marshalErr := json.Marshal(model)
@@ -89,6 +109,13 @@ func TestTillSurfaceIsLockedInTheContract(t *testing.T) {
 		"/till/recoveries/{recovery_id}": "GET",
 		"/till/reports/summary":          "GET",
 		"/till/reports/sales":            "GET",
+		// Fase 4 paritas: saved bills and table seatings.
+		"/till/bills":                             "GET",
+		"/till/bills/{bill_id}":                   "GET",
+		"/till/bills/{bill_id}/park":              "POST",
+		"/till/bills/{bill_id}/claim":             "POST",
+		"/till/table-sessions":                    "POST",
+		"/till/table-sessions/{session_id}/close": "POST",
 	}
 	for path, method := range want {
 		item := doc.Paths.Find(path)

@@ -25,7 +25,8 @@ templ ProductsPage(s Session, categories []Option, filter ProductFilter, page ca
 				<p class="sub">Menu yang ditarik setiap till. Harga dalam rupiah bulat.</p>
 			</div>
 			<div class="actions">
-				<a class="button" href="/backoffice/catalogue/products/import">Impor harga</a>
+				<a class="button" href="/backoffice/catalogue/products/export">Ekspor CSV</a>
+				<a class="button" href="/backoffice/catalogue/products/import">Impor produk</a>
 				<a class="button primary" href="/backoffice/catalogue/products/new">Tambah produk</a>
 			</div>
 		</div>
@@ -80,14 +81,14 @@ templ ProductList(filter ProductFilter, page catalogue.ProductPage) {
 	<div id="product-list" class="card">
 		<table>
 			<thead>
-				<tr><th>Nama</th><th>Kategori</th><th>SKU</th><th class="num">Harga</th><th class="num">Varian</th><th>Tersedia</th><th></th></tr>
+				<tr><th>Nama</th><th>Kategori</th><th>Brand</th><th>SKU</th><th class="num">Harga</th><th class="num">Varian</th><th>Tersedia</th><th></th></tr>
 			</thead>
 			<tbody>
 				for _, p := range page.Rows {
 					@ProductRow(p)
 				}
 				if len(page.Rows) == 0 {
-					<tr><td colspan="7" class="sub">Tidak ada produk yang cocok.</td></tr>
+					<tr><td colspan="8" class="sub">Tidak ada produk yang cocok.</td></tr>
 				}
 			</tbody>
 		</table>
@@ -111,6 +112,11 @@ templ ProductRow(p catalogue.ProductRow) {
 	<tr id={ "product-" + p.ID }>
 		<td>{ p.Name }</td>
 		<td>{ p.CategoryName }</td>
+		<td>
+			if p.BrandName != nil {
+				{ *p.BrandName }
+			}
+		</td>
 		<td>
 			if p.SKU != nil {
 				{ *p.SKU }
@@ -136,28 +142,31 @@ templ ProductRow(p catalogue.ProductRow) {
 	</tr>
 }
 
-templ ProductNewPage(s Session, categories []Option, f Form) {
+templ ProductNewPage(s Session, categories []Option, brands []Option, f Form) {
 	@Shell("Tambah produk", s) {
 		<p><a href="/backoffice/catalogue/products">← Produk</a></p>
 		<h1>Tambah produk</h1>
 		<p class="sub">Gambar, varian, dan modifier bisa diatur setelah produk tersimpan.</p>
 		<div class="card">
-			@ProductForm("/backoffice/catalogue/products", categories, f)
+			@ProductForm("/backoffice/catalogue/products", categories, brands, f)
 		</div>
 	}
 }
 
-templ ProductPage(s Session, id string, categories []Option, f Form, imageURL *string, variants []catalogue.Variant, groups []catalogue.ModifierGroup, modifiers Form) {
+templ ProductPage(s Session, id string, categories []Option, brands []Option, f Form, imageURL *string, variants []catalogue.Variant, groups []catalogue.ModifierGroup, modifiers Form) {
 	@Shell("Ubah produk", s) {
 		<p><a href="/backoffice/catalogue/products">← Produk</a></p>
 		<h1>{ f.V("name") }</h1>
 		<p class="sub">Perubahan sampai ke setiap till pada sinkron berikutnya.</p>
 		<div class="card">
-			@ProductForm("/backoffice/catalogue/products/"+id, categories, f)
+			@ProductForm("/backoffice/catalogue/products/"+id, categories, brands, f)
 		</div>
 		@ProductImageCard(id, imageURL, "")
 		@VariantsCard(id, variants, "", NewForm())
 		@ProductModifiersCard(id, groups, modifiers)
+		<div class="card" hx-get={ "/backoffice/catalogue/products/" + id + "/prices" } hx-trigger="load" hx-swap="innerHTML">
+			<p class="sub">Memuat harga per jenis penjualan…</p>
+		</div>
 		<div class="card">
 			<h2>Hapus</h2>
 			<p class="sub">Menghapus produk juga menghapus varian dan pengaturan modifiernya dari semua till.</p>
@@ -170,10 +179,11 @@ templ ProductPage(s Session, id string, categories []Option, f Form, imageURL *s
 	}
 }
 
-templ ProductForm(action string, categories []Option, f Form) {
+templ ProductForm(action string, categories []Option, brands []Option, f Form) {
 	<form class="grid" hx-post={ action } hx-swap="outerHTML">
 		@Field(f, "Nama", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
 		@Select(f, "Kategori", "category_id", categories)
+		@Select(f, "Brand", "brand_id", brands)
 		@Field(f, "Harga (Rp)", "price", "number", templ.Attributes{"required": true, "min": "0", "step": "1"})
 		@Field(f, "Modal (Rp)", "cost", "number", templ.Attributes{"min": "0", "step": "1"})
 		@Field(f, "SKU", "sku", "text", templ.Attributes{"maxlength": "64"})
@@ -323,21 +333,72 @@ templ ProductModifiersCard(productID string, groups []catalogue.ModifierGroup, f
 }
 
 templ ImportPage(s Session) {
-	@Shell("Impor harga", s) {
+	@Shell("Impor produk", s) {
 		<p><a href="/backoffice/catalogue/products">← Produk</a></p>
-		<h1>Impor harga</h1>
-		<p class="sub">Unggah CSV dengan kolom <code>sku</code> dan <code>harga</code>. Semua baris diperiksa dulu; satu baris salah membatalkan seluruh berkas.</p>
+		<h1>Impor produk</h1>
+		<p class="sub">
+			Unggah berkas CSV. Dua kolom <code>sku</code> dan <code>harga</code> saja diterapkan langsung — cara lama, tidak berubah.
+			Kolom lain (lihat hasil ekspor) membuat atau memperbarui produk penuh, dan menampilkan pratinjau sebelum diterapkan.
+			Semua baris diperiksa dulu; satu baris salah membatalkan seluruh berkas, dan baris yang tidak tercantum tidak berarti dihapus.
+		</p>
 		<div class="card">
 			<form hx-post="/backoffice/catalogue/products/import" hx-encoding="multipart/form-data" hx-target="#import-result" class="inline">
 				<label>
 					Berkas CSV
 					<input type="file" name="file" accept=".csv,text/csv" required/>
 				</label>
-				<button type="submit" class="primary">Periksa dan terapkan</button>
+				<button type="submit" class="primary">Periksa</button>
 			</form>
 		</div>
 		<div id="import-result"></div>
 	}
+}
+
+// ImportCataloguePreview shows what a full (multi-column) import file would
+// do, without applying it. fileB64 round-trips the exact bytes that were
+// validated back to the browser — never cached server-side — so the confirm
+// step re-parses and re-validates the SAME file against whatever the
+// database says at that moment, rather than trusting this count.
+templ ImportCataloguePreview(created, updated, unchanged int, fileB64, fileSHA256 string) {
+	<div class="card">
+		<h2>Pratinjau</h2>
+		<p class="sub">{ strconv.Itoa(created) } produk baru, { strconv.Itoa(updated) } diperbarui, { strconv.Itoa(unchanged) } tidak berubah.</p>
+		if created+updated == 0 {
+			<p class="sub">Tidak ada yang perlu diterapkan.</p>
+		} else {
+			<form hx-post="/backoffice/catalogue/products/import/confirm" hx-target="#import-result" hx-swap="outerHTML">
+				<input type="hidden" name="file_b64" value={ fileB64 }/>
+				<input type="hidden" name="file_sha256" value={ fileSHA256 }/>
+				<button type="submit" class="primary">Terapkan</button>
+			</form>
+		}
+	</div>
+}
+
+templ ImportCatalogueResult(created, updated, unchanged int, problems []catalogue.ImportError) {
+	<div id="import-result" class="card">
+		if len(problems) > 0 {
+			<h2>Berkas ditolak, tidak ada produk yang diubah</h2>
+			<table>
+				<thead><tr><th class="num">Baris</th><th>Masalah</th></tr></thead>
+				<tbody>
+					for _, p := range problems {
+						<tr>
+							<td class="num">
+								if p.Line > 0 {
+									{ strconv.Itoa(p.Line) }
+								}
+							</td>
+							<td>{ p.Message }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		} else {
+			<h2>Diterapkan</h2>
+			<p class="sub">{ strconv.Itoa(created) } produk baru, { strconv.Itoa(updated) } diperbarui, { strconv.Itoa(unchanged) } tidak berubah.</p>
+		}
+	</div>
 }
 
 templ ImportResult(changed, unchanged int, problems []catalogue.ImportError) {

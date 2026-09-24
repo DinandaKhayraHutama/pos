@@ -225,6 +225,9 @@ type OrderDetail struct {
 	// it never sent is not invented here.
 	SettledAt *time.Time
 	Revision  int64
+	// BillID is the saved bill this receipt settled (Fase 4), empty for a
+	// direct sale from before bills or on a branch that does not run them.
+	BillID string
 }
 
 // orderColumns is the shared projection. The snapshot names come out of the
@@ -236,7 +239,7 @@ const orderColumns = `
 	COALESCE(NULLIF(o.payload->>'outlet_name', ''), ol.name),
 	o.pos_register_id::text, COALESCE(NULLIF(o.payload->>'pos_name', ''), rg.name),
 	COALESCE(o.payload->>'cashier_id', ''), o.cashier_name,
-	o.subtotal, o.discount, o.tax, o.service_charge_amount, o.total, o.subtotal - o.discount,
+	o.subtotal, o.discount, o.tax, o.service_charge_amount, o.total, o.subtotal - o.discount - o.tax_included,
 	o.amount_paid, o.payment_method, o.refunded_amount,
 	COALESCE(o.authorized_by, ''), COALESCE(o.void_reason, ''),
 	COALESCE(rec.recovery_id::text, '')`
@@ -379,6 +382,12 @@ func (s *Service) Order(ctx context.Context, tenantID, orderID string) (OrderDet
 		}
 		d = found[0]
 		d.TableName, d.CustomerName, d.Note, d.PromoName = payloadStrings(payload)
+		var link struct {
+			BillID *string `json:"bill_id"`
+		}
+		if json.Unmarshal(payload, &link) == nil {
+			d.BillID = deref(link.BillID)
+		}
 		d.Items, err = orderItems(ctx, tx, tenantID, d)
 		return err
 	})

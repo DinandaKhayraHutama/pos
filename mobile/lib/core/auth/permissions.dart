@@ -67,6 +67,12 @@ enum AppPermission {
   /// A manager's, not only the owner's: whoever runs more than one shop needs
   /// to compare them, and that is the job this permission describes.
   manageOutlets,
+
+  /// Create, edit, deactivate, import, export and merge customers.
+  manageCustomers,
+
+  /// Ring up a line that has no catalogue product behind it.
+  enterCustomAmount,
 }
 
 /// Running the till: taking money, and being accountable for a drawer.
@@ -75,10 +81,7 @@ enum AppPermission {
 /// a cashier account, which is also the honest outcome for attribution — the
 /// sale belongs to whoever was actually at the till, and the drawer belongs to
 /// whoever counted it.
-const _till = <AppPermission>{
-  AppPermission.sell,
-  AppPermission.openCloseShift,
-};
+const _till = <AppPermission>{AppPermission.sell, AppPermission.openCloseShift};
 
 /// A cashier's world: the till, the floor, and their own day's sales.
 const _cashier = <AppPermission>{
@@ -110,6 +113,7 @@ const _manager = <AppPermission>{
   AppPermission.adjustStock,
   AppPermission.viewDailySummary,
   AppPermission.manageOutlets,
+  AppPermission.manageCustomers,
 };
 
 /// The owner has everything except the till.
@@ -122,18 +126,53 @@ const _manager = <AppPermission>{
 /// wanted.
 final _owner = AppPermission.values.toSet().difference(_till);
 
+/// Effective access resolved from a system role or a synced custom role.
+class EmployeeAccess {
+  const EmployeeAccess({required this.permissions, required this.posAccess});
+
+  final Set<AppPermission> permissions;
+  final bool posAccess;
+
+  bool can(AppPermission permission) => permissions.contains(permission);
+
+  static EmployeeAccess system(EmployeeRole role) => EmployeeAccess(
+    permissions: permissionsFor(role),
+    posAccess: role != EmployeeRole.custom,
+  );
+
+  static EmployeeAccess custom(
+    Iterable<String> names, {
+    required bool posAccess,
+  }) {
+    final known = <AppPermission>{};
+    for (final name in names) {
+      for (final permission in AppPermission.values) {
+        if (permission.name == name) known.add(permission);
+      }
+    }
+    return EmployeeAccess(permissions: known, posAccess: posAccess);
+  }
+
+  static const locked = EmployeeAccess(
+    permissions: <AppPermission>{},
+    posAccess: false,
+  );
+}
+
 /// The permissions [role] carries.
 Set<AppPermission> permissionsFor(EmployeeRole role) => switch (role) {
   EmployeeRole.cashier => _cashier,
   EmployeeRole.manager => _manager,
   EmployeeRole.owner => _owner,
+  EmployeeRole.custom => const <AppPermission>{},
 };
 
 /// True when [role] can authorize an action a cashier is blocked from.
 ///
 /// Used by the override prompt: a cashier hands the till to someone senior,
 /// who types their own PIN to approve one action without signing anyone out.
-bool canAuthorizeOverrides(EmployeeRole role) => role != EmployeeRole.cashier;
+bool canAuthorizeOverrides(EmployeeRole role) =>
+    role == EmployeeRole.manager || role == EmployeeRole.owner;
 
 /// Where someone lands after signing in.
 ///
@@ -142,5 +181,19 @@ bool canAuthorizeOverrides(EmployeeRole role) => role != EmployeeRole.cashier;
 /// the sell screen at all. Also the safety net when a deep link points at a
 /// screen the signed-in role cannot open, so it must never return a route the
 /// role would itself be bounced out of.
-String homeRouteFor(EmployeeRole role) =>
-    role == EmployeeRole.cashier ? '/' : '/dashboard';
+String homeRouteFor(EmployeeRole role) => role == EmployeeRole.cashier
+    ? '/'
+    : role == EmployeeRole.custom
+    ? '/settings'
+    : '/dashboard';
+
+/// [homeRouteFor] for a resolved access, custom roles included. The same
+/// never-bounced rule decides the fallback: a custom role that can neither
+/// sell nor read the day's summary lands on `/settings`, which no permission
+/// guards — `/dashboard` would bounce it straight back to itself.
+String homeRouteForAccess(EmployeeAccess access) =>
+    access.can(AppPermission.sell)
+    ? '/'
+    : access.can(AppPermission.viewDailySummary)
+    ? '/dashboard'
+    : '/settings';

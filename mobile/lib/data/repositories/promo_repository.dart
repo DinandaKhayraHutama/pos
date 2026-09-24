@@ -45,7 +45,8 @@ class PromoRepository {
   /// The demo's promo editor. On an activated till promos are the
   /// Backoffice's, and the screen that calls this is closed.
   Future<void> upsert(Promo promo) async {
-    if (TillBinding.current != null) throw StateError('Promos are managed in Backoffice.');
+    if (TillBinding.current != null)
+      throw StateError('Promos are managed in Backoffice.');
     final db = await AppDatabase.instance.db;
     await db.insert(
       'promos',
@@ -55,7 +56,8 @@ class PromoRepository {
   }
 
   Future<void> delete(String id) async {
-    if (TillBinding.current != null) throw StateError('Promos are managed in Backoffice.');
+    if (TillBinding.current != null)
+      throw StateError('Promos are managed in Backoffice.');
     final db = await AppDatabase.instance.db;
     await db.delete('promos', where: 'id = ?', whereArgs: [id]);
   }

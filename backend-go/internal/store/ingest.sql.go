@@ -34,7 +34,7 @@ func (q *Queries) AppendIngestLog(ctx context.Context, arg AppendIngestLogParams
 }
 
 const getOrder = `-- name: GetOrder :one
-SELECT business_date, id, tenant_id, outlet_id, pos_register_id, device_id, pos_session_id, revision, status, settled_at, placed_at_ms, subtotal, discount, tax, service_charge_amount, total, amount_paid, refunded_amount, payment_method, cashier_name, authorized_by, void_reason, payload, created_at, updated_at FROM orders WHERE business_date = $1 AND id = $2
+SELECT business_date, id, tenant_id, outlet_id, pos_register_id, device_id, pos_session_id, revision, status, settled_at, placed_at_ms, subtotal, discount, tax, service_charge_amount, total, amount_paid, refunded_amount, payment_method, cashier_name, authorized_by, void_reason, payload, created_at, updated_at, customer_id, tax_included, rounding_amount, pricing_mismatch FROM orders WHERE business_date = $1 AND id = $2
 `
 
 type GetOrderParams struct {
@@ -71,6 +71,10 @@ func (q *Queries) GetOrder(ctx context.Context, arg GetOrderParams) (Order, erro
 		&i.Payload,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CustomerID,
+		&i.TaxIncluded,
+		&i.RoundingAmount,
+		&i.PricingMismatch,
 	)
 	return i, err
 }
@@ -126,22 +130,26 @@ func (q *Queries) GetSessionForUpdate(ctx context.Context, id string) (PosSessio
 const insertOrder = `-- name: InsertOrder :exec
 INSERT INTO orders (business_date, id, tenant_id, outlet_id, pos_register_id, device_id, pos_session_id,
  revision, status, settled_at, placed_at_ms, subtotal, discount, tax, service_charge_amount,
- total, amount_paid, refunded_amount, payment_method, cashier_name, authorized_by, void_reason, payload)
+ total, amount_paid, refunded_amount, payment_method, cashier_name, authorized_by, void_reason, customer_id,
+ tax_included, rounding_amount, pricing_mismatch, payload)
 SELECT $1, (p->>'id')::uuid, $2, $3, $4, $5, (p->>'pos_session_id')::uuid,
  (p->>'revision')::bigint, p->>'status', CASE WHEN p->>'status' IN ('cancelled','refunded') THEN now() END,
  (p->>'placed_at_ms')::bigint, (p->>'subtotal')::bigint, (p->>'discount')::bigint, (p->>'tax')::bigint,
  (p->>'service_charge_amount')::bigint, (p->>'total')::bigint, (p->>'amount_paid')::bigint,
- (p->>'refunded_amount')::bigint, p->>'payment_method', p->>'cashier_name', p->>'authorized_by', p->>'void_reason', p
+ (p->>'refunded_amount')::bigint, p->>'payment_method', p->>'cashier_name', p->>'authorized_by', p->>'void_reason',
+ NULLIF(p->>'customer_id', '')::uuid,
+ COALESCE((p->>'tax_included')::bigint, 0), COALESCE((p->>'rounding_amount')::bigint, 0), $7, p
 FROM (SELECT $6::jsonb AS p) input
 `
 
 type InsertOrderParams struct {
-	BusinessDate  pgtype.Date
-	TenantID      string
-	OutletID      string
-	PosRegisterID string
-	DeviceID      string
-	Column6       []byte
+	BusinessDate    pgtype.Date
+	TenantID        string
+	OutletID        string
+	PosRegisterID   string
+	DeviceID        string
+	Column6         []byte
+	PricingMismatch bool
 }
 
 func (q *Queries) InsertOrder(ctx context.Context, arg InsertOrderParams) error {
@@ -152,6 +160,7 @@ func (q *Queries) InsertOrder(ctx context.Context, arg InsertOrderParams) error 
 		arg.PosRegisterID,
 		arg.DeviceID,
 		arg.Column6,
+		arg.PricingMismatch,
 	)
 	return err
 }

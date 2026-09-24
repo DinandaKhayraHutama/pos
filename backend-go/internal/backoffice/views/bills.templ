@@ -1,0 +1,306 @@
+package views
+
+import (
+	"net/url"
+	"strconv"
+	"time"
+
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/history"
+)
+
+// BillsView is the saved-bill list (Fase 4).
+type BillsView struct {
+	Filter   history.BillFilter
+	Page     history.BillPage
+	Outlets  []Option
+	Location *time.Location
+	Form     Form
+}
+
+type BillView struct {
+	Bill     history.BillDetail
+	Location *time.Location
+}
+
+var BillStatusOptions = []Option{
+	{Value: history.BillsOpen, Label: "Masih terbuka"},
+	{Value: history.BillsClosed, Label: "Lunas"},
+	{Value: history.BillsCancelled, Label: "Dibatalkan"},
+	{Value: history.BillsAll, Label: "Semua"},
+}
+
+func billStatusLabel(status string) string {
+	switch status {
+	case "open":
+		return "Terbuka"
+	case "closed":
+		return "Lunas"
+	case "cancelled":
+		return "Dibatalkan"
+	}
+	return status
+}
+
+func billStatusClass(status string) string {
+	switch status {
+	case "closed":
+		return "badge on"
+	case "cancelled":
+		return "badge off"
+	}
+	return "badge"
+}
+
+func dispatchStatusLabel(status string) string {
+	switch status {
+	case "queued":
+		return "Antre"
+	case "preparing":
+		return "Diproses"
+	case "ready":
+		return "Siap"
+	case "served":
+		return "Tersaji"
+	case "cancelled":
+		return "Dibatalkan"
+	}
+	return status
+}
+
+func billEventLabel(kind string) string {
+	switch kind {
+	case "park":
+		return "Diparkir di server"
+	case "claim":
+		return "Diklaim till"
+	case "force_park":
+		return "Dilepas oleh pengambilalihan perangkat"
+	}
+	return kind
+}
+
+func billsQuery(f history.BillFilter, cursor string) string {
+	q := url.Values{}
+	setIf(q, "status", f.Status)
+	setIf(q, "outlet", f.OutletID)
+	if f.Status != "" && f.Status != history.BillsOpen {
+		setIf(q, "from", DateValue(f.From))
+		setIf(q, "to", DateValue(f.To))
+	}
+	setIf(q, "cursor", cursor)
+	return "/backoffice/bills?" + q.Encode()
+}
+
+func ownerLabel(r history.BillRow) string {
+	switch {
+	case r.Status != "open":
+		return "—"
+	case r.Parked:
+		return "Diparkir, menunggu diklaim"
+	case r.OwnerRegister != "":
+		return r.OwnerRegister
+	}
+	return "—"
+}
+
+func kitchenLabel(r history.BillRow) string {
+	active := r.Queued + r.Preparing + r.Ready
+	switch {
+	case active > 0:
+		return strconv.Itoa(active) + " di dapur"
+	case r.Served > 0:
+		return "Tersaji"
+	case r.CancelledDispatches > 0:
+		return "Dibatalkan"
+	}
+	return "Belum dikirim"
+}
+
+templ BillsPage(s Session, v BillsView) {
+	@Shell("Bill", s) {
+		@historyStyles()
+		<h1>Bill tersimpan</h1>
+		<p class="sub">
+			Bill yang disimpan kasir sebelum dibayar. Bill terbuka bukan penjualan: nilainya adalah pesanan
+			yang belum dilunasi dan tidak masuk laporan penjualan. Bill hanya diubah di till pemiliknya;
+			halaman ini hanya membaca.
+		</p>
+		<div class="card">
+			<form method="get" action="/backoffice/bills" class="filters">
+				@Select(v.Form, "Status", "status", BillStatusOptions)
+				@Select(v.Form, "Outlet", "outlet", WithAllOutlets(v.Outlets))
+				@Field(v.Form, "Dibuka dari", "from", "date", nil)
+				@Field(v.Form, "Sampai", "to", "date", nil)
+				<button type="submit" class="primary">Tampilkan</button>
+			</form>
+			<p class="hint">Tanggal hanya dipakai untuk bill lunas atau dibatalkan. Bill terbuka selalu tampil semua, termasuk dari hari sebelumnya.</p>
+		</div>
+		<div class="card">
+			<div class="kv">
+				<div><div class="sub">Bill terbuka</div><strong>{ strconv.Itoa(v.Page.OpenCount) }</strong></div>
+				<div><div class="sub">Nilai pesanan terbuka (sebelum pajak &amp; diskon)</div><strong>{ Rupiah(v.Page.OpenSubtotal) }</strong></div>
+			</div>
+		</div>
+		@BillsTable(v)
+	}
+}
+
+templ BillsTable(v BillsView) {
+	<div id="bills" class="card">
+		<table>
+			<thead>
+				<tr>
+					<th>Bill</th>
+					<th>Dibuka</th>
+					<th>Outlet / till asal</th>
+					<th>Meja / pelanggan</th>
+					<th>Dipegang</th>
+					<th>Dapur</th>
+					<th>Status</th>
+					<th class="num">Subtotal</th>
+				</tr>
+			</thead>
+			<tbody>
+				for _, b := range v.Page.Rows {
+					<tr>
+						<td><a href={ templ.SafeURL("/backoffice/bills/" + b.ID) }>{ b.Number }</a></td>
+						<td>{ millis(b.OpenedAtMs, v.Location) }</td>
+						<td>
+							{ b.OutletName }
+							<div class="sub">{ b.RegisterName }</div>
+						</td>
+						<td>
+							{ orNotRecorded(b.TableName) }
+							<div class="sub">{ b.CustomerName }</div>
+						</td>
+						<td>{ ownerLabel(b) }</td>
+						<td>{ kitchenLabel(b) }</td>
+						<td><span class={ billStatusClass(b.Status) }>{ billStatusLabel(b.Status) }</span></td>
+						<td class="num">{ Rupiah(b.Subtotal) }</td>
+					</tr>
+				}
+				if len(v.Page.Rows) == 0 {
+					<tr><td colspan="8" class="sub">Tidak ada bill pada filter ini.</td></tr>
+				}
+			</tbody>
+		</table>
+		if v.Page.Next != "" {
+			<div class="pager">
+				<span></span>
+				<a class="button" href={ templ.SafeURL(billsQuery(v.Filter, v.Page.Next)) }
+					hx-get={ billsQuery(v.Filter, v.Page.Next) } hx-target="#bills" hx-swap="outerHTML">Halaman berikutnya</a>
+			</div>
+		}
+	</div>
+}
+
+templ BillPage(s Session, v BillView) {
+	@Shell("Bill "+v.Bill.Number, s) {
+		@historyStyles()
+		<p><a href="/backoffice/bills">← Kembali ke daftar</a></p>
+		<h1>{ v.Bill.Number }</h1>
+		<p class="sub">
+			Baris yang sudah dikirim ke dapur tidak dapat diubah. Uang tidak pernah diterima pada bill;
+			pembayaran tercatat pada struk yang melunasinya.
+		</p>
+		<div class="card">
+			<div class="kv">
+				<div><div class="sub">Status</div><span class={ billStatusClass(v.Bill.Status) }>{ billStatusLabel(v.Bill.Status) }</span></div>
+				<div><div class="sub">Dibuka</div>{ millis(v.Bill.OpenedAtMs, v.Location) }</div>
+				<div><div class="sub">Outlet</div>{ v.Bill.OutletName }</div>
+				<div><div class="sub">Till asal</div>{ v.Bill.RegisterName }</div>
+				<div><div class="sub">Dipegang</div>{ ownerLabel(v.Bill.BillRow) }</div>
+				<div><div class="sub">Generasi kepemilikan</div>{ strconv.FormatInt(v.Bill.OwnerGeneration, 10) }</div>
+				<div><div class="sub">Meja</div>{ orNotRecorded(v.Bill.TableName) }</div>
+				<div><div class="sub">Pelanggan</div>{ orNotRecorded(v.Bill.CustomerName) }</div>
+				<div><div class="sub">Pelayan</div>{ orNotRecorded(v.Bill.ServedBy) }</div>
+				<div><div class="sub">Dibuat oleh</div>{ v.Bill.CreatedBy }</div>
+				if v.Bill.ClosedOrderID != "" {
+					<div>
+						<div class="sub">Dilunasi dengan struk</div>
+						<a href={ templ.SafeURL("/backoffice/transactions/" + v.Bill.ClosedOrderID) }>{ receiptLabel(v.Bill.ClosedNumber) }</a>
+						<div class="sub">{ v.Bill.ClosedDate }</div>
+					</div>
+				}
+				if v.Bill.CancelReason != "" {
+					<div><div class="sub">Dibatalkan</div>{ v.Bill.CancelReason } — disetujui { v.Bill.CancelledBy }</div>
+				}
+			</div>
+			if v.Bill.Note != "" {
+				<p class="hint">Catatan: { v.Bill.Note }</p>
+			}
+		</div>
+		<div class="card">
+			<h2>Baris</h2>
+			<table class="lines">
+				<thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Harga</th><th>Dapur</th></tr></thead>
+				<tbody>
+					for _, l := range v.Bill.Lines {
+						<tr>
+							<td>
+								{ l.Name }
+								if l.Variant != "" {
+									({ l.Variant })
+								}
+								if l.Modifiers != "" {
+									<div class="modifiers">{ l.Modifiers }</div>
+								}
+								if l.Note != "" {
+									<div class="modifiers">{ l.Note }</div>
+								}
+							</td>
+							<td class="num">{ strconv.FormatInt(l.Quantity, 10) }</td>
+							<td class="num">{ Rupiah(l.UnitPrice) }</td>
+							<td>
+								if l.DispatchID != "" {
+									<span class="badge on">terkirim</span>
+								} else {
+									<span class="badge">belum dikirim</span>
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+		<div class="card">
+			<h2>Pengiriman dapur</h2>
+			<table>
+				<thead><tr><th>Dikirim</th><th>Oleh</th><th class="num">Baris</th><th>Status</th><th>Status berubah</th></tr></thead>
+				<tbody>
+					for _, d := range v.Bill.Dispatches {
+						<tr>
+							<td>{ millis(d.OccurredAtMs, v.Location) }</td>
+							<td>{ d.EmployeeName }</td>
+							<td class="num">{ strconv.Itoa(d.LineCount) }</td>
+							<td>{ dispatchStatusLabel(d.Status) }</td>
+							<td>{ millis(d.ChangedAtMs, v.Location) }</td>
+						</tr>
+					}
+					if len(v.Bill.Dispatches) == 0 {
+						<tr><td colspan="5" class="sub">Belum ada pesanan yang dikirim ke dapur.</td></tr>
+					}
+				</tbody>
+			</table>
+		</div>
+		<div class="card">
+			<h2>Perpindahan kepemilikan</h2>
+			<table>
+				<thead><tr><th>Waktu</th><th>Peristiwa</th><th>Oleh</th><th>Till</th></tr></thead>
+				<tbody>
+					for _, e := range v.Bill.Events {
+						<tr>
+							<td>{ millis(e.AtMs, v.Location) }</td>
+							<td>{ billEventLabel(e.Type) }</td>
+							<td>{ e.ActorName }</td>
+							<td>{ orNotRecorded(e.Device) }</td>
+						</tr>
+					}
+					if len(v.Bill.Events) == 0 {
+						<tr><td colspan="4" class="sub">Bill ini tidak pernah berpindah till.</td></tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}

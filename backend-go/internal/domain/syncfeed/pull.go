@@ -39,7 +39,7 @@ type Page = wire.PullPage
 // BuildManifest publishes the entity list, in the order a device must apply it.
 func BuildManifest() Manifest {
 	all := Entities()
-	out := Manifest{SchemaVersion: SchemaVersion, Entities: make([]ManifestEntity, 0, len(all)+2)}
+	out := Manifest{SchemaVersion: SchemaVersion, Entities: make([]ManifestEntity, 0, len(all)+5)}
 
 	for _, e := range all {
 		depends := e.DependsOn
@@ -65,6 +65,11 @@ func BuildManifest() Manifest {
 		// Status changes go up as events; what comes back down is the
 		// table_status projection above.
 		ManifestEntity{Name: "table_status_events", Scope: ScopeOutlet, Key: []string{"id"}, DependsOn: []string{"table_status"}, Pull: false, Push: true, Apply: ApplyUpsert},
+		// Fase 4 saved bills: a bill before its dispatches before the receipt
+		// that settles it. Listed so a till can tell a server that takes them
+		// from an older one that would answer unknown_entity.
+		ManifestEntity{Name: "bills", Scope: ScopeOutlet, Key: []string{"id"}, DependsOn: []string{"pos_sessions"}, Pull: false, Push: true, Apply: ApplyUpsert},
+		ManifestEntity{Name: "kitchen_dispatches", Scope: ScopeOutlet, Key: []string{"id"}, DependsOn: []string{"bills"}, Pull: false, Push: true, Apply: ApplyUpsert},
 	)
 
 	return out

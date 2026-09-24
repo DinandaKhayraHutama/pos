@@ -25,10 +25,13 @@ import '../../data/models/modifier_group.dart';
 import '../../data/models/modifier_option.dart';
 import '../../data/models/product.dart';
 import '../../data/models/product_variant.dart';
+import '../../providers/bill_provider.dart';
 import '../../providers/cart_provider.dart';
+import '../bills/open_bills_sheet.dart';
 import '../../providers/catalog_provider.dart';
 import '../../providers/modifier_provider.dart';
 import '../../providers/outlet_provider.dart';
+import '../../providers/pricing_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../core/widgets/app_snack_bar.dart';
 import '../shift/shift_page.dart' show PosSessionOpenCard;
@@ -64,9 +67,32 @@ class _PosPageState extends ConsumerState<PosPage> {
     super.dispose();
   }
 
+  /// Keeps the cart inside what the outlet's pricing allows. A cart built
+  /// while the outlet ran version 2 must not carry an item discount or a
+  /// custom amount onto a legacy receipt, and a fresh cart starts on the
+  /// outlet's default sales type.
+  void _followPricingRules() {
+    ref.listen(pricingContextProvider, (_, next) {
+      final pricing = next.valueOrNull;
+      if (pricing != null && !pricing.isV2) {
+        ref.read(cartProvider.notifier).dropVersion2Only();
+      }
+    });
+    ref.listen(cartProvider.select((c) => c.isEmpty), (wasEmpty, isEmpty) {
+      if (wasEmpty != true || isEmpty) return;
+      final pricing = ref.read(pricingContextProvider).valueOrNull;
+      final id = pricing?.config?.defaultSalesTypeId;
+      if (pricing == null || id == null) return;
+      if (ref.read(cartProvider).salesTypeId != null) return;
+      final type = pricing.salesTypes.where((t) => t.id == id).firstOrNull;
+      if (type != null) ref.read(cartProvider.notifier).setSalesType(type);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider).valueOrNull;
+    _followPricingRules();
     // Selling needs an open POS session. This renders INSIDE PosPage rather
     // than redirecting to `/shift` — `/` is a `ShellRoute` tab, and a redirect
     // to that pushed route took `MainShell` (bottom nav / rail) down with it,
@@ -87,11 +113,6 @@ class _PosPageState extends ConsumerState<PosPage> {
   // Phone layout -------------------------------------------------------------
   Widget _buildPhone(BuildContext context) {
     final cart = ref.watch(cartProvider);
-    final settings = ref.watch(settingsProvider).valueOrNull;
-    final pb1Rate = settings?.pb1Rate ?? 0;
-    final serviceChargeRate = (settings?.serviceChargeEnabled ?? false)
-        ? settings!.serviceChargeRate
-        : 0.0;
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
@@ -118,10 +139,7 @@ class _PosPageState extends ConsumerState<PosPage> {
               ),
               child: _OpenCartBar(
                 itemCount: cart.itemCount,
-                total: cart.totalFor(
-                  pb1Rate: pb1Rate,
-                  serviceChargeRate: serviceChargeRate,
-                ),
+                total: ref.watch(cartQuoteProvider).result.total,
                 onTap: () => _openCartSheet(context),
               ),
             ),
@@ -285,6 +303,26 @@ class _PosPageState extends ConsumerState<PosPage> {
           // to "whose name is on this receipt" — a question that only gets
           // asked after the receipt is already printed.
           if (settings != null) _OnDutyChip(settings: settings),
+          // Saved bills (paritas F4): the open ones, this till's and — on an
+          // activated till — the others', one tap from the sell screen.
+          if (ref.watch(billsEnabledProvider))
+            IconButton(
+              tooltip: context.l10n.billOpenBills,
+              onPressed: () => showGlassSheet<void>(
+                context: context,
+                builder: (_) => const OpenBillsSheet(),
+              ),
+              icon: Badge(
+                isLabelVisible:
+                    (ref.watch(openBillsProvider).valueOrNull?.length ?? 0) > 0,
+                label: Text(
+                  '${ref.watch(openBillsProvider).valueOrNull?.length ?? 0}',
+                ),
+                backgroundColor: design.secondary,
+                textColor: design.onSecondary,
+                child: const Icon(Icons.receipt_long_rounded),
+              ),
+            ),
           IconButton(
             onPressed: onCartTap,
             icon: Badge(
@@ -1006,9 +1044,12 @@ class _OnDutyChip extends ConsumerWidget {
     // separately. Signing in from the login screen does NOT keep it — that
     // path re-resolves, so nobody silently inherits somebody else's drawer.
     try {
-      await ref.read(settingsProvider.notifier).signIn(employee, keepPosSession: true);
-    } on TillOperationException catch(e) {
-      if(context.mounted)showAppSnackBar(context,tillErrorMessage(context,e),error:true);
+      await ref
+          .read(settingsProvider.notifier)
+          .signIn(employee, keepPosSession: true);
+    } on TillOperationException catch (e) {
+      if (context.mounted)
+        showAppSnackBar(context, tillErrorMessage(context, e), error: true);
       return;
     }
     if (!context.mounted) return;

@@ -42,11 +42,7 @@ class StatusBadge extends StatelessWidget {
         d.primaryContainer,
         l10n.orderStatusServed,
       ),
-      OrderStatus.paid => (
-        d.success,
-        d.successContainer,
-        l10n.orderStatusPaid,
-      ),
+      OrderStatus.paid => (d.success, d.successContainer, l10n.orderStatusPaid),
       OrderStatus.cancelled => (
         d.error,
         d.errorContainer,
@@ -75,11 +71,7 @@ class StatusBadge extends StatelessWidget {
         d.infoContainer,
         l10n.tableStatusReserved,
       ),
-      _ => (
-        d.textMedium,
-        d.surfaceOverlay,
-        l10n.commonUnknown,
-      ),
+      _ => (d.textMedium, d.surfaceOverlay, l10n.commonUnknown),
     };
   }
 

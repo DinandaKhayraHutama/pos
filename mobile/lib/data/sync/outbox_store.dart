@@ -7,6 +7,9 @@ import 'order_push.dart';
 import 'session_push.dart';
 import 'stock_movement_push.dart';
 import 'table_status_push.dart';
+import 'customer_push.dart';
+import 'bill_push.dart';
+import 'kitchen_dispatch_push.dart';
 
 /// One snapshot this device still owes the server.
 class OutboxEntry {
@@ -18,6 +21,7 @@ class OutboxEntry {
     this.payload,
     this.lastError,
     this.queuedAt,
+    this.lastQueuedAt,
   });
 
   final String entity;
@@ -35,6 +39,13 @@ class OutboxEntry {
   final String? payload;
   final String? lastError;
   final int? queuedAt;
+
+  /// When the entry last changed. Null on an entry queued before v33, which
+  /// reads as [queuedAt].
+  final int? lastQueuedAt;
+
+  /// The moment this entry's facts were last written, for ordering stock.
+  int get writtenAt => lastQueuedAt ?? queuedAt ?? 0;
 
   bool get isSnapshotted => revision != null && payload != null;
 }
@@ -69,6 +80,12 @@ class OutboxStore {
   /// changes, which depend on neither, last.
   static const pushOrder = [
     SessionPush.entity,
+    CustomerPush.entity,
+    // Fase 4: a bill before the dispatches that send its lines, both before
+    // the receipt that settles it — the server needs each in place when the
+    // next arrives, and a request carries its batches in this order.
+    BillPush.entity,
+    KitchenDispatchPush.entity,
     OrderPush.entity,
     StockMovementPush.entity,
     TableStatusPush.entity,
@@ -77,6 +94,7 @@ class OutboxStore {
   /// Entities whose entries go up strictly oldest first. See [pending].
   static const _inOrderOfWriting = {
     StockMovementPush.entity,
+    KitchenDispatchPush.entity,
     TableStatusPush.entity,
   };
 
@@ -90,6 +108,12 @@ class OutboxStore {
     switch (entity) {
       case SessionPush.entity:
         return SessionPush.payloadWithin(txn, entityId);
+      case CustomerPush.entity:
+        return CustomerPush.payloadWithin(txn, entityId);
+      case BillPush.entity:
+        return BillPush.payloadWithin(txn, entityId);
+      case KitchenDispatchPush.entity:
+        return KitchenDispatchPush.payloadWithin(txn, entityId);
       case OrderPush.entity:
         return OrderPush.payloadWithin(txn, entityId);
       case StockMovementPush.entity:
@@ -126,7 +150,7 @@ class OutboxStore {
     final revision = await _nextRevision(txn, entity, entityId);
     final body = jsonEncode(<String, Object?>{
       'id': payload['id'],
-      'revision': revision,
+      if (entity != CustomerPush.entity) 'revision': revision,
       ...payload,
     });
 
@@ -138,10 +162,12 @@ class OutboxStore {
       limit: 1,
     );
     if (existing.isEmpty) {
+      final now = DateTime.now().millisecondsSinceEpoch;
       await txn.insert(table, {
         'entity': entity,
         'entity_id': entityId,
-        'queued_at': DateTime.now().millisecondsSinceEpoch,
+        'queued_at': now,
+        'last_queued_at': now,
         'attempts': 0,
         'revision': revision,
         'payload': body,
@@ -151,7 +177,13 @@ class OutboxStore {
       // since it was first queued, and its history is still its history.
       await txn.update(
         table,
-        {'revision': revision, 'payload': body},
+        {
+          'revision': revision,
+          'payload': body,
+          // The barrier in OutboxPush orders stock-moving rows by when they
+          // last changed: a bill cancelled after a count must follow it.
+          'last_queued_at': DateTime.now().millisecondsSinceEpoch,
+        },
         where: 'entity = ? AND entity_id = ?',
         whereArgs: [entity, entityId],
       );
@@ -311,5 +343,6 @@ class OutboxStore {
     payload: r['payload'] as String?,
     lastError: r['last_error'] as String?,
     queuedAt: (r['queued_at'] as num?)?.toInt(),
+    lastQueuedAt: (r['last_queued_at'] as num?)?.toInt(),
   );
 }

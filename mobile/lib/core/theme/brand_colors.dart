@@ -197,7 +197,9 @@ class BrandColors extends ThemeExtension<BrandColors> {
   /// dark surfaces.
   factory BrandColors.fromAccent(BrandAccent a, Brightness brightness) {
     final isLight = brightness == Brightness.light;
-    final base = isLight ? BrandColors._neutralLight() : BrandColors._neutralDark();
+    final base = isLight
+        ? BrandColors._neutralLight()
+        : BrandColors._neutralDark();
     final containerAlpha = isLight ? 0.14 : 0.22;
 
     // Resolved once so every accent-derived token below agrees on the tone.
@@ -215,10 +217,9 @@ class BrandColors extends ThemeExtension<BrandColors> {
 
     // Brand gradient and blobs: light uses the brand-tinted pastel stops, dark
     // uses a primary-derived near-black + the dark surface base.
-    final List<Color> gradient =
-        isLight
-            ? a.gradient
-            : [ColorUtils.darken(a.primary, 0.82), base.surfaceBase];
+    final List<Color> gradient = isLight
+        ? a.gradient
+        : [ColorUtils.darken(a.primary, 0.82), base.surfaceBase];
 
     // Stagger blob alignments across the list so multiple blobs don't stack.
     const alignments = <Alignment>[
@@ -228,9 +229,7 @@ class BrandColors extends ThemeExtension<BrandColors> {
     ];
     final blobs = <BlobSpec>[];
     for (var i = 0; i < a.blobs.length; i++) {
-      blobs.add(
-        BlobSpec(a.blobs[i], alignments[i % alignments.length], 0.85),
-      );
+      blobs.add(BlobSpec(a.blobs[i], alignments[i % alignments.length], 0.85));
     }
     // Premium-glass cue: when a brand only declares two blobs, add a softer
     // third pass with the secondary accent at the next staggered alignment so
@@ -259,17 +258,15 @@ class BrandColors extends ThemeExtension<BrandColors> {
       // dark mode would tint a soft container in one hue while the button next
       // to it used another.
       primaryContainer: primaryTone.withValues(alpha: containerAlpha),
-      onPrimaryContainer:
-          isLight
-              ? ColorUtils.darken(primaryTone, 0.45)
-              : ColorUtils.lighten(primaryTone, 0.3),
+      onPrimaryContainer: isLight
+          ? ColorUtils.darken(primaryTone, 0.45)
+          : ColorUtils.lighten(primaryTone, 0.3),
       tertiary: secondaryTone,
       tertiaryContainer: secondaryTone.withValues(alpha: containerAlpha),
       onTertiary: Colors.white,
-      onTertiaryContainer:
-          isLight
-              ? ColorUtils.darken(secondaryTone, 0.45)
-              : ColorUtils.lighten(secondaryTone, 0.3),
+      onTertiaryContainer: isLight
+          ? ColorUtils.darken(secondaryTone, 0.45)
+          : ColorUtils.lighten(secondaryTone, 0.3),
       textHigh: base.textHigh,
       textMedium: base.textMedium,
       textLow: base.textLow,
@@ -449,7 +446,10 @@ class BrandColors extends ThemeExtension<BrandColors> {
       tertiary: lerpC(tertiary, other.tertiary)!,
       tertiaryContainer: lerpC(tertiaryContainer, other.tertiaryContainer)!,
       onTertiary: lerpC(onTertiary, other.onTertiary)!,
-      onTertiaryContainer: lerpC(onTertiaryContainer, other.onTertiaryContainer)!,
+      onTertiaryContainer: lerpC(
+        onTertiaryContainer,
+        other.onTertiaryContainer,
+      )!,
       textHigh: lerpC(textHigh, other.textHigh)!,
       textMedium: lerpC(textMedium, other.textMedium)!,
       textLow: lerpC(textLow, other.textLow)!,

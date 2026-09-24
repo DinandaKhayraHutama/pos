@@ -94,10 +94,9 @@ class GlassTextField extends StatelessWidget {
           labelStyle: TextStyle(color: design.textMedium, fontSize: 13),
           hintText: hint,
           hintStyle: TextStyle(color: design.textMedium),
-          prefixIcon:
-              prefix == null
-                  ? null
-                  : Icon(prefix, color: design.textMedium, size: 20),
+          prefixIcon: prefix == null
+              ? null
+              : Icon(prefix, color: design.textMedium, size: 20),
           prefixText: prefixText,
           suffixIcon: suffix,
           isDense: true,

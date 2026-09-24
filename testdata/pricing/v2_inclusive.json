@@ -1,0 +1,35 @@
+{
+  "note": "Version 2, tax inclusive: tax is extracted from each line's discounted amount; tax on the service share (which no menu price contained) is added.",
+  "vectors": [
+    {
+      "name": "inclusive: 11000 at 10% contains 1000 of tax",
+      "input": {"version": 2, "tax_mode": "inclusive", "service_rate_bp": 0, "service_taxable": true,
+        "lines": [{"unit_price": 11000, "quantity": 1, "tax_rate_bp": 1000}]},
+      "expected": {"subtotal": 11000, "discount": 0, "service_charge": 0, "tax": 1000, "tax_included": 1000, "rounding": 0, "total": 11000,
+        "lines": [{"gross": 11000, "line_discount": 0, "bill_discount_share": 0, "service_share": 0, "tax_amount": 1000, "tax_included": 1000, "net_amount": 10000}]}
+    },
+    {
+      "name": "inclusive: extraction rounds half up (10000 at 11% = 9009 + 991)",
+      "input": {"version": 2, "tax_mode": "inclusive", "service_rate_bp": 0, "service_taxable": true,
+        "lines": [{"unit_price": 10000, "quantity": 1, "tax_rate_bp": 1100}]},
+      "expected": {"subtotal": 10000, "discount": 0, "service_charge": 0, "tax": 991, "tax_included": 991, "rounding": 0, "total": 10000,
+        "lines": [{"gross": 10000, "line_discount": 0, "bill_discount_share": 0, "service_share": 0, "tax_amount": 991, "tax_included": 991, "net_amount": 9009}]}
+    },
+    {
+      "name": "inclusive: service charge on the pre-tax amount, and tax added on the service",
+      "input": {"version": 2, "tax_mode": "inclusive", "service_rate_bp": 500, "service_taxable": true,
+        "lines": [{"unit_price": 55000, "quantity": 2, "tax_rate_bp": 1000}]},
+      "expected": {"subtotal": 110000, "discount": 0, "service_charge": 5000, "tax": 10500, "tax_included": 10000, "rounding": 0, "total": 115500,
+        "lines": [{"gross": 110000, "line_discount": 0, "bill_discount_share": 0, "service_share": 5000, "tax_amount": 10500, "tax_included": 10000, "net_amount": 100000}]}
+    },
+    {
+      "name": "inclusive: bill discount shared first, then tax extracted per line at its own rate",
+      "input": {"version": 2, "tax_mode": "inclusive", "service_rate_bp": 0, "service_taxable": true, "bill_discount": {"kind": "amount", "value": 3000},
+        "lines": [{"unit_price": 23000, "quantity": 1, "tax_rate_bp": 1500}, {"unit_price": 10000, "quantity": 1, "tax_rate_bp": 0}]},
+      "expected": {"subtotal": 33000, "discount": 3000, "service_charge": 0, "tax": 2727, "tax_included": 2727, "rounding": 0, "total": 30000,
+        "lines": [
+          {"gross": 23000, "line_discount": 0, "bill_discount_share": 2091, "service_share": 0, "tax_amount": 2727, "tax_included": 2727, "net_amount": 18182},
+          {"gross": 10000, "line_discount": 0, "bill_discount_share": 909, "service_share": 0, "tax_amount": 0, "tax_included": 0, "net_amount": 9091}]}
+    }
+  ]
+}

@@ -13,7 +13,9 @@ import 'package:nti_pos/data/models/enums.dart';
 import 'package:nti_pos/data/models/order.dart';
 import 'package:nti_pos/features/dashboard/dashboard_page.dart';
 import 'package:nti_pos/l10n/gen/app_localizations.dart';
+import 'package:nti_pos/data/models/sales_report.dart';
 import 'package:nti_pos/providers/order_provider.dart';
+import 'package:nti_pos/providers/report_provider.dart';
 import 'package:nti_pos/providers/settings_provider.dart';
 
 /// Widget tests for [DashboardPage].
@@ -30,8 +32,8 @@ import 'package:nti_pos/providers/settings_provider.dart';
 ///   matches; the layout Row matches only at ≥900dp).
 ///
 /// The three dashboard providers are overridden with controlled `AsyncData`:
-/// - [dashboardSummaryProvider] — `FutureProvider.autoDispose` for the
-///   `(revenue, count, itemsSold)` record.
+/// - [dashboardReportProvider] — `FutureProvider.autoDispose` for the
+///   day's [ReportView], server-backed in production and local here.
 /// - [topProductsProvider] — `FutureProvider.autoDispose` for the ranked
 ///   product list.
 /// - [ordersProvider] — `AsyncNotifierProvider.autoDispose.family` keyed by
@@ -94,7 +96,40 @@ Order _order({
   );
 }
 
-const _seedSummary = (revenue: 250000, count: 5, itemsSold: 15);
+/// The day as this device computed it: 250.000 net over five receipts, so the
+/// average is 50.000. Built as a LOCAL report — demo mode — because the stats
+/// row shows the same figures either way and the source line is what differs.
+ReportView _summary({int netSales = 250000, int count = 5, int items = 15}) =>
+    ReportView(
+      source: ReportSource.local,
+      local: SalesReport(
+        from: DateTime(2025, 1, 15),
+        to: DateTime(2025, 1, 15),
+        revenue: netSales,
+        subtotal: netSales,
+        discount: 0,
+        grossSales: netSales,
+        allDiscount: 0,
+        salesReturns: 0,
+        tax: 0,
+        serviceCharge: 0,
+        orderCount: count,
+        itemsSold: items,
+        cancelledCount: 0,
+        cancelledValue: 0,
+        refundedCount: 0,
+        refundedValue: 0,
+        costOfGoods: 0,
+        costCoverage: 1,
+        byPaymentMethod: const {},
+        byOrderType: const {},
+        byCashier: const {},
+        byCategory: const [],
+        perDay: const {},
+      ),
+    );
+
+final _seedSummary = _summary();
 
 final _seedTopProducts = <
   ({String name, String? iconKey, int qty, int revenue})
@@ -111,7 +146,7 @@ final _seedOrders = <Order>[
 /// Standard data overrides for the "happy path" tests: all three providers
 /// resolve to the seeded `AsyncData`.
 List<Override> _dataOverrides({VoidCallback? onOrdersBuild}) => [
-  dashboardSummaryProvider.overrideWith((ref) => _seedSummary),
+  dashboardReportProvider.overrideWith((ref) => _seedSummary),
   topProductsProvider.overrideWith((ref) => _seedTopProducts),
   ordersProvider.overrideWith(
     () =>
@@ -170,13 +205,13 @@ void main() {
     // autoDispose providers alive while awaiting; after pumpWidget the
     // widget's own subscriptions hold them, so we close ours.
     final subs = <ProviderSubscription>[
-      container.listen(dashboardSummaryProvider, (_, _) {}),
+      container.listen(dashboardReportProvider, (_, _) {}),
       container.listen(topProductsProvider, (_, _) {}),
       container.listen(ordersProvider(null), (_, _) {}),
     ];
     if (settle) {
       await Future.wait([
-        container.read(dashboardSummaryProvider.future),
+        container.read(dashboardReportProvider.future),
         container.read(topProductsProvider.future),
         container.read(ordersProvider(null).future),
       ]);
@@ -298,10 +333,8 @@ void main() {
         tester,
         settle: false,
         extraOverrides: [
-          dashboardSummaryProvider.overrideWith(
-            (ref) => Completer<
-                ({int revenue, int count, int itemsSold})
-            >().future,
+          dashboardReportProvider.overrideWith(
+            (ref) => Completer<ReportView>().future,
           ),
           topProductsProvider.overrideWith(
             (ref) =>
@@ -337,8 +370,8 @@ void main() {
       await pumpDashboard(
         tester,
         extraOverrides: [
-          dashboardSummaryProvider.overrideWith(
-            (ref) => (revenue: 0, count: 0, itemsSold: 0),
+          dashboardReportProvider.overrideWith(
+            (ref) => _summary(netSales: 0, count: 0, items: 0),
           ),
           topProductsProvider.overrideWith((ref) => <_TopProductTuple>[]),
           ordersProvider.overrideWith(
@@ -378,7 +411,7 @@ void main() {
       await pumpDashboard(
         tester,
         extraOverrides: [
-          dashboardSummaryProvider.overrideWith((ref) {
+          dashboardReportProvider.overrideWith((ref) {
             summaryBuilds++;
             return _seedSummary;
           }),

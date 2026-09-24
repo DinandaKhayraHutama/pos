@@ -64,7 +64,7 @@ func TestEveryAdvertisedPullEntityIsPullable(t *testing.T) {
 	for _, e := range syncfeed.BuildManifest().Entities {
 		if !e.Pull {
 			require.True(t, e.Push)
-			require.Contains(t, []string{"pos_sessions", "orders", "table_status_events"}, e.Name)
+			require.Contains(t, []string{"pos_sessions", "orders", "table_status_events", "bills", "kitchen_dispatches"}, e.Name)
 			continue
 		}
 		_, ok := syncfeed.Lookup(e.Name)

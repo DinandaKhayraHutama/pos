@@ -9,6 +9,7 @@ package devices
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -36,6 +37,10 @@ type Device struct {
 type Tenant struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	// Timezone is the merchant's trading clock (Fase 3). A till dates its
+	// receipts by it; tenants.updated_at moves with it, so the change reaches
+	// every till through the device revision it already watches.
+	Timezone string `json:"timezone,omitempty"`
 }
 
 type Outlet struct {
@@ -69,6 +74,10 @@ type Binding struct {
 	AuthGenerations [3]int64 `json:"auth_generations"`
 	ExpiresAtMs     int64    `json:"expires_at_ms"`
 	CacheReadAtMs   int64    `json:"cache_read_at_ms"`
+	// Capabilities is what this installation last reported it can run
+	// (X-Device-Capabilities). Cached with the binding so comparing it costs
+	// nothing; written only when it changes.
+	Capabilities []string `json:"caps,omitempty"`
 }
 
 type Activation struct {
@@ -82,6 +91,9 @@ type ActivateInput struct {
 	DeviceUUID string
 	Label      *string
 	Platform   *string
+	// Capabilities the activating build reported. A business that already
+	// runs a model this build cannot honour refuses it (ErrIncompatibleApp).
+	Capabilities []string
 }
 
 type IssuedCode struct {
@@ -206,12 +218,12 @@ func (s *Service) Activate(ctx context.Context, in ActivateInput) (Activation, e
 			  AND r.tenant_id = ac.tenant_id
 			  AND r.id = ac.pos_register_id
 			  AND r.active AND o.active AND t.status = 'active'
-			RETURNING ac.id, t.id, t.name,
+			RETURNING ac.id, t.id, t.name, t.timezone,
 			          o.id, o.name, o.address, o.phone,
 			          r.id, r.outlet_id, r.name, r.table_service`,
 			fingerprint,
 		).Scan(
-			&codeID, &out.Tenant.ID, &out.Tenant.Name,
+			&codeID, &out.Tenant.ID, &out.Tenant.Name, &out.Tenant.Timezone,
 			&out.Outlet.ID, &out.Outlet.Name, &out.Outlet.Address, &out.Outlet.Phone,
 			&out.Register.ID, &out.Register.OutletID, &out.Register.Name, &out.Register.TableService,
 		)
@@ -231,14 +243,32 @@ func (s *Service) Activate(ctx context.Context, in ActivateInput) (Activation, e
 			return err
 		}
 
+		// A business that already runs a model this build cannot honour refuses
+		// it here, before a token exists. The outlet is held FOR SHARE so the
+		// switch to pricing v2 (which locks it FOR UPDATE, checks, then writes)
+		// cannot slip in between this check and the device row.
+		if _, err := tx.Exec(ctx, `SELECT 1 FROM outlets WHERE id = $1 FOR SHARE`, out.Outlet.ID); err != nil {
+			return err
+		}
+		need, err := requiredForActivation(ctx, tx, out.Outlet.ID)
+		if err != nil {
+			return err
+		}
+		for _, c := range need {
+			if !slices.Contains(in.Capabilities, c) {
+				return ErrIncompatibleApp
+			}
+		}
+		out.Capabilities = normalised(in.Capabilities)
+
 		// The UUID identifies an installation, not a credential. Re-activating
 		// overwrites token_sha256, so every previously issued token for this
 		// device stops working — a reinstall never leaves an old one alive.
 		err = tx.QueryRow(ctx, `
 			INSERT INTO devices
 				(tenant_id, outlet_id, pos_register_id, device_uuid, label, platform,
-				 token_sha256, token_expires_at, last_seen_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, now() + make_interval(secs => $8), now())
+				 token_sha256, token_expires_at, last_seen_at, capabilities, capabilities_reported_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, now() + make_interval(secs => $8), now(), $9, now())
 			ON CONFLICT (tenant_id, device_uuid) DO UPDATE
 			SET label            = EXCLUDED.label,
 			    platform         = EXCLUDED.platform,
@@ -246,11 +276,13 @@ func (s *Service) Activate(ctx context.Context, in ActivateInput) (Activation, e
 			    token_expires_at = EXCLUDED.token_expires_at,
 			    last_seen_at     = now(),
 			    revoked_at       = NULL,
+			    capabilities     = EXCLUDED.capabilities,
+			    capabilities_reported_at = now(),
 			    updated_at       = now()
 			WHERE devices.pos_register_id = EXCLUDED.pos_register_id
 			RETURNING id, device_uuid, label, platform, token_expires_at`,
 			out.Tenant.ID, out.Outlet.ID, out.Register.ID, deviceUUID, in.Label, in.Platform,
-			hash, TokenTTL.Seconds(),
+			hash, TokenTTL.Seconds(), out.Capabilities,
 		).Scan(&out.Device.ID, &out.Device.UUID, &out.Device.Label, &out.Device.Platform, &out.TokenExpiresAt)
 		if errors.Is(err, pgx.ErrNoRows) {
 			// The row exists but sits on a different register, so the upsert's
@@ -284,9 +316,10 @@ func (s *Service) Authenticate(ctx context.Context, plainToken string) (Binding,
 	err := unscoped.Tx(ctx, s.pools.Unscoped, func(ctx context.Context, tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
 			SELECT d.id, d.device_uuid, d.label, d.platform,
-			       t.id, t.name,
+			       t.id, t.name, t.timezone,
 			       o.id, o.name, o.address, o.phone,
 			       r.id, r.outlet_id, r.name, r.table_service,
+			       d.capabilities,
 			       (EXTRACT(EPOCH FROM GREATEST(
 			           d.updated_at, t.updated_at, o.updated_at, r.updated_at)) * 1000)::bigint,
 			       t.auth_generation, o.auth_generation, r.auth_generation,
@@ -306,9 +339,10 @@ func (s *Service) Authenticate(ctx context.Context, plainToken string) (Binding,
 			HashToken(plainToken),
 		).Scan(
 			&b.Device.ID, &b.Device.UUID, &b.Device.Label, &b.Device.Platform,
-			&b.Tenant.ID, &b.Tenant.Name,
+			&b.Tenant.ID, &b.Tenant.Name, &b.Tenant.Timezone,
 			&b.Outlet.ID, &b.Outlet.Name, &b.Outlet.Address, &b.Outlet.Phone,
 			&b.Register.ID, &b.Register.OutletID, &b.Register.Name, &b.Register.TableService,
+			&b.Capabilities,
 			&b.RevisionMs,
 			&b.AuthGenerations[0], &b.AuthGenerations[1], &b.AuthGenerations[2], &b.ExpiresAtMs,
 		)

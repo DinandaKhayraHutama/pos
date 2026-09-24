@@ -1,0 +1,132 @@
+package views
+
+import (
+	"strconv"
+
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/staff"
+)
+
+// RolesPage lists the three built-in roles and the merchant's own. A built-in
+// role is shown with what it grants and cannot be edited: its permissions live
+// in code so every owner keeps receiving new ones automatically.
+templ RolesPage(s Session, roles []staff.RoleInfo) {
+	@Shell("Peran & akses", s) {
+		<div class="head">
+			<div>
+				<h1>Peran &amp; akses</h1>
+				<p class="sub">Siapa boleh melakukan apa, di kasir dan di Backoffice. Peran bawaan tidak bisa diubah; buat peran sendiri untuk kebutuhan lain.</p>
+			</div>
+			<a class="button primary" href="/backoffice/staff/roles/new">Tambah peran</a>
+		</div>
+		<div class="card">
+			<table>
+				<thead><tr><th>Peran</th><th>Akses</th><th>Izin</th><th>Dipakai</th><th></th></tr></thead>
+				<tbody>
+					for _, r := range roles {
+						<tr>
+							<td>
+								{ r.Name }
+								if r.SystemKey != nil {
+									<span class="badge">bawaan</span>
+								}
+							</td>
+							<td>
+								if r.Access.POS {
+									<span class="badge on">kasir</span>
+								}
+								if r.Access.Backoffice {
+									<span class="badge on">Backoffice</span>
+								}
+							</td>
+							<td>{ strconv.Itoa(len(r.Permission)) } izin</td>
+							<td>{ strconv.Itoa(r.Holders) } orang</td>
+							<td style="text-align:right"><a href={ templ.URL("/backoffice/staff/roles/" + r.ID) }>
+								if r.SystemKey != nil {
+									Lihat
+								} else {
+									Ubah
+								}
+							</a></td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}
+
+templ RoleNewPage(s Session, f Form) {
+	@Shell("Tambah peran", s) {
+		<p><a href="/backoffice/staff/roles">← Peran &amp; akses</a></p>
+		<h1>Tambah peran</h1>
+		<div class="card">
+			@RoleForm("", f)
+		</div>
+	}
+}
+
+templ RolePage(s Session, r staff.RoleInfo, f Form) {
+	@Shell(r.Name, s) {
+		<p><a href="/backoffice/staff/roles">← Peran &amp; akses</a></p>
+		<h1>{ r.Name }</h1>
+		if r.SystemKey != nil {
+			<p class="sub">Peran bawaan. Izinnya ditetapkan aplikasi dan tidak bisa diubah, agar pemilik selalu menerima izin baru secara otomatis.</p>
+			<div class="card">
+				<h2>Izin</h2>
+				<ul>
+					for _, p := range r.Permission {
+						<li>{ PermissionLabel(string(p)) }</li>
+					}
+				</ul>
+			</div>
+		} else {
+			<div class="card">
+				@RoleForm(r.ID, f)
+			</div>
+			<div class="card">
+				<h2>Hapus peran</h2>
+				if r.Deletable {
+					<form hx-post={ "/backoffice/staff/roles/" + r.ID + "/delete" } hx-confirm="Hapus peran ini?">
+						<button type="submit" class="danger">Hapus</button>
+					</form>
+				} else {
+					<p class="sub">Masih dipegang { strconv.Itoa(r.Holders) } orang. Pindahkan mereka ke peran lain dulu.</p>
+				}
+			</div>
+		}
+	}
+}
+
+templ RoleForm(id string, f Form) {
+	<form class="grid" hx-post={ roleAction(id) } hx-swap="outerHTML">
+		@Field(f, "Nama peran", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+		@Field(f, "Urutan", "sort_order", "number", templ.Attributes{"step": "1"})
+		<div class="wide">
+			<p><strong>Boleh masuk ke</strong></p>
+			@Check(f, "Aplikasi kasir (dengan PIN)", "pos_access")
+			@Check(f, "Backoffice (dengan email dan kata sandi)", "backoffice_access")
+			@FormError(f, "access")
+		</div>
+		for _, g := range PermissionGroups {
+			<fieldset class="wide">
+				<legend>{ g.Label }</legend>
+				for _, o := range g.Options {
+					<label class="check">
+						<input type="checkbox" name="permissions" value={ o.Value } checked?={ f.Has("permissions", o.Value) }/>
+						{ o.Label }
+					</label>
+				}
+			</fieldset>
+		}
+		@FormError(f, "permissions")
+		<p class="hint wide">Anda hanya bisa memberikan izin yang Anda miliki sendiri. Peran baru hanya bisa dipakai setelah semua perangkat kasir memakai aplikasi versi terbaru.</p>
+		<div class="actions wide"><button type="submit" class="primary">Simpan</button></div>
+	</form>
+}
+
+func roleAction(id string) string {
+	if id == "" {
+		return "/backoffice/staff/roles"
+	}
+	return "/backoffice/staff/roles/" + id
+}

@@ -222,6 +222,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get posNoteHint => 'e.g. no chili, extra sauce';
 
   @override
+  String get posOrderDetails => 'Customer & note';
+
+  @override
+  String get posLineNote => 'Item note';
+
+  @override
+  String get posLineNoteHint => 'e.g. well done, no onion';
+
+  @override
   String get posOrderType => 'Order type';
 
   @override
@@ -2009,4 +2018,365 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get reportNotPermitted => 'Your account cannot open this report.';
+
+  @override
+  String get posCreateCustomer => 'Create this customer';
+
+  @override
+  String get reportByBrand => 'Sales by brand';
+
+  @override
+  String get posPaymentEwallet => 'E-wallet';
+
+  @override
+  String get posPaymentTransfer => 'Bank transfer';
+
+  @override
+  String get posPaymentOther => 'Other';
+
+  @override
+  String get posSalesTypeCustom => 'Other sales type';
+
+  @override
+  String get posPaymentReference => 'Reference number';
+
+  @override
+  String get posPaymentReferenceRequired =>
+      'Enter the payment reference number';
+
+  @override
+  String get posPaymentManual =>
+      'Recorded manually: confirm the payment went through before completing the sale';
+
+  @override
+  String get posCashShort => 'Cash received is less than the total';
+
+  @override
+  String get posServedBy => 'Served by';
+
+  @override
+  String get posServedByRequired => 'Choose who served this order';
+
+  @override
+  String get posTaxIncluded => 'PB1 included in prices';
+
+  @override
+  String get posRounding => 'Rounding';
+
+  @override
+  String get posCustomAmount => 'Custom amount';
+
+  @override
+  String get posCustomAmountLabel => 'Description';
+
+  @override
+  String get posCustomAmountValue => 'Amount';
+
+  @override
+  String get authorizeReasonCustomAmount =>
+      'A custom amount needs approval from someone allowed to enter one.';
+
+  @override
+  String get posItemDiscount => 'Item discount';
+
+  @override
+  String get posItemDiscountLocked =>
+      'An item discount needs a manager\'s approval';
+
+  @override
+  String get authorizeReasonItemDiscount =>
+      'Item discounts need a manager or owner PIN.';
+
+  @override
+  String get posNamedDiscounts => 'Saved discounts';
+
+  @override
+  String posNamedDiscountValue(String name) {
+    return 'Type the value for $name';
+  }
+
+  @override
+  String get posDiscountNeedsApproval => 'Needs approval';
+
+  @override
+  String get receiptServedBy => 'Served by';
+
+  @override
+  String get receiptManualPayment => '(manual)';
+
+  @override
+  String get employeeRoleCustom => 'Custom role';
+
+  @override
+  String get employeeRoleCustomHint =>
+      'This role\'s permissions are managed in the Backoffice.';
+
+  @override
+  String get settingsBusinessDeviceOnly =>
+      'These values apply to this device only, until the owner saves the business settings in the Backoffice.';
+
+  @override
+  String get settingsBusinessManaged =>
+      'Tax, service charge, rounding and the receipt are set in the Backoffice.';
+
+  @override
+  String get settingsTaxMode => 'PB1 mode';
+
+  @override
+  String get settingsTaxModeInclusive => 'Included in prices';
+
+  @override
+  String get settingsTaxModeExclusive => 'Added at checkout';
+
+  @override
+  String get settingsRoundingNone => 'None';
+
+  @override
+  String get billSave => 'Save bill';
+
+  @override
+  String billSendToKitchen(int count) {
+    return 'Send to kitchen ($count)';
+  }
+
+  @override
+  String billSaved(String number) {
+    return 'Bill $number saved';
+  }
+
+  @override
+  String get billSentToKitchen => 'Sent to the kitchen';
+
+  @override
+  String get billLineInKitchen => 'In kitchen';
+
+  @override
+  String get billNothingToSend => 'Every item is already in the kitchen';
+
+  @override
+  String get billOpenBills => 'Open bills';
+
+  @override
+  String billOpenBillsCount(int count) {
+    return 'Open bills ($count)';
+  }
+
+  @override
+  String get billThisTill => 'On this till';
+
+  @override
+  String get billOtherTills => 'Other tills';
+
+  @override
+  String get billParkedWaiting => 'Parked, waiting to be taken over';
+
+  @override
+  String billHeldBy(String register) {
+    return 'Held by $register';
+  }
+
+  @override
+  String get billOpenAction => 'Open';
+
+  @override
+  String get billClaim => 'Take over';
+
+  @override
+  String get billPark => 'Park bill';
+
+  @override
+  String get billParkHint =>
+      'Releases the bill so another till, or this one after a shift change, can take it over.';
+
+  @override
+  String get billParked => 'Bill parked';
+
+  @override
+  String billClaimed(String number) {
+    return 'Bill $number is now on this till';
+  }
+
+  @override
+  String get billCancel => 'Cancel bill';
+
+  @override
+  String get billCancelReason => 'Reason';
+
+  @override
+  String get billCancelInKitchen => 'Items already sent to the kitchen';
+
+  @override
+  String get billCancelRestock => 'Back to stock';
+
+  @override
+  String get billCancelWaste => 'Wasted';
+
+  @override
+  String get billCancelled => 'Bill cancelled';
+
+  @override
+  String get billCloseEditor => 'Close bill (it stays saved)';
+
+  @override
+  String get billPrebill => 'Print pre-bill';
+
+  @override
+  String get billPrebillUnpaid => 'UNPAID';
+
+  @override
+  String get billPrebillTitle => 'PRE-BILL';
+
+  @override
+  String billPrebillRevision(int revision) {
+    return 'Revision $revision';
+  }
+
+  @override
+  String get billPrebillEstimate =>
+      'Estimate. Final amounts are on the paid receipt.';
+
+  @override
+  String get billNoOpenBills => 'No open bills';
+
+  @override
+  String billBoardCached(String time) {
+    return 'Offline. List as of $time';
+  }
+
+  @override
+  String get billBoardUnavailable => 'Bills on other tills need a connection';
+
+  @override
+  String billItems(int count) {
+    return '$count items';
+  }
+
+  @override
+  String get billSavedLabel => 'Saved';
+
+  @override
+  String get billUnsaved => 'Not saved yet';
+
+  @override
+  String get billErrorNotEditable =>
+      'This bill can no longer be changed on this till.';
+
+  @override
+  String get billErrorOtherSession =>
+      'This bill belongs to another drawer. Park it, then take it over from the drawer that is open now.';
+
+  @override
+  String get billErrorNeedsServer => 'This needs a connection to the server.';
+
+  @override
+  String get billErrorSyncFirst =>
+      'Some changes have not reached the server yet. Sync, then try again.';
+
+  @override
+  String get billErrorNotParked => 'Another till already has this bill.';
+
+  @override
+  String get billErrorTableBusy => 'Another till just seated this table.';
+
+  @override
+  String get billErrorOpenBillsRemaining =>
+      'Settle or cancel every bill at this table first.';
+
+  @override
+  String get billErrorDecisionMissing =>
+      'Choose back to stock or wasted for every item already in the kitchen.';
+
+  @override
+  String get billErrorNetwork =>
+      'No connection to the server. Try again when it is back.';
+
+  @override
+  String billErrorGeneric(String code) {
+    return 'Could not complete this ($code).';
+  }
+
+  @override
+  String get kitchenBoard => 'Kitchen';
+
+  @override
+  String get kitchenEmpty => 'Nothing in the kitchen';
+
+  @override
+  String get kitchenStatusQueued => 'Queued';
+
+  @override
+  String get kitchenStatusPreparing => 'Preparing';
+
+  @override
+  String get kitchenStatusReady => 'Ready';
+
+  @override
+  String get kitchenStatusServed => 'Served';
+
+  @override
+  String get kitchenStatusCancelled => 'Cancelled';
+
+  @override
+  String get kitchenStart => 'Start';
+
+  @override
+  String get kitchenMarkReady => 'Ready';
+
+  @override
+  String get kitchenMarkServed => 'Served';
+
+  @override
+  String kitchenSentAt(String time, String name) {
+    return 'Sent $time by $name';
+  }
+
+  @override
+  String get tableSeat => 'Seat guests';
+
+  @override
+  String tableSeatedFor(String duration) {
+    return 'Seated $duration';
+  }
+
+  @override
+  String get tableClear => 'Clear table';
+
+  @override
+  String get tableCleared => 'Table cleared';
+
+  @override
+  String get tableNewBill => 'New bill';
+
+  @override
+  String get tablePaidStillSeated => 'Paid, table still in use';
+
+  @override
+  String tableBillsOpen(int count) {
+    return '$count open bills';
+  }
+
+  @override
+  String get tableMoveLater =>
+      'Moving a seated bill to another table is not available yet.';
+
+  @override
+  String shiftOpenBillsBlock(int count) {
+    return '$count open bills still belong to this drawer. Settle, cancel or park them before closing.';
+  }
+
+  @override
+  String get refundRestock => 'The items came back to stock';
+
+  @override
+  String get refundRestockHint =>
+      'Leave this off for food that was made: it is no longer stock.';
+
+  @override
+  String get deadLetterBillNotOwned =>
+      'This till no longer owns the bill. The change is kept here as evidence and cannot be sent again.';
+
+  @override
+  String orderFromBill(String number) {
+    return 'Settles bill $number';
+  }
 }

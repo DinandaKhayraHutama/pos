@@ -355,7 +355,7 @@ func seedOrderHistory(ctx context.Context, e *env, fleet *Fleet, start time.Time
 				order := wire.Order{
 					Id: newUUID(), Revision: 1, BusinessDate: day.Format(time.DateOnly),
 					Number: fmt.Sprintf("H-%d-%d", d, n), PlacedAtMs: placed.UnixMilli(),
-					Type: "dinein", Status: "paid", PosSessionId: till.session,
+					Type: "dineIn", Status: "paid", PosSessionId: till.session,
 					PaymentMethod: "cash", CashierName: "Kasir Riwayat",
 					Items: []wire.OrderItem{{
 						Id: itemID, ProductName: product.name, Quantity: quantity,

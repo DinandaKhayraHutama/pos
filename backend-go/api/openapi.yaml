@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: JustClick Device API
-  version: 2.5.0
+  version: 2.9.0
   description: |
     Frozen baseline for Flutter v2, extended additively in 2.1.0 with the stock
     ledger (Fase 5): the outlet-scoped feeds outlet_stock and stock_movements,
@@ -28,6 +28,57 @@ info:
     it is. Net sales are gross sales minus discounts minus sales returns; tax
     and service charge raise revenue and never profit. The master-data feed
     schema is unchanged and remains version 1.
+    2.6.0 adds brands (Fase 2 paritas): a company-scoped, pull-only feed of
+    flat product labels, and ProductRow gains a nullable brand_id. Both are
+    additive; a device on an older schema ignores the new column, and the
+    master-data feed schema is still version 1.
+    2.7.0 adds customers (Fase 2 paritas): a company-scoped feed a till both
+    pulls and pushes. The push side is insert-only — id is the idempotency
+    key, an existing id is left alone rather than overwritten, and there is
+    no revision because editing an existing customer is Backoffice-only and
+    this entity does not carry edits. Additive; the master-data feed schema
+    is still version 1.
+    2.8.0 adds business settings, custom roles and the pricing engine (Fase 3
+    paritas), additively. New pull feeds: roles, business_settings,
+    outlet_settings (outlet-scoped, keyed by outlet_id), sales_types,
+    product_sales_type_prices, outlet_product_sales_type_prices
+    (outlet-scoped), payment_methods, payment_groups and discounts; EmployeeRow
+    gains role_id. List-valued columns (roles.permissions,
+    payment_groups.method_ids, outlet_settings.sales_type_ids) travel as one
+    comma-separated string so a till stores them as text; an empty string is
+    an empty list and null on sales_type_ids means every active sales type.
+    Tenant gains timezone (one of Asia/Jakarta, Asia/Makassar, Asia/Jayapura).
+    Order gains an optional pricing snapshot (pricing_version, pricing,
+    tax_included, rounding_amount), sales type, payment method, served-by and
+    named-discount snapshots and tz_offset_minutes; OrderItem gains the
+    per-line breakdown. The header equation is now total = subtotal - discount
+    + tax - tax_included + service_charge_amount + rounding_amount, which is
+    the old equation whenever the two new fields are absent. For
+    pricing_version 2 the lines must also add up to the header, or the row is
+    rejected; a disagreement between the server's recomputation of the
+    snapshot and the figures sent is FLAGGED on the order, never rejected.
+    payment_method stays the method KIND (cash, card, qris, ewallet, transfer,
+    other) so drawer arithmetic keeps comparing to cash. Every call may carry
+    X-Device-Capabilities; the Backoffice uses what each device last reported
+    to refuse turning on a feature an active device cannot honour.
+    2.9.0 adds saved bills and the restaurant order cycle (Fase 4 paritas),
+    additively. A bill is not a receipt: two push-only entities carry it,
+    bills (a mutable snapshot at a revision, owned by one till, fenced by
+    owner_generation) and kitchen_dispatches (an immutable batch of lines sent
+    to the kitchen, with the sale stock movements it consumed; only its kitchen
+    status moves forward afterwards). Push them in the order bills,
+    kitchen_dispatches, orders. Saving a bill takes no money and moves no stock;
+    a dispatch consumes stock exactly once; the receipt that settles a bill
+    names it in bill_id, each OrderItem names its bill_line_id, and it carries
+    no sale movement of its own. A snapshot or dispatch from a till that no
+    longer owns the bill is rejected with bill_not_owned. New till endpoints
+    list the outlet's open bills and seatings, park a bill on the server and
+    claim it on another till, and open or close a table seating; all take the
+    cashier token, and an operation or seating id makes a retry return the
+    first answer. OutletSettingsRow gains bill_model (legacy or v1), switched
+    on only once every active till of the branch reports bills-v1. PushResult
+    gains effects (stock_seq and balance_after per movement committed with a
+    dispatch or receipt).
     Outlet-scoped feeds page and count per bound outlet only.
     All successful responses are JSON objects.
     Timestamps are epoch milliseconds, money is integer rupiah. Identity comes
@@ -49,6 +100,7 @@ paths:
     post:
       operationId: activateDevice
       security: []
+      parameters: [{$ref: '#/components/parameters/DeviceCapabilities'}]
       requestBody:
         required: true
         content:
@@ -67,6 +119,7 @@ paths:
   /devices/me:
     get:
       operationId: getDevice
+      parameters: [{$ref: '#/components/parameters/DeviceCapabilities'}]
       responses:
         '200':
           description: Current binding
@@ -245,10 +298,161 @@ paths:
         '409': {$ref: '#/components/responses/Error'}
         '429': {$ref: '#/components/responses/Error'}
         '503': {$ref: '#/components/responses/Error'}
+  /till/bills:
+    get:
+      operationId: tillBillBoard
+      description: >-
+        Every open bill and every open table seating of the device's outlet, in
+        one consistent read. Not paged: an outlet's open bills are few, and one
+        snapshot cannot miss a change the way a cursor over a moving set can.
+        Needs sell or manageTables. Not a feed: nothing here is cached as an
+        applied cursor.
+      parameters: [{$ref: '#/components/parameters/CashierToken'}]
+      responses:
+        '200':
+          description: The outlet's open bills and seatings. Cache-Control no-store.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TillBillBoardResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /till/bills/{bill_id}:
+    get:
+      operationId: tillBillDetail
+      description: One bill of the device's outlet with its lines and dispatches, read-only. Needs sell or manageTables.
+      parameters:
+        - {$ref: '#/components/parameters/CashierToken'}
+        - {name: bill_id, in: path, required: true, schema: {$ref: '#/components/schemas/UUID'}}
+      responses:
+        '200':
+          description: The bill as the server holds it. Cache-Control no-store.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TillBillDetailResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /till/bills/{bill_id}/park:
+    post:
+      operationId: parkTillBill
+      description: >-
+        Releases this till's open bill to the server so another till may claim
+        it. Refused with sync_before_handoff unless the server already holds
+        expected_revision and expected_dispatches — push first. Raises
+        owner_generation, so anything this till sends for the bill afterwards is
+        refused as bill_not_owned. Needs sell. A retry with the same
+        operation_id returns the first answer.
+      parameters:
+        - {$ref: '#/components/parameters/CashierToken'}
+        - {name: bill_id, in: path, required: true, schema: {$ref: '#/components/schemas/UUID'}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TillBillParkRequest'}
+      responses:
+        '200':
+          description: The bill is parked. Cache-Control no-store.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TillBillParkResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /till/bills/{bill_id}/claim:
+    post:
+      operationId: claimTillBill
+      description: >-
+        Makes this till the owner of a parked open bill, under the calling
+        cashier's current drawer. Exactly one of two tills claiming together
+        wins; the other gets bill_not_parked. Returns the full bill, which the
+        till stores before it lets anyone edit it. Needs sell and a drawer this
+        cashier is active on. A retry with the same operation_id returns the
+        first answer.
+      parameters:
+        - {$ref: '#/components/parameters/CashierToken'}
+        - {name: bill_id, in: path, required: true, schema: {$ref: '#/components/schemas/UUID'}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TillOperationRequest'}
+      responses:
+        '200':
+          description: The claimed bill. Cache-Control no-store.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TillBillDetailResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /till/table-sessions:
+    post:
+      operationId: openTableSession
+      description: >-
+        Seats a table: opens its one seating, marks it occupied and publishes
+        that on the table_status feed. The seating id is chosen and stored by
+        the till before it asks; a retry with it returns the same seating. A
+        table already seated answers table_busy. Needs sell or manageTables.
+      parameters: [{$ref: '#/components/parameters/CashierToken'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TableSessionOpenRequest'}
+      responses:
+        '200':
+          description: The seating. Cache-Control no-store.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TableSessionResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /till/table-sessions/{session_id}/close:
+    post:
+      operationId: closeTableSession
+      description: >-
+        Clears a table once no bill of its seating is still open
+        (open_bills_remaining otherwise). Paying a bill never does this on its
+        own: guests may still be seated. Needs sell or manageTables. Closing an
+        already closed seating returns it unchanged.
+      parameters:
+        - {$ref: '#/components/parameters/CashierToken'}
+        - {name: session_id, in: path, required: true, schema: {$ref: '#/components/schemas/UUID'}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TillOperationRequest'}
+      responses:
+        '200':
+          description: The closed seating. Cache-Control no-store.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TableSessionResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
   /sync/manifest:
     get:
       operationId: getManifest
-      parameters: [{$ref: '#/components/parameters/SchemaVersion'}]
+      parameters:
+        - {$ref: '#/components/parameters/SchemaVersion'}
+        - {$ref: '#/components/parameters/DeviceCapabilities'}
       responses:
         '200':
           description: Dependency order and application rules
@@ -259,7 +463,9 @@ paths:
   /sync/changes:
     get:
       operationId: getChanges
-      parameters: [{$ref: '#/components/parameters/SchemaVersion'}]
+      parameters:
+        - {$ref: '#/components/parameters/SchemaVersion'}
+        - {$ref: '#/components/parameters/DeviceCapabilities'}
       responses:
         '200':
           description: Advisory watermarks; compare with locally applied cursors
@@ -272,6 +478,7 @@ paths:
       operationId: pullChanges
       parameters:
         - {$ref: '#/components/parameters/SchemaVersion'}
+        - {$ref: '#/components/parameters/DeviceCapabilities'}
         - {name: entity, in: query, required: true, schema: {type: string}}
         - {name: after_seq, in: query, schema: {type: integer, format: int64, minimum: 0, default: 0}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 1000, default: 500}}
@@ -287,8 +494,9 @@ paths:
       operationId: pushChanges
       description: |
         At most 200 rows total and 4 MiB encoded body. Batches must put
-        pos_sessions before orders; stock_movements are independent of both
-        and are applied at the token's outlet, as are table_status_events.
+        pos_sessions before orders, and bills before kitchen_dispatches before
+        orders; stock_movements are independent of all of them and are applied
+        at the token's outlet, as are table_status_events.
         Each row is independent and logged before domain processing. Results
         correlate by zero-based batch_index and row_index, even for unreadable
         ids. A transaction commits before an
@@ -297,7 +505,9 @@ paths:
         wins over a changed retry date. Never choose tenant/outlet/register
         from a payload. Financial figures and lines are immutable after first
         acceptance; only status and its audit fields may change thereafter.
-      parameters: [{$ref: '#/components/parameters/SchemaVersion'}]
+      parameters:
+        - {$ref: '#/components/parameters/SchemaVersion'}
+        - {$ref: '#/components/parameters/DeviceCapabilities'}
       requestBody:
         required: true
         content:
@@ -357,6 +567,16 @@ components:
       required: true
       schema: {type: integer, minimum: 1}
       description: Missing/obsolete returns 409 device_schema_outdated; invalid returns 400.
+    DeviceCapabilities:
+      name: X-Device-Capabilities
+      in: header
+      required: false
+      schema: {type: string, maxLength: 256, pattern: '^[a-z0-9-]*(,[a-z0-9-]+)*$'}
+      description: >-
+        Comma-separated feature tokens this build honours (pricing-v2,
+        roles-v1, bills-v1). Recorded per device only when the set changes; unknown
+        tokens are ignored. Absent means an app older than Fase 3, which is
+        exactly what the Backoffice needs to know before it enables a feature.
     ReportPeriod:
       name: period
       in: query
@@ -421,6 +641,15 @@ components:
       properties:
         id: {$ref: '#/components/schemas/ID'}
         name: {type: string}
+        timezone:
+          type: string
+          maxLength: 64
+          description: >-
+            The merchant's trading clock (IANA name; the Backoffice offers
+            Asia/Jakarta, Asia/Makassar and Asia/Jayapura). A till dates its
+            receipts by it when it recognises the zone; absent from a server
+            older than 2.8.0, and an unrecognised zone, both leave the device
+            clock in charge as before.
     Outlet:
       type: object
       required: [id, name, address, phone]
@@ -621,6 +850,8 @@ components:
         net_sales: {$ref: '#/components/schemas/Money'}
         tax: {$ref: '#/components/schemas/Money'}
         service_charge: {$ref: '#/components/schemas/Money'}
+        tax_included: {allOf: [{$ref: '#/components/schemas/Money'}], description: 'Fase 3. Tax already inside inclusive prices; taken out of net sales, so gross - discounts - sales_returns - tax_included = net_sales.'}
+        rounding: {type: integer, format: int64, description: 'Fase 3. Final rounding collected (may be negative); part of revenue, never of sales.'}
         revenue: {$ref: '#/components/schemas/Money'}
         order_count: {type: integer, format: int64}
         average_sale: {$ref: '#/components/schemas/Money'}
@@ -659,8 +890,10 @@ components:
         by_day: {type: array, items: {type: object, additionalProperties: true}}
         by_outlet: {type: array, items: {type: object, additionalProperties: true}}
         by_payment: {type: array, items: {type: object, additionalProperties: true}}
+        by_sales_type: {type: array, items: {type: object, additionalProperties: true}, description: 'Fase 3. Net sales and revenue per sales type.'}
         by_cashier: {type: array, items: {type: object, additionalProperties: true}}
         by_category: {type: array, items: {type: object, additionalProperties: true}}
+        by_brand: {type: array, items: {type: object, additionalProperties: true}}
         by_product: {type: array, items: {type: object, additionalProperties: true}}
         by_product_in_category: {type: array, items: {type: object, additionalProperties: true}}
         adjustments: {type: array, items: {type: object, additionalProperties: true}}
@@ -744,7 +977,7 @@ components:
         status: {type: string, enum: [accepted, rejected, retry]}
         code:
           type: string
-          enum: [duplicate, settled, session_closed, recovery_required, unknown_entity, schema_rejected, stale_revision, register_busy, dependency_pending, server_unavailable, archived]
+          enum: [duplicate, settled, session_closed, recovery_required, unknown_entity, schema_rejected, stale_revision, register_busy, dependency_pending, server_unavailable, archived, bill_not_owned]
         message: {type: string}
         recovery_id: {allOf: [{$ref: '#/components/schemas/UUID'}], nullable: true}
         inserted: {type: boolean}
@@ -767,6 +1000,18 @@ components:
           type: string
           enum: [applied, superseded]
           description: For an accepted table status event, whether the table took its status (applied) or kept a later change by another till (superseded).
+        effects:
+          type: array
+          maxItems: 400
+          description: For an accepted kitchen dispatch, bill or receipt, what each stock movement it committed did — the same stock_seq and balance_after a standalone movement returns, so the till stops counting it once a snapshot includes it.
+          items: {$ref: '#/components/schemas/PushEffect'}
+    PushEffect:
+      type: object
+      required: [id, stock_seq, balance_after]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        stock_seq: {type: integer, format: int64}
+        balance_after: {type: integer, format: int64}
     Session:
       type: object
       additionalProperties: false
@@ -804,6 +1049,7 @@ components:
         pos_session_id: {$ref: '#/components/schemas/UUID'}
         table_id: {type: string, nullable: true}
         table_name: {type: string, nullable: true, maxLength: 255}
+        customer_id: {type: string, nullable: true}
         customer_name: {type: string, nullable: true, maxLength: 255}
         note: {type: string, nullable: true, maxLength: 2000}
         subtotal: {$ref: '#/components/schemas/Money'}
@@ -823,7 +1069,44 @@ components:
         authorized_by: {type: string, nullable: true, maxLength: 255}
         void_reason: {type: string, nullable: true, maxLength: 2000}
         refunded_amount: {type: integer, format: int64, minimum: 0, nullable: true}
+        pricing_version: {type: integer, minimum: 1, maximum: 2, description: 'Absent or 1: the legacy cart math. 2: the Fase 3 engine; its lines must reconcile with the header.'}
+        pricing: {$ref: '#/components/schemas/PricingSnapshot'}
+        tax_included: {allOf: [{$ref: '#/components/schemas/Money'}], description: The part of tax already inside the prices (inclusive mode). Never more than tax.}
+        rounding_amount: {type: integer, format: int64, minimum: -1000000, maximum: 1000000, description: Final rounding of what the customer pays; may be negative.}
+        tz_offset_minutes: {type: integer, minimum: -720, maximum: 840, description: The merchant clock the business date was read from.}
+        sales_type_id: {type: string, nullable: true}
+        sales_type_name: {type: string, nullable: true, maxLength: 255}
+        payment_method_id: {type: string, nullable: true}
+        payment_method_name: {type: string, nullable: true, maxLength: 255}
+        payment_reference: {type: string, nullable: true, maxLength: 120}
+        served_by_id: {type: string, nullable: true}
+        served_by_name: {type: string, nullable: true, maxLength: 255}
+        discount_id: {type: string, nullable: true}
+        discount_name: {type: string, nullable: true, maxLength: 255}
+        discount_authorized_by_id: {type: string, nullable: true}
+        discount_authorized_by_name: {type: string, nullable: true, maxLength: 255}
+        bill_id: {allOf: [{$ref: '#/components/schemas/UUID'}], nullable: true, description: 'Fase 4. The bill this receipt settles. Every line of the bill must already be dispatched on the server, and the receipt carries no sale movement of its own: the dispatches consumed the stock.'}
         items: {type: array, minItems: 1, maxItems: 200, items: {$ref: '#/components/schemas/OrderItem'}}
+    PricingSnapshot:
+      type: object
+      additionalProperties: false
+      description: The configuration the till priced the bill with, frozen at checkout so the server can recompute it.
+      required: [tax_mode, service_rate_bp, service_taxable, rounding_unit, rounding_mode]
+      properties:
+        tax_mode: {type: string, enum: [exclusive, inclusive]}
+        service_rate_bp: {type: integer, minimum: 0, maximum: 10000}
+        service_taxable: {type: boolean}
+        rounding_unit: {type: integer, minimum: 0, maximum: 100000}
+        rounding_mode: {type: string, enum: [nearest, up, down]}
+        bill_discount: {$ref: '#/components/schemas/DiscountSpec'}
+    DiscountSpec:
+      type: object
+      additionalProperties: false
+      nullable: true
+      required: [kind, value]
+      properties:
+        kind: {type: string, enum: [percent, amount]}
+        value: {type: integer, format: int64, minimum: 0, maximum: 1000000000000, description: 'Basis points for percent, rupiah for amount.'}
     OrderItem:
       type: object
       description: unit_price is the final per-unit snapshot including variant/modifier deltas; never add modifier price_delta to it again. subtotal equals sum(unit_price * quantity).
@@ -840,6 +1123,23 @@ components:
         note: {type: string, nullable: true, maxLength: 2000}
         category_id: {type: string, nullable: true}
         category_name: {type: string, nullable: true, maxLength: 255}
+        brand_id: {type: string, nullable: true}
+        custom: {type: boolean, description: 'A custom amount typed at the till; no product, no stock effect.'}
+        base_price: {allOf: [{$ref: '#/components/schemas/Money'}], description: The resolved price before variant and modifier deltas.}
+        price_source: {type: string, enum: [base, sales_type, outlet_sales_type, custom]}
+        tax_rate_bp: {type: integer, minimum: 0, maximum: 10000}
+        discount: {$ref: '#/components/schemas/DiscountSpec'}
+        line_discount_id: {type: string, nullable: true}
+        line_discount_name: {type: string, nullable: true, maxLength: 255}
+        line_discount_authorized_by_id: {type: string, nullable: true}
+        line_discount_authorized_by_name: {type: string, nullable: true, maxLength: 255}
+        line_discount: {$ref: '#/components/schemas/Money'}
+        bill_discount_share: {$ref: '#/components/schemas/Money'}
+        service_share: {$ref: '#/components/schemas/Money'}
+        tax_amount: {$ref: '#/components/schemas/Money'}
+        tax_included: {$ref: '#/components/schemas/Money'}
+        net_amount: {$ref: '#/components/schemas/Money'}
+        bill_line_id: {allOf: [{$ref: '#/components/schemas/UUID'}], nullable: true, description: 'Fase 4. The bill line this receipt line settles, when the receipt names a bill_id.'}
         modifiers: {type: array, maxItems: 50, items: {$ref: '#/components/schemas/OrderItemModifier'}}
     OrderItemModifier:
       type: object
@@ -851,14 +1151,408 @@ components:
         option_name: {$ref: '#/components/schemas/Name'}
         price_delta: {type: integer, format: int64, minimum: -1000000000000, maximum: 1000000000000}
         sort_order: {type: integer, minimum: 0}
+    Bill:
+      type: object
+      additionalProperties: false
+      description: |
+        Fase 4. One bill as its owning till last saved it, at a revision. The
+        till numbers revisions itself and every save is a newer one; the server
+        keeps the last accepted snapshot and accepts an exact retry of it. The
+        snapshot is refused as bill_not_owned when this till is not the owner or
+        owner_generation is not the bill's current one; a line already
+        dispatched must appear unchanged in every later revision. status
+        cancelled is terminal and needs cancel; closed is never pushed — the
+        settling receipt closes the bill. Saving takes no money and moves no
+        stock.
+      required: [id, revision, owner_generation, number, status, pos_session_id, opened_at_ms, type, created_by_name, pricing, lines]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        revision: {type: integer, format: int64, minimum: 1}
+        owner_generation: {type: integer, format: int64, minimum: 1}
+        number: {type: string, minLength: 1, maxLength: 64}
+        status: {type: string, enum: [open, cancelled]}
+        pos_session_id: {$ref: '#/components/schemas/UUID'}
+        opened_at_ms: {$ref: '#/components/schemas/Millis'}
+        type: {type: string, minLength: 1, maxLength: 32}
+        sales_type_id: {type: string, nullable: true}
+        sales_type_name: {type: string, nullable: true, maxLength: 255}
+        table_session_id: {allOf: [{$ref: '#/components/schemas/UUID'}], nullable: true}
+        table_id: {type: string, nullable: true}
+        table_name: {type: string, nullable: true, maxLength: 255}
+        customer_id: {type: string, nullable: true}
+        customer_name: {type: string, nullable: true, maxLength: 255}
+        served_by_id: {type: string, nullable: true}
+        served_by_name: {type: string, nullable: true, maxLength: 255}
+        note: {type: string, nullable: true, maxLength: 2000}
+        created_by_id: {type: string, nullable: true}
+        created_by_name: {$ref: '#/components/schemas/Name'}
+        pricing: {$ref: '#/components/schemas/BillPricing'}
+        lines: {type: array, maxItems: 200, items: {$ref: '#/components/schemas/BillLine'}}
+        cancel: {$ref: '#/components/schemas/BillCancel'}
+    BillPricing:
+      type: object
+      additionalProperties: false
+      description: The configuration frozen when the bill was first saved, so a sync that changes a rate never re-prices a bill a guest was already quoted.
+      required: [version, tax_mode, service_rate_bp, service_taxable, rounding_unit, rounding_mode, default_tax_rate_bp, discount_source]
+      properties:
+        version: {type: integer, minimum: 1, maximum: 2}
+        tax_mode: {type: string, enum: [exclusive, inclusive]}
+        service_rate_bp: {type: integer, minimum: 0, maximum: 10000}
+        service_taxable: {type: boolean}
+        rounding_unit: {type: integer, minimum: 0, maximum: 100000}
+        rounding_mode: {type: string, enum: [nearest, up, down]}
+        default_tax_rate_bp: {type: integer, minimum: 0, maximum: 10000}
+        bill_discount: {$ref: '#/components/schemas/DiscountSpec'}
+        discount_source: {type: string, enum: [none, promo, manual, named]}
+        promo_id: {type: string, nullable: true}
+        promo_name: {type: string, nullable: true, maxLength: 255}
+        discount_id: {type: string, nullable: true}
+        discount_name: {type: string, nullable: true, maxLength: 255}
+        discount_authorized_by_id: {type: string, nullable: true}
+        discount_authorized_by_name: {type: string, nullable: true, maxLength: 255}
+    BillLine:
+      type: object
+      additionalProperties: false
+      description: One line of a bill, priced when it was added. unit_price already includes variant and modifier deltas.
+      required: [id, seq, product_name, unit_price, quantity, custom, modifiers]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        seq: {type: integer, minimum: 0, maximum: 100000}
+        product_id: {type: string, nullable: true}
+        product_name: {$ref: '#/components/schemas/Name'}
+        variant_id: {type: string, nullable: true, maxLength: 128}
+        variant_name: {type: string, nullable: true, maxLength: 255}
+        unit_price: {$ref: '#/components/schemas/Money'}
+        base_price: {$ref: '#/components/schemas/Money'}
+        price_source: {type: string, enum: [base, sales_type, outlet_sales_type, custom]}
+        tax_rate_bp: {type: integer, minimum: 0, maximum: 10000}
+        unit_cost: {type: integer, format: int64, minimum: 0, nullable: true}
+        quantity: {type: integer, minimum: 1, maximum: 1000000}
+        note: {type: string, nullable: true, maxLength: 2000}
+        custom: {type: boolean}
+        category_id: {type: string, nullable: true}
+        category_name: {type: string, nullable: true, maxLength: 255}
+        brand_id: {type: string, nullable: true}
+        discount: {$ref: '#/components/schemas/DiscountSpec'}
+        line_discount_id: {type: string, nullable: true}
+        line_discount_name: {type: string, nullable: true, maxLength: 255}
+        line_discount_authorized_by_id: {type: string, nullable: true}
+        line_discount_authorized_by_name: {type: string, nullable: true, maxLength: 255}
+        modifiers: {type: array, maxItems: 50, items: {$ref: '#/components/schemas/BillLineModifier'}}
+    BillLineModifier:
+      type: object
+      additionalProperties: false
+      required: [group_name, option_name, price_delta]
+      properties:
+        group_id: {type: string, nullable: true, maxLength: 128}
+        group_name: {$ref: '#/components/schemas/Name'}
+        option_id: {type: string, nullable: true, maxLength: 128}
+        option_name: {$ref: '#/components/schemas/Name'}
+        price_delta: {type: integer, format: int64, minimum: -1000000000000, maximum: 1000000000000}
+    BillCancel:
+      type: object
+      additionalProperties: false
+      nullable: true
+      description: |
+        Why an unpaid bill was cancelled, who allowed it and, for every line
+        already sent to the kitchen, whether it came back to the shelf
+        (restock) or was made and thrown away (waste). Waste is a
+        classification of a consumption that already happened, never a second
+        debit. stock_movements holds only the voidReturn movements of the
+        restocked lines, bounded by what the bill's dispatches consumed.
+      required: [reason, authorized_by, cancelled_at_ms, decisions, stock_movements]
+      properties:
+        reason: {type: string, minLength: 1, maxLength: 2000}
+        authorized_by: {$ref: '#/components/schemas/Name'}
+        authorized_by_id: {type: string, nullable: true}
+        cancelled_at_ms: {$ref: '#/components/schemas/Millis'}
+        decisions:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            additionalProperties: false
+            required: [bill_line_id, disposition]
+            properties:
+              bill_line_id: {$ref: '#/components/schemas/UUID'}
+              disposition: {type: string, enum: [restock, waste]}
+        stock_movements: {type: array, maxItems: 400, items: {$ref: '#/components/schemas/StockMovement'}}
+    KitchenDispatch:
+      type: object
+      additionalProperties: false
+      description: |
+        Fase 4. Lines of one bill confirmed for the kitchen, as one immutable
+        batch, and the sale movements that consumed their stock — committed in
+        one transaction, exactly once. lines repeats each bill line exactly as
+        the bill holds it; a line the server does not hold yet, or holds
+        differently, answers dependency_pending until the bill snapshot
+        arrives. A later revision may change status only, forward (queued,
+        preparing, ready, served); cancelled comes from cancelling the bill.
+      required: [id, revision, bill_id, owner_generation, pos_session_id, occurred_at_ms, employee_name, status, status_changed_at_ms, lines, stock_movements]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        revision: {type: integer, format: int64, minimum: 1}
+        bill_id: {$ref: '#/components/schemas/UUID'}
+        owner_generation: {type: integer, format: int64, minimum: 1}
+        pos_session_id: {$ref: '#/components/schemas/UUID'}
+        occurred_at_ms: {$ref: '#/components/schemas/Millis'}
+        employee_id: {type: string, nullable: true}
+        employee_name: {type: string, maxLength: 255}
+        status: {type: string, enum: [queued, preparing, ready, served, cancelled]}
+        status_changed_at_ms: {$ref: '#/components/schemas/Millis'}
+        lines: {type: array, minItems: 1, maxItems: 200, items: {$ref: '#/components/schemas/BillLine'}}
+        stock_movements: {type: array, maxItems: 400, items: {$ref: '#/components/schemas/StockMovement'}}
+    TillOperationRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_id]
+      properties:
+        operation_id: {$ref: '#/components/schemas/UUID'}
+    TillBillParkRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_id, expected_revision, expected_dispatches]
+      properties:
+        operation_id: {$ref: '#/components/schemas/UUID'}
+        expected_revision: {type: integer, format: int64, minimum: 1}
+        expected_dispatches: {type: integer, minimum: 0, maximum: 1000}
+    TillBillParkData:
+      type: object
+      required: [bill_id, owner_generation, parked_at_ms]
+      properties:
+        bill_id: {$ref: '#/components/schemas/UUID'}
+        owner_generation: {type: integer, format: int64, minimum: 1}
+        parked_at_ms: {$ref: '#/components/schemas/Millis'}
+    TillBillParkResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/TillBillParkData'}
+    TillBillSummary:
+      type: object
+      required: [id, number, status, owner_generation, revision, owned_by_this_device, parked, subtotal, line_count, opened_at_ms, updated_at_ms, dispatches]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        number: {type: string}
+        status: {type: string, enum: [open, closed, cancelled]}
+        owner_generation: {type: integer, format: int64}
+        revision: {type: integer, format: int64}
+        owned_by_this_device: {type: boolean}
+        parked: {type: boolean}
+        owner_register_name: {type: string, nullable: true}
+        owner_device_label: {type: string, nullable: true}
+        table_session_id: {type: string, nullable: true}
+        table_name: {type: string, nullable: true}
+        customer_name: {type: string, nullable: true}
+        subtotal: {$ref: '#/components/schemas/Money'}
+        line_count: {type: integer}
+        opened_at_ms: {$ref: '#/components/schemas/Millis'}
+        updated_at_ms: {$ref: '#/components/schemas/Millis'}
+        dispatches:
+          type: object
+          description: How many of the bill's dispatches are at each kitchen status.
+          additionalProperties: {type: integer}
+    TillDispatchSummary:
+      type: object
+      required: [id, revision, status, occurred_at_ms, employee_name, status_changed_at_ms, line_ids]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        revision: {type: integer, format: int64}
+        status: {type: string, enum: [queued, preparing, ready, served, cancelled]}
+        occurred_at_ms: {$ref: '#/components/schemas/Millis'}
+        employee_name: {type: string}
+        status_changed_at_ms: {$ref: '#/components/schemas/Millis'}
+        line_ids: {type: array, items: {$ref: '#/components/schemas/UUID'}}
+        dispatch:
+          allOf: [{$ref: '#/components/schemas/KitchenDispatch'}]
+          description: The dispatch exactly as it was accepted, at its current status and revision. A till that claims the bill keeps it, so it can report later kitchen progress for a batch another till sent — a status change must repeat the batch's lines and stock unchanged.
+    TillBillDetail:
+      type: object
+      required: [summary, bill, dispatches]
+      properties:
+        summary: {$ref: '#/components/schemas/TillBillSummary'}
+        bill: {$ref: '#/components/schemas/Bill'}
+        dispatches: {type: array, items: {$ref: '#/components/schemas/TillDispatchSummary'}}
+    TillBillDetailResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/TillBillDetail'}
+    TableSession:
+      type: object
+      required: [id, table_id, table_name, opened_at_ms, opened_by_name, open_bill_count]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        table_id: {$ref: '#/components/schemas/UUID'}
+        table_name: {type: string}
+        guest_count: {type: integer, nullable: true}
+        opened_at_ms: {$ref: '#/components/schemas/Millis'}
+        opened_by_name: {type: string}
+        closed_at_ms: {type: integer, format: int64, nullable: true}
+        closed_by_name: {type: string, nullable: true}
+        open_bill_count: {type: integer}
+    TableSessionOpenRequest:
+      type: object
+      additionalProperties: false
+      required: [id, table_id]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        table_id: {$ref: '#/components/schemas/UUID'}
+        guest_count: {type: integer, minimum: 1, maximum: 1000, nullable: true}
+    TableSessionResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/TableSession'}
+    TillBillBoard:
+      type: object
+      required: [bills, table_sessions, server_time_ms]
+      properties:
+        bills: {type: array, items: {$ref: '#/components/schemas/TillBillSummary'}}
+        table_sessions: {type: array, items: {$ref: '#/components/schemas/TableSession'}}
+        server_time_ms: {$ref: '#/components/schemas/Millis'}
+    TillBillBoardResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/TillBillBoard'}
+    RoleRow:
+      type: object
+      description: >-
+        A role. System roles (system_key set) take their permissions from the
+        app's own table and publish an empty list; a custom role lists its
+        permission names, comma-separated. A till drops names it does not know.
+      required: [id, name, system_key, permissions, pos_access, backoffice_access, sort_order, sync_seq, deleted_at_ms]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        system_key: {type: string, nullable: true}
+        permissions: {type: string}
+        pos_access: {type: boolean}
+        backoffice_access: {type: boolean}
+        sort_order: {type: integer, format: int64}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    BusinessSettingsRow:
+      type: object
+      description: The merchant's defaults. Its presence is what says the business has been configured in the Backoffice.
+      required: [id, tax_rate_bp, tax_mode, service_enabled, service_rate_bp, service_taxable, rounding_unit, rounding_mode, receipt_logo_url, receipt_footer, sync_seq, deleted_at_ms]
+      properties:
+        id: {type: string}
+        tax_rate_bp: {type: integer, format: int64}
+        tax_mode: {type: string}
+        service_enabled: {type: boolean}
+        service_rate_bp: {type: integer, format: int64}
+        service_taxable: {type: boolean}
+        rounding_unit: {type: integer, format: int64}
+        rounding_mode: {type: string}
+        receipt_logo_url: {type: string, nullable: true}
+        receipt_footer: {type: string, nullable: true}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    OutletSettingsRow:
+      type: object
+      description: One outlet's overrides. Null inherits the business value; zero is a real override.
+      required: [outlet_id, tax_rate_bp, tax_mode, service_enabled, service_rate_bp, service_taxable, rounding_unit, rounding_mode, receipt_header, receipt_footer, show_address, show_phone, track_server, default_sales_type_id, sales_type_ids, payment_group_id, pricing_model, bill_model, sync_seq, deleted_at_ms]
+      properties:
+        outlet_id: {type: string}
+        tax_rate_bp: {type: integer, format: int64, nullable: true}
+        tax_mode: {type: string, nullable: true}
+        service_enabled: {type: boolean, nullable: true}
+        service_rate_bp: {type: integer, format: int64, nullable: true}
+        service_taxable: {type: boolean, nullable: true}
+        rounding_unit: {type: integer, format: int64, nullable: true}
+        rounding_mode: {type: string, nullable: true}
+        receipt_header: {type: string, nullable: true}
+        receipt_footer: {type: string, nullable: true}
+        show_address: {type: boolean}
+        show_phone: {type: boolean}
+        track_server: {type: boolean}
+        default_sales_type_id: {type: string, nullable: true}
+        sales_type_ids: {type: string, nullable: true}
+        payment_group_id: {type: string, nullable: true}
+        pricing_model: {type: string, enum: [legacy, v2]}
+        bill_model: {type: string, enum: [legacy, v1], description: 'Fase 4. v1 turns on saved bills, kitchen dispatch and table seatings at this branch.'}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    SalesTypeRow:
+      type: object
+      required: [id, name, system_key, uses_table, active, sort_order, sync_seq, deleted_at_ms]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        system_key: {type: string, nullable: true}
+        uses_table: {type: boolean}
+        active: {type: boolean}
+        sort_order: {type: integer, format: int64}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    ProductSalesTypePriceRow:
+      type: object
+      required: [product_id, sales_type_id, price, sync_seq, deleted_at_ms]
+      properties:
+        product_id: {type: string}
+        sales_type_id: {type: string}
+        price: {type: integer, format: int64}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    OutletProductSalesTypePriceRow:
+      type: object
+      required: [outlet_id, product_id, sales_type_id, price, sync_seq, deleted_at_ms]
+      properties:
+        outlet_id: {type: string}
+        product_id: {type: string}
+        sales_type_id: {type: string}
+        price: {type: integer, format: int64}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    PaymentMethodRow:
+      type: object
+      required: [id, name, kind, system_key, requires_reference, active, sort_order, sync_seq, deleted_at_ms]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        kind: {type: string, enum: [cash, card, qris, ewallet, transfer, other]}
+        system_key: {type: string, nullable: true}
+        requires_reference: {type: boolean}
+        active: {type: boolean}
+        sort_order: {type: integer, format: int64}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    PaymentGroupRow:
+      type: object
+      required: [id, name, method_ids, active, sort_order, sync_seq, deleted_at_ms]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        method_ids: {type: string}
+        active: {type: boolean}
+        sort_order: {type: integer, format: int64}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    DiscountRow:
+      type: object
+      required: [id, name, scope, kind, value, requires_authorization, active, sort_order, sync_seq, deleted_at_ms]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        scope: {type: string, enum: [bill, item]}
+        kind: {type: string, enum: [percent, amount]}
+        value: {type: integer, format: int64, nullable: true, description: 'Basis points or rupiah; null means the cashier types the value.'}
+        requires_authorization: {type: boolean}
+        active: {type: boolean}
+        sort_order: {type: integer, format: int64}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
     EmployeeRow:
       type: object
-      required: [id, name, pin_hash, role, active, sort_order, sync_seq, deleted_at_ms]
+      required: [id, name, pin_hash, role, role_id, active, sort_order, sync_seq, deleted_at_ms]
       properties:
         id: {type: string}
         name: {type: string}
         pin_hash: {type: string, nullable: true}
         role: {type: string}
+        role_id: {type: string, nullable: true}
         active: {type: boolean}
         sort_order: {type: integer, format: int64}
         sync_seq: {type: integer, format: int64}
@@ -897,9 +1591,51 @@ components:
         is_popular: {type: boolean}
         sync_seq: {type: integer, format: int64}
         deleted_at_ms: {type: integer, format: int64, nullable: true}
+    BrandRow:
+      type: object
+      required: [id, name, sort_order, sync_seq, deleted_at_ms]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        sort_order: {type: integer, format: int64}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
+    Customer:
+      type: object
+      additionalProperties: false
+      description: |
+        A customer a till pushes up, created either at the counter or in the
+        Backoffice. Insert-only on arrival — id is chosen by whichever side
+        creates the row and is also its idempotency key; an id that already
+        exists is accepted and left alone (ON CONFLICT DO NOTHING), never
+        overwritten. There is no revision here because there is nothing to
+        revise: editing an existing customer is a Backoffice-only action this
+        entity does not carry, so a till never has to reconcile a second
+        writer's edit against its own.
+      required: [id, name]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        name: {type: string, minLength: 1, maxLength: 120}
+        phone: {type: string, nullable: true, maxLength: 32}
+        email: {type: string, nullable: true, maxLength: 255}
+        address: {type: string, nullable: true, maxLength: 255}
+        note: {type: string, nullable: true, maxLength: 500}
+    CustomerRow:
+      type: object
+      required: [id, name, phone, email, address, note, active, sync_seq, deleted_at_ms]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        phone: {type: string, nullable: true}
+        email: {type: string, nullable: true}
+        address: {type: string, nullable: true}
+        note: {type: string, nullable: true}
+        active: {type: boolean}
+        sync_seq: {type: integer, format: int64}
+        deleted_at_ms: {type: integer, format: int64, nullable: true}
     ProductRow:
       type: object
-      required: [id, category_id, name, price, cost, sku, tax_rate, description, image_url, icon_key, available, is_popular, sort_order, sync_seq, deleted_at_ms]
+      required: [id, category_id, name, price, cost, sku, tax_rate, description, image_url, icon_key, available, is_popular, sort_order, brand_id, sync_seq, deleted_at_ms]
       properties:
         id: {type: string}
         category_id: {type: string, nullable: true}
@@ -914,6 +1650,7 @@ components:
         available: {type: boolean}
         is_popular: {type: boolean}
         sort_order: {type: integer, format: int64}
+        brand_id: {type: string, nullable: true}
         sync_seq: {type: integer, format: int64}
         deleted_at_ms: {type: integer, format: int64, nullable: true}
     VariantRow:

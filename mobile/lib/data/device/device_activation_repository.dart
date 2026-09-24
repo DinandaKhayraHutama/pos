@@ -7,7 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
 import '../sync/retry_gate.dart';
-import '../sync/sync_client.dart' show parseRetryAfter;
+import '../sync/sync_client.dart' show kClientCapabilities, parseRetryAfter;
 import 'device_registration.dart';
 
 abstract interface class DeviceCredentialStore {
@@ -152,6 +152,7 @@ class DeviceActivationRepository {
         ..headers.addAll({
           'Accept': 'application/json',
           'Content-Type': 'application/json',
+          'X-Device-Capabilities': kClientCapabilities,
         })
         ..body = jsonEncode({
           'code': normalized,
@@ -224,6 +225,7 @@ class DeviceActivationRepository {
         ..headers.addAll({
           'Accept': 'application/json',
           'Authorization': 'Bearer ${binding.token}',
+          'X-Device-Capabilities': kClientCapabilities,
         }),
     );
     if (response.statusCode == 401 || response.statusCode == 403) {

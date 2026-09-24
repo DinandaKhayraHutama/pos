@@ -86,6 +86,7 @@ func (s Session) NavView() NavView {
 	}
 	if s.CanTransactions {
 		reports = append(reports, NavItem{Label: "Transaksi", Href: "/backoffice/transactions"})
+		reports = append(reports, NavItem{Label: "Bill", Href: "/backoffice/bills"})
 	}
 	if s.CanShifts {
 		reports = append(reports, NavItem{Label: "Shift", Href: "/backoffice/shifts"})
@@ -110,14 +111,24 @@ func (s Session) NavView() NavView {
 		library = append(library,
 			NavItem{Label: "Produk", Href: "/backoffice/catalogue/products"},
 			NavItem{Label: "Kategori", Href: "/backoffice/catalogue/categories"},
+			NavItem{Label: "Brand", Href: "/backoffice/catalogue/brands"},
 			NavItem{Label: "Modifier", Href: "/backoffice/catalogue/modifiers"},
 		)
 	}
 	if s.CanPromos {
 		library = append(library, NavItem{Label: "Promo", Href: "/backoffice/promos"})
 	}
+	if s.CanDiscounts {
+		library = append(library, NavItem{Label: "Diskon", Href: "/backoffice/discounts"})
+	}
 	if len(library) > 0 {
 		groups = append(groups, NavGroup{Label: "Library", Icon: "book", Items: library})
+	}
+
+	if s.CanCustomers {
+		groups = append(groups, NavGroup{Label: "Pelanggan", Icon: "people", Items: []NavItem{
+			{Label: "Daftar pelanggan", Href: "/backoffice/customers"},
+		}})
 	}
 
 	if s.CanStock {
@@ -129,6 +140,7 @@ func (s Session) NavView() NavView {
 	if s.CanStaff {
 		groups = append(groups, NavGroup{Label: "Karyawan", Icon: "people", Items: []NavItem{
 			{Label: "Daftar karyawan", Href: "/backoffice/staff"},
+			{Label: "Peran & akses", Href: "/backoffice/staff/roles"},
 		}})
 	}
 
@@ -140,6 +152,15 @@ func (s Session) NavView() NavView {
 	}
 	outlets = append(outlets, NavItem{Label: "Perangkat", Href: "/backoffice/devices"})
 	groups = append(groups, NavGroup{Label: "Outlet", Icon: "store", Items: outlets})
+
+	if s.CanSettings {
+		groups = append(groups, NavGroup{Label: "Pengaturan", Icon: "store", Items: []NavItem{
+			{Label: "Bisnis & struk", Href: "/backoffice/settings"},
+			{Label: "Pengaturan outlet", Href: "/backoffice/settings/outlets"},
+			{Label: "Jenis penjualan", Href: "/backoffice/settings/sales-types"},
+			{Label: "Metode pembayaran", Href: "/backoffice/settings/payments"},
+		}})
+	}
 
 	return NavView{Groups: groups, Active: ActiveHref(groups, s.Path)}
 }

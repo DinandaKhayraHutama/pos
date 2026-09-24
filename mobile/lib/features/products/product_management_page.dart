@@ -681,7 +681,11 @@ class _ModifiersTab extends ConsumerWidget {
     );
   }
 
-  void _openForm(BuildContext context, WidgetRef ref, {ModifierGroup? existing}) {
+  void _openForm(
+    BuildContext context,
+    WidgetRef ref, {
+    ModifierGroup? existing,
+  }) {
     showGlassSheet<void>(
       context: context,
       builder: (_) => _ModifierGroupFormSheet(existing: existing),
@@ -742,11 +746,17 @@ class _ModifierGroupTile extends ConsumerWidget {
                     ),
                     if (group.required) ...[
                       const SizedBox(width: 6),
-                      _Pill(label: l10n.modifierRequired, color: design.warning),
+                      _Pill(
+                        label: l10n.modifierRequired,
+                        color: design.warning,
+                      ),
                     ],
                     if (!group.active) ...[
                       const SizedBox(width: 6),
-                      _Pill(label: l10n.productUnavailable, color: design.error),
+                      _Pill(
+                        label: l10n.productUnavailable,
+                        color: design.error,
+                      ),
                     ],
                   ],
                 ),
@@ -787,7 +797,11 @@ class _Pill extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700),
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -855,7 +869,8 @@ class _ModifierGroupFormSheetState
     final l10n = context.l10n;
     final design = context.design;
     final isEdit = widget.existing != null;
-    final noActiveOptions = _options.every((o) => !o.active) || _options.isEmpty;
+    final noActiveOptions =
+        _options.every((o) => !o.active) || _options.isEmpty;
 
     return SafeArea(
       top: false,
@@ -989,7 +1004,9 @@ class _ModifierGroupFormSheetState
               contentPadding: EdgeInsets.zero,
               value: _active,
               onChanged: (v) => setState(() => _active = v),
-              title: Text(_active ? l10n.productAvailable : l10n.productUnavailable),
+              title: Text(
+                _active ? l10n.productAvailable : l10n.productUnavailable,
+              ),
             ),
             const SizedBox(height: AppDimensions.space16),
             _ModifierOptionEditor(
@@ -1008,8 +1025,9 @@ class _ModifierGroupFormSheetState
   Future<void> _save() async {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(context.l10n.commonRequired)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.l10n.commonRequired)));
       return;
     }
     // maxSelect only applies to 'multiple' and, when typed, must be >= 1 — a
@@ -1028,17 +1046,19 @@ class _ModifierGroupFormSheetState
 
     final existing = widget.existing;
     final id = existing?.id ?? 'mg_${DateTime.now().millisecondsSinceEpoch}';
-    await ref.read(modifierGroupsProvider.notifier).upsertGroup(
-      ModifierGroup(
-        id: id,
-        name: name,
-        selectionType: _selectionType,
-        required: _required,
-        maxSelect: maxSelect,
-        sortOrder: existing?.sortOrder ?? 100,
-        active: _active,
-      ),
-    );
+    await ref
+        .read(modifierGroupsProvider.notifier)
+        .upsertGroup(
+          ModifierGroup(
+            id: id,
+            name: name,
+            selectionType: _selectionType,
+            required: _required,
+            maxSelect: maxSelect,
+            sortOrder: existing?.sortOrder ?? 100,
+            active: _active,
+          ),
+        );
     // After the group, so the FK has something to point at on a new one —
     // same ordering reason as ProductFormSheet's variant save.
     if (_options.isNotEmpty || _hadOptions) {

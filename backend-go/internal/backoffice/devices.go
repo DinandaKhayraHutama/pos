@@ -287,12 +287,13 @@ func (h *Handler) recoveryDecisionReply(w http.ResponseWriter, r *http.Request, 
 func loadDevices(ctx context.Context, tx pgx.Tx, id string) ([]views.Device, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT d.id, COALESCE(d.label, ''), COALESCE(d.platform, ''),
-		       r.name, o.name, d.last_seen_at, d.revoked_at
+		       r.name, o.name, d.last_seen_at, d.revoked_at,
+		       NOT (d.capabilities @> $2::text[])
 		FROM devices d
 		JOIN pos_registers r ON r.tenant_id = d.tenant_id AND r.id = d.pos_register_id
 		JOIN outlets o ON o.tenant_id = d.tenant_id AND o.id = d.outlet_id
 		WHERE $1 = '' OR d.id = $1::uuid
-		ORDER BY d.created_at DESC`, id)
+		ORDER BY d.created_at DESC`, id, devices.KnownCapabilities())
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +307,7 @@ func loadDevices(ctx context.Context, tx pgx.Tx, id string) ([]views.Device, err
 			revokedAt *time.Time
 		)
 		if err := rows.Scan(&dev.ID, &dev.Label, &dev.Platform,
-			&dev.RegisterName, &dev.OutletName, &lastSeen, &revokedAt); err != nil {
+			&dev.RegisterName, &dev.OutletName, &lastSeen, &revokedAt, &dev.Outdated); err != nil {
 			return nil, err
 		}
 

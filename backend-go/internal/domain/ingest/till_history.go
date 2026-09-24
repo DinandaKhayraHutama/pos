@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/auth"
 	"strconv"
 	"strings"
 	"time"
@@ -121,8 +122,15 @@ func resolveHistory(q HistoryQuery, actor tillActor, today string) (HistoryQuery
 		return out, tillError("invalid_cashier")
 	}
 
-	if actor.Role != "cashier" {
+	// Decided by permission, not by role name (Fase 3). viewAllOrders reads
+	// anything the filter names; viewOwnOrders gets the cashier's three
+	// limits; neither may not read history at all. For the three system
+	// roles this is exactly what the old role comparison did.
+	if actor.Access.Grants(auth.ViewAllOrders) {
 		return out, nil
+	}
+	if !actor.Access.Grants(auth.ViewOwnOrders) {
+		return out, tillError("forbidden_scope")
 	}
 	// A cashier's three limits. Refused, not quietly narrowed: asking for a
 	// colleague's sales and being handed your own looks like the colleague

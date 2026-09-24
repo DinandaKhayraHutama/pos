@@ -151,7 +151,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           (path == '/products' ||
               path.startsWith('/products/') ||
               path == '/promos' ||
-              path == '/floorplan')) {
+              path == '/floorplan' ||
+              path == '/employees' ||
+              path == '/outlets' ||
+              path == '/registers')) {
         return '/settings';
       }
 

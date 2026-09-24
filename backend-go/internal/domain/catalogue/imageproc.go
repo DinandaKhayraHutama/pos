@@ -46,6 +46,23 @@ type processed struct {
 //
 // JPEG unless the image has transparency, which JPEG would silently turn black.
 func processImage(data []byte) (processed, string) {
+	return processImageTo(data, imageMaxEdge)
+}
+
+// ReceiptLogoEdge is the longest side of a receipt logo: an 80 mm thermal
+// printer is 576 dots wide, and nothing wider can be printed anyway.
+const ReceiptLogoEdge = 576
+
+// ProcessUpload is processImage for another use of the same pipeline — the
+// receipt logo (Fase 3). Same guarantees: decoded and re-encoded, EXIF gone,
+// bounded before a pixel is read. Returns the bytes, the extension, and a
+// message for the person when the file cannot be used.
+func ProcessUpload(data []byte, maxEdge int) ([]byte, string, string) {
+	p, problem := processImageTo(data, maxEdge)
+	return p.body, p.ext, problem
+}
+
+func processImageTo(data []byte, maxEdge int) (processed, string) {
 	switch {
 	case len(data) == 0:
 		return processed{}, "Pilih berkas gambar."
@@ -81,7 +98,7 @@ func processImage(data []byte) (processed, string) {
 	// Scaled before it is turned upright: the bound is the same on both axes,
 	// so the order does not change the result, and rotating the small image
 	// is far cheaper than rotating the original.
-	out := orient(fit(src, imageMaxEdge), orientation)
+	out := orient(fit(src, maxEdge), orientation)
 
 	var buf bytes.Buffer
 	if out.Opaque() {

@@ -115,6 +115,8 @@ type Report struct {
 	Subtotal           int64
 	Discount           int64
 	Tax                int64
+	TaxIncluded        int64
+	Rounding           int64
 	ServiceCharge      int64
 	OrderCount         int64
 	AverageOrder       int64
@@ -134,10 +136,12 @@ type Report struct {
 	ByOutlet            []Line
 	Daily               []DayLine
 	ByCategory          []CategorySales
+	ByBrand             []CategorySales
 	ByProduct           []ProductLine
 	ByProductInCategory []CategoryProducts
 	ByCashier           []Line
 	ByPayment           []Line
+	BySalesType         []Line
 	ByHour              []HourLine
 	ByWeekday           []WeekdayLine
 	Adjustments         []Adjustment
@@ -217,14 +221,9 @@ func rangeOf(alias string) string {
 		AND ($4::uuid IS NULL OR ` + alias + `.outlet_id = $4::uuid)`
 }
 
-func readReport(ctx context.Context, tx pgx.Tx, tenantID string, f Filter, r *Report) error {
+func readReport(ctx context.Context, tx pgx.Tx, tenantID string, f Filter, r *Report) (err error) {
 	outlet := outletArg(f.OutletID)
 	args := []any{tenantID, f.From.Format(time.DateOnly), f.To.Format(time.DateOnly), outlet}
-
-	if err := tx.QueryRow(ctx, `SELECT name, timezone FROM tenants WHERE id = $1`, tenantID).
-		Scan(&r.BusinessName, &r.Timezone); err != nil {
-		return err
-	}
 
 	if outlet != nil {
 		err := tx.QueryRow(ctx, `SELECT name FROM outlets WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
@@ -237,7 +236,14 @@ func readReport(ctx context.Context, tx pgx.Tx, tenantID string, f Filter, r *Re
 		}
 	}
 
-	if err := tx.QueryRow(ctx, `
+	// A report has several independent breakdowns, but they must all observe
+	// the same database snapshot. Queueing them in one pgx batch keeps the
+	// read-only transaction semantics while avoiding a network round trip for
+	// every chart. This matters on Windows/Docker, where twelve tiny rollup
+	// queries used to spend more time crossing the VM boundary than in SQL.
+	batch := &pgx.Batch{}
+	batch.Queue(`SELECT name, timezone FROM tenants WHERE id = $1`, tenantID)
+	batch.Queue(`
 		SELECT COALESCE(sum(order_count), 0)::bigint, COALESCE(sum(subtotal), 0)::bigint,
 		       COALESCE(sum(discount), 0)::bigint, COALESCE(sum(tax), 0)::bigint,
 		       COALESCE(sum(service_charge), 0)::bigint, COALESCE(sum(revenue), 0)::bigint,
@@ -247,17 +253,127 @@ func readReport(ctx context.Context, tx pgx.Tx, tenantID string, f Filter, r *Re
 		       COALESCE(sum(refunded_count), 0)::bigint, COALESCE(sum(refunded_amount), 0)::bigint,
 		       max(computed_at), COALESCE(sum(gross_sales),0)::bigint, COALESCE(sum(all_discount),0)::bigint,
                COALESCE(sum(sales_returns),0)::bigint, COALESCE(sum(anomaly_count),0)::bigint,
-               count(*) FILTER (WHERE calculation_version < 2)
+		       count(*) FILTER (WHERE calculation_version < 2),
+		       COALESCE(sum(tax_included),0)::bigint, COALESCE(sum(rounding),0)::bigint
 		FROM daily_sales_rollup r
-		WHERE `+rangeOf("r"), args...).Scan(
+		WHERE `+rangeOf("r"), args...)
+	batch.Queue(`
+		SELECT r.outlet_id::text, o.name, sum(r.revenue)::bigint,
+		       sum(r.subtotal - r.discount - r.tax_included)::bigint, sum(r.order_count)::bigint
+		FROM daily_sales_rollup r
+		JOIN outlets o ON o.tenant_id = r.tenant_id AND o.id = r.outlet_id
+		WHERE `+rangeOf("r")+`
+		GROUP BY 1, 2 HAVING sum(r.order_count) > 0
+		ORDER BY 4 DESC, 2, 1`, args...)
+	batch.Queue(`
+		SELECT business_date, sum(revenue)::bigint, sum(subtotal - discount - tax_included)::bigint, sum(order_count)::bigint
+		FROM daily_sales_rollup r
+		WHERE `+rangeOf("r")+`
+		GROUP BY 1 HAVING sum(order_count) > 0
+		ORDER BY 1`, args...)
+	batch.Queue(`
+		SELECT extract(isodow FROM r.business_date)::int,
+		       sum(r.revenue)::bigint, sum(r.subtotal - r.discount - r.tax_included)::bigint,
+		       sum(r.order_count)::bigint, count(DISTINCT r.business_date)::bigint
+		FROM daily_sales_rollup r
+		WHERE `+rangeOf("r")+`
+		GROUP BY 1 HAVING sum(r.order_count) > 0
+		ORDER BY 1`, args...)
+	batch.Queue(`
+		SELECT r.category_key,
+		       COALESCE(c.name,
+		                (array_agg(r.category_name ORDER BY r.name_at_ms DESC, r.business_date DESC, r.outlet_id DESC)
+		                 FILTER (WHERE r.category_name <> ''))[1], ''),
+		       sum(r.gross_sales)::bigint, sum(r.net_sales)::bigint, sum(r.items_sold)::bigint
+		FROM daily_category_rollup r
+		LEFT JOIN categories c ON c.tenant_id = r.tenant_id AND c.id::text = r.category_key AND c.deleted_at IS NULL
+		WHERE `+rangeOf("r")+`
+		GROUP BY r.category_key, c.name`, args...)
+	batch.Queue(`
+		SELECT r.brand_key,
+		       COALESCE(b.name,
+		                (array_agg(r.brand_name ORDER BY r.name_at_ms DESC, r.business_date DESC, r.outlet_id DESC)
+		                 FILTER (WHERE r.brand_name <> ''))[1], ''),
+		       sum(r.gross_sales)::bigint, sum(r.net_sales)::bigint, sum(r.items_sold)::bigint
+		FROM daily_brand_rollup r
+		LEFT JOIN brands b ON b.tenant_id = r.tenant_id AND b.id::text = r.brand_key AND b.deleted_at IS NULL
+		WHERE `+rangeOf("r")+`
+		GROUP BY r.brand_key, b.name`, args...)
+	batch.Queue(`
+		SELECT r.product_key,
+		       COALESCE(p.name, (array_agg(r.product_name ORDER BY r.name_at_ms DESC, r.business_date DESC, r.outlet_id DESC))[1]),
+		       sum(r.quantity)::bigint, sum(r.gross_sales)::bigint, sum(r.net_sales)::bigint,
+		       sum(r.cost_of_goods)::bigint, sum(r.costed_quantity)::bigint
+		FROM daily_product_rollup r
+		LEFT JOIN products p ON p.tenant_id = r.tenant_id AND p.id::text = r.product_key AND p.deleted_at IS NULL
+		WHERE `+rangeOf("r")+`
+		GROUP BY r.product_key, p.name
+		ORDER BY 5 DESC, 3 DESC, 1`, args...)
+	batch.Queue(`
+		SELECT r.category_key, r.product_key,
+		       COALESCE(p.name, (array_agg(r.product_name ORDER BY r.name_at_ms DESC, r.business_date DESC, r.outlet_id DESC))[1]),
+		       sum(r.quantity)::bigint, sum(r.gross_sales)::bigint, sum(r.net_sales)::bigint
+		FROM daily_product_category_rollup r
+		LEFT JOIN products p ON p.tenant_id = r.tenant_id AND p.id::text = r.product_key AND p.deleted_at IS NULL
+		WHERE `+rangeOf("r")+`
+		GROUP BY r.category_key, r.product_key, p.name
+		ORDER BY 6 DESC, 4 DESC, 2`, args...)
+	batch.Queue(`
+		SELECT r.cashier_key,
+		       (array_agg(r.cashier_name ORDER BY r.name_at_ms DESC, r.business_date DESC, r.outlet_id DESC))[1],
+		       sum(r.revenue)::bigint, sum(r.net_sales)::bigint, sum(r.order_count)::bigint
+		FROM daily_employee_rollup r
+		WHERE `+rangeOf("r")+`
+		GROUP BY 1
+		ORDER BY 4 DESC, 1`, args...)
+	batch.Queue(`
+		SELECT r.payment_method_key, (array_agg(r.payment_method_name ORDER BY r.business_date DESC))[1],
+		       sum(r.revenue)::bigint, 0::bigint, sum(r.order_count)::bigint
+		FROM daily_payment_method_rollup r
+		WHERE `+rangeOf("r")+`
+		GROUP BY 1
+		ORDER BY 3 DESC, 1`, args...)
+	batch.Queue(`
+		SELECT r.hour, sum(r.revenue)::bigint, sum(r.net_sales)::bigint, sum(r.order_count)::bigint
+		FROM hourly_sales_rollup r
+		WHERE `+rangeOf("r")+`
+		GROUP BY 1
+		ORDER BY 1`, args...)
+	batch.Queue(`
+		SELECT r.kind, r.label, sum(r.order_count)::bigint, sum(r.amount)::bigint
+		FROM daily_adjustment_rollup r
+		WHERE `+rangeOf("r")+`
+		GROUP BY 1, 2
+		ORDER BY 1, 4 DESC, 2`, args...)
+	batch.Queue(`
+		SELECT count(*) FROM report_dirty_slices r
+		WHERE `+rangeOf("r"), args...)
+	batch.Queue(`
+		SELECT r.sales_type_key, (array_agg(r.sales_type_name ORDER BY r.business_date DESC))[1],
+		       sum(r.revenue)::bigint, sum(r.net_sales)::bigint, sum(r.order_count)::bigint
+		FROM daily_sales_type_rollup r WHERE `+rangeOf("r")+`
+		GROUP BY 1 ORDER BY 4 DESC, 1`, args...)
+
+	results := tx.SendBatch(ctx, batch)
+	defer func() {
+		if closeErr := results.Close(); err == nil {
+			err = closeErr
+		}
+	}()
+
+	if err = results.QueryRow().Scan(&r.BusinessName, &r.Timezone); err != nil {
+		return err
+	}
+	if err = results.QueryRow().Scan(
 		&r.OrderCount, &r.Subtotal, &r.Discount, &r.Tax, &r.ServiceCharge, &r.Revenue,
 		&r.ItemsSold, &r.CostOfGoods, &r.CostedItems, &r.DiscountedOrders,
 		&r.CancelledCount, &r.CancelledAmount, &r.RefundedCount, &r.RefundedAmount, &r.ComputedAt,
 		&r.GrossSales, &r.AllDiscount, &r.SalesReturns, &r.AnomalyCount, &r.LegacySlices,
+		&r.TaxIncluded, &r.Rounding,
 	); err != nil {
 		return err
 	}
-	r.NetSales = r.Subtotal - r.Discount
+	r.NetSales = r.Subtotal - r.Discount - r.TaxIncluded
 	if r.OrderCount > 0 {
 		r.AverageOrder = r.NetSales / r.OrderCount
 	}
@@ -266,27 +382,14 @@ func readReport(ctx context.Context, tx pgx.Tx, tenantID string, f Filter, r *Re
 	}
 	r.GrossProfit = r.NetSales - r.CostOfGoods
 
-	var err error
 	// Comparing outlets is a comparison of SALES, so the net column is what
 	// ranks them: one branch charging service and another not would otherwise
 	// come out ahead on takings alone.
-	if r.ByOutlet, err = lines(ctx, tx, `
-		SELECT r.outlet_id::text, o.name, sum(r.revenue)::bigint,
-		       sum(r.subtotal - r.discount)::bigint, sum(r.order_count)::bigint
-		FROM daily_sales_rollup r
-		JOIN outlets o ON o.tenant_id = r.tenant_id AND o.id = r.outlet_id
-		WHERE `+rangeOf("r")+`
-		GROUP BY 1, 2 HAVING sum(r.order_count) > 0
-		ORDER BY 4 DESC, 2, 1`, args); err != nil {
+	if r.ByOutlet, err = batchLines(results); err != nil {
 		return err
 	}
 
-	if r.Daily, err = collect(ctx, tx, `
-		SELECT business_date, sum(revenue)::bigint, sum(subtotal - discount)::bigint, sum(order_count)::bigint
-		FROM daily_sales_rollup r
-		WHERE `+rangeOf("r")+`
-		GROUP BY 1 HAVING sum(order_count) > 0
-		ORDER BY 1`, args, func(row pgx.CollectableRow) (DayLine, error) {
+	if r.Daily, err = batchCollect(results, func(row pgx.CollectableRow) (DayLine, error) {
 		var d DayLine
 		return d, row.Scan(&d.Date, &d.Revenue, &d.NetSales, &d.Orders)
 	}); err != nil {
@@ -296,14 +399,7 @@ func readReport(ctx context.Context, tx pgx.Tx, tenantID string, f Filter, r *Re
 	// The weekday comes from the business date in SQL, with no timezone in
 	// sight: the business date is already the merchant's trading day, and
 	// converting it again would move a Sunday's late sales into Monday.
-	if r.ByWeekday, err = collect(ctx, tx, `
-		SELECT extract(isodow FROM r.business_date)::int,
-		       sum(r.revenue)::bigint, sum(r.subtotal - r.discount)::bigint,
-		       sum(r.order_count)::bigint, count(DISTINCT r.business_date)::bigint
-		FROM daily_sales_rollup r
-		WHERE `+rangeOf("r")+`
-		GROUP BY 1 HAVING sum(r.order_count) > 0
-		ORDER BY 1`, args, func(row pgx.CollectableRow) (WeekdayLine, error) {
+	if r.ByWeekday, err = batchCollect(results, func(row pgx.CollectableRow) (WeekdayLine, error) {
 		var w WeekdayLine
 		var isoDow int
 		err := row.Scan(&isoDow, &w.Revenue, &w.NetSales, &w.Orders, &w.Days)
@@ -317,16 +413,7 @@ func readReport(ctx context.Context, tx pgx.Tx, tenantID string, f Filter, r *Re
 
 	// The current name wins; a category deleted since shows its newest
 	// snapshot name, never whichever day happened to be read first.
-	if r.ByCategory, err = collect(ctx, tx, `
-		SELECT r.category_key,
-		       COALESCE(c.name,
-		                (array_agg(r.category_name ORDER BY r.name_at_ms DESC, r.business_date DESC, r.outlet_id DESC)
-		                 FILTER (WHERE r.category_name <> ''))[1], ''),
-		       sum(r.gross_sales)::bigint, sum(r.net_sales)::bigint, sum(r.items_sold)::bigint
-		FROM daily_category_rollup r
-		LEFT JOIN categories c ON c.tenant_id = r.tenant_id AND c.id::text = r.category_key AND c.deleted_at IS NULL
-		WHERE `+rangeOf("r")+`
-		GROUP BY r.category_key, c.name`, args, func(row pgx.CollectableRow) (CategorySales, error) {
+	if r.ByCategory, err = batchCollect(results, func(row pgx.CollectableRow) (CategorySales, error) {
 		var c CategorySales
 		return c, row.Scan(&c.Key, &c.Name, &c.Gross, &c.Net, &c.Items)
 	}); err != nil {
@@ -339,70 +426,61 @@ func readReport(ctx context.Context, tx pgx.Tx, tenantID string, f Filter, r *Re
 	WithContribution(r.ByCategory, totalNet)
 	SortCategories(r.ByCategory)
 
-	if r.ByProduct, err = collect(ctx, tx, `
-		SELECT r.product_key,
-		       COALESCE(p.name, (array_agg(r.product_name ORDER BY r.name_at_ms DESC, r.business_date DESC, r.outlet_id DESC))[1]),
-		       sum(r.quantity)::bigint, sum(r.gross_sales)::bigint, sum(r.net_sales)::bigint,
-		       sum(r.cost_of_goods)::bigint, sum(r.costed_quantity)::bigint
-		FROM daily_product_rollup r
-		LEFT JOIN products p ON p.tenant_id = r.tenant_id AND p.id::text = r.product_key AND p.deleted_at IS NULL
-		WHERE `+rangeOf("r")+`
-		GROUP BY r.product_key, p.name
-		ORDER BY 5 DESC, 3 DESC, 1`, args, func(row pgx.CollectableRow) (ProductLine, error) {
+	if r.ByBrand, err = batchCollect(results, func(row pgx.CollectableRow) (CategorySales, error) {
+		var b CategorySales
+		return b, row.Scan(&b.Key, &b.Name, &b.Gross, &b.Net, &b.Items)
+	}); err != nil {
+		return err
+	}
+	var brandNet int64
+	for _, b := range r.ByBrand {
+		brandNet += b.Net
+	}
+	WithContribution(r.ByBrand, brandNet)
+	SortCategories(r.ByBrand)
+
+	if r.ByProduct, err = batchCollect(results, func(row pgx.CollectableRow) (ProductLine, error) {
 		var p ProductLine
 		return p, row.Scan(&p.Key, &p.Name, &p.Quantity, &p.Revenue, &p.NetSales, &p.CostOfGoods, &p.CostedQuantity)
 	}); err != nil {
 		return err
 	}
 
-	if r.ByProductInCategory, err = productsInCategories(ctx, tx, args, r.ByCategory); err != nil {
+	productCategoryRows, err := batchCollect(results, func(row pgx.CollectableRow) (productInCategoryRow, error) {
+		var v productInCategoryRow
+		err := row.Scan(&v.Category, &v.Product.Key, &v.Product.Name,
+			&v.Product.Quantity, &v.Product.Revenue, &v.Product.NetSales)
+		return v, err
+	})
+	if err != nil {
 		return err
 	}
+	r.ByProductInCategory = productsInCategories(productCategoryRows, r.ByCategory)
 
-	if r.ByCashier, err = lines(ctx, tx, `
-		SELECT r.cashier_key,
-		       (array_agg(r.cashier_name ORDER BY r.name_at_ms DESC, r.business_date DESC, r.outlet_id DESC))[1],
-		       sum(r.revenue)::bigint, sum(r.net_sales)::bigint, sum(r.order_count)::bigint
-		FROM daily_employee_rollup r
-		WHERE `+rangeOf("r")+`
-		GROUP BY 1
-		ORDER BY 4 DESC, 1`, args); err != nil {
+	if r.ByCashier, err = batchLines(results); err != nil {
 		return err
 	}
 
 	// A payment method's Net is left at zero deliberately: money arrives as a
 	// receipt total, tax and service charge included, and splitting a tender
 	// into "net" would invent a number nobody took.
-	if r.ByPayment, err = lines(ctx, tx, `
-		SELECT r.payment_method, r.payment_method, sum(r.revenue)::bigint, 0::bigint, sum(r.order_count)::bigint
-		FROM daily_payment_rollup r
-		WHERE `+rangeOf("r")+`
-		GROUP BY 1
-		ORDER BY 3 DESC, 1`, args); err != nil {
+	if r.ByPayment, err = batchLines(results); err != nil {
 		return err
 	}
 	for i := range r.ByPayment {
-		r.ByPayment[i].Label = PaymentLabel(r.ByPayment[i].Key)
+		if r.ByPayment[i].Label == r.ByPayment[i].Key {
+			r.ByPayment[i].Label = PaymentLabel(r.ByPayment[i].Key)
+		}
 	}
 
-	if r.ByHour, err = collect(ctx, tx, `
-		SELECT r.hour, sum(r.revenue)::bigint, sum(r.net_sales)::bigint, sum(r.order_count)::bigint
-		FROM hourly_sales_rollup r
-		WHERE `+rangeOf("r")+`
-		GROUP BY 1
-		ORDER BY 1`, args, func(row pgx.CollectableRow) (HourLine, error) {
+	if r.ByHour, err = batchCollect(results, func(row pgx.CollectableRow) (HourLine, error) {
 		var h HourLine
 		return h, row.Scan(&h.Hour, &h.Revenue, &h.NetSales, &h.Orders)
 	}); err != nil {
 		return err
 	}
 
-	if r.Adjustments, err = collect(ctx, tx, `
-		SELECT r.kind, r.label, sum(r.order_count)::bigint, sum(r.amount)::bigint
-		FROM daily_adjustment_rollup r
-		WHERE `+rangeOf("r")+`
-		GROUP BY 1, 2
-		ORDER BY 1, 4 DESC, 2`, args, func(row pgx.CollectableRow) (Adjustment, error) {
+	if r.Adjustments, err = batchCollect(results, func(row pgx.CollectableRow) (Adjustment, error) {
 		var a Adjustment
 		return a, row.Scan(&a.Kind, &a.Label, &a.Count, &a.Amount)
 	}); err != nil {
@@ -412,9 +490,11 @@ func readReport(ctx context.Context, tx pgx.Tx, tenantID string, f Filter, r *Re
 		return adjustmentOrder(r.Adjustments[i].Kind) < adjustmentOrder(r.Adjustments[j].Kind)
 	})
 
-	return tx.QueryRow(ctx, `
-		SELECT count(*) FROM report_dirty_slices r
-		WHERE `+rangeOf("r"), args...).Scan(&r.PendingSlices)
+	if err = results.QueryRow().Scan(&r.PendingSlices); err != nil {
+		return err
+	}
+	r.BySalesType, err = batchLines(results)
+	return err
 }
 
 func adjustmentOrder(kind string) int {
@@ -432,38 +512,15 @@ func adjustmentOrder(kind string) int {
 // is "what sells inside this group".
 const MaxProductsPerCategory = 10
 
-// productsInCategories reads the item breakdown inside every category, in the
-// category order the report already resolved — so the names on this section
-// are the ones shown above it, deleted categories included, rather than a
-// second resolution that could disagree.
-func productsInCategories(ctx context.Context, tx pgx.Tx, args []any, categories []CategorySales) ([]CategoryProducts, error) {
-	if len(categories) == 0 {
-		return []CategoryProducts{}, nil
-	}
-	rows, err := collect(ctx, tx, `
-		SELECT r.category_key, r.product_key,
-		       COALESCE(p.name, (array_agg(r.product_name ORDER BY r.name_at_ms DESC, r.business_date DESC, r.outlet_id DESC))[1]),
-		       sum(r.quantity)::bigint, sum(r.gross_sales)::bigint, sum(r.net_sales)::bigint
-		FROM daily_product_category_rollup r
-		LEFT JOIN products p ON p.tenant_id = r.tenant_id AND p.id::text = r.product_key AND p.deleted_at IS NULL
-		WHERE `+rangeOf("r")+`
-		GROUP BY r.category_key, r.product_key, p.name
-		ORDER BY 6 DESC, 4 DESC, 2`, args, func(row pgx.CollectableRow) (struct {
-		Category string
-		Product  ProductLine
-	}, error) {
-		var v struct {
-			Category string
-			Product  ProductLine
-		}
-		err := row.Scan(&v.Category, &v.Product.Key, &v.Product.Name,
-			&v.Product.Quantity, &v.Product.Revenue, &v.Product.NetSales)
-		return v, err
-	})
-	if err != nil {
-		return nil, err
-	}
+// productsInCategories groups the item breakdown in the category order the
+// report already resolved. The names on this section therefore match those
+// shown above it, deleted categories included.
+type productInCategoryRow struct {
+	Category string
+	Product  ProductLine
+}
 
+func productsInCategories(rows []productInCategoryRow, categories []CategorySales) []CategoryProducts {
 	byCategory := map[string][]ProductLine{}
 	for _, v := range rows {
 		if len(byCategory[v.Category]) < MaxProductsPerCategory {
@@ -477,14 +534,26 @@ func productsInCategories(ctx context.Context, tx pgx.Tx, args []any, categories
 			out = append(out, CategoryProducts{CategoryKey: c.Key, CategoryName: c.Name, Products: items})
 		}
 	}
-	return out, nil
+	return out
 }
 
-func lines(ctx context.Context, tx pgx.Tx, sql string, args []any) ([]Line, error) {
-	return collect(ctx, tx, sql, args, func(row pgx.CollectableRow) (Line, error) {
+func batchLines(results pgx.BatchResults) ([]Line, error) {
+	return batchCollect(results, func(row pgx.CollectableRow) (Line, error) {
 		var l Line
 		return l, row.Scan(&l.Key, &l.Label, &l.Value, &l.Net, &l.Count)
 	})
+}
+
+func batchCollect[T any](results pgx.BatchResults, scan func(pgx.CollectableRow) (T, error)) ([]T, error) {
+	rows, err := results.Query()
+	if err != nil {
+		return nil, err
+	}
+	out, err := pgx.CollectRows(rows, scan)
+	if out == nil {
+		out = []T{}
+	}
+	return out, err
 }
 
 func collect[T any](ctx context.Context, tx pgx.Tx, sql string, args []any, scan func(pgx.CollectableRow) (T, error)) ([]T, error) {
@@ -512,6 +581,23 @@ func PaymentLabel(method string) string {
 		return "Transfer"
 	case "ewallet", "e_wallet":
 		return "E-wallet"
+	case "other":
+		return "Lainnya"
 	}
 	return method
+}
+
+// SalesTypeLabel names a sales type for a report. A receipt from before Fase 3
+// carries only its wire type, so the three built-in keys are translated here;
+// anything else is the snapshot name the till printed.
+func SalesTypeLabel(name string) string {
+	switch name {
+	case "dineIn", "dine_in":
+		return "Makan di tempat"
+	case "takeaway":
+		return "Bawa pulang"
+	case "delivery":
+		return "Pesan antar"
+	}
+	return name
 }

@@ -22,6 +22,8 @@ type CategoryLine struct {
 	// The category's current name, or empty when it no longer exists.
 	LiveName  string
 	LineTotal int64
+	NetTotal  int64
+	NetKnown  bool
 	Quantity  int64
 }
 
@@ -76,7 +78,11 @@ func AggregateCategories(lines []CategoryLine) []CategorySales {
 			gross[k] += r.LineTotal
 			// Gross MINUS the share, not the share itself: the inversion was one
 			// of the two bugs the Dart version shipped.
-			net[k] += r.LineTotal - shares[i]
+			if r.NetKnown {
+				net[k] += r.NetTotal
+			} else {
+				net[k] += r.LineTotal - shares[i]
+			}
 			items[k] += r.Quantity
 		}
 	}

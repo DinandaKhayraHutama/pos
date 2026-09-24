@@ -44,6 +44,11 @@ const (
 	ViewFinancialReports Permission = "viewFinancialReports"
 	ManageSettings       Permission = "manageSettings"
 	ManageOutlets        Permission = "manageOutlets"
+	ManageCustomers      Permission = "manageCustomers"
+	// EnterCustomAmount is selling a line typed at the till with no product
+	// behind it (Fase 3). Owner receives it by derivation; manager does NOT —
+	// an existing role gains nothing it was not given — and a custom role may.
+	EnterCustomAmount Permission = "enterCustomAmount"
 )
 
 // AllPermissions is in the declaration order of the Dart enum. Adding one here
@@ -66,6 +71,8 @@ var AllPermissions = []Permission{
 	ViewFinancialReports,
 	ManageSettings,
 	ManageOutlets,
+	ManageCustomers,
+	EnterCustomAmount,
 }
 
 type Role string
@@ -97,6 +104,7 @@ var managerPermissions = []Permission{
 	AdjustStock,
 	ViewDailySummary,
 	ManageOutlets,
+	ManageCustomers,
 }
 
 var cashierPermissions = append(slices.Clone(TillPermissions), ManageTables, ViewOwnOrders)

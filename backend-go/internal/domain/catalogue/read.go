@@ -30,10 +30,17 @@ type ProductRow struct {
 	ID           string
 	Name         string
 	CategoryName string
+	// BrandName is nil for a product with no brand, same as SKU.
+	BrandName    *string
 	SKU          *string
 	Price        int64
 	Available    bool
 	VariantCount int
+}
+
+type BrandRow struct {
+	Brand
+	ProductCount int
 }
 
 type ProductPage struct {
@@ -98,6 +105,57 @@ func (s *Service) Category(ctx context.Context, tenantID, id string) (Category, 
 	return c, err
 }
 
+// Brands lists the live brands, in the order the Backoffice shows them.
+func (s *Service) Brands(ctx context.Context, tenantID string) ([]BrandRow, error) {
+	var out []BrandRow
+
+	err := pg.InTenantReadTx(ctx, s.pools.Tenant, tenantID, func(ctx context.Context, tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT b.id, b.name, b.sort_order,
+			       (SELECT count(*) FROM products p
+			        WHERE p.tenant_id = b.tenant_id AND p.brand_id = b.id AND p.deleted_at IS NULL)
+			FROM brands b
+			WHERE b.tenant_id = $1 AND b.deleted_at IS NULL
+			ORDER BY b.sort_order, b.name`, tenantID)
+		if err != nil {
+			return err
+		}
+
+		out, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (BrandRow, error) {
+			var (
+				b     BrandRow
+				count int64
+			)
+			err := row.Scan(&b.ID, &b.Name, &b.SortOrder, &count)
+			b.ProductCount = int(count)
+			return b, err
+		})
+		return err
+	})
+
+	return out, err
+}
+
+// Brand returns one live brand.
+func (s *Service) Brand(ctx context.Context, tenantID, id string) (Brand, error) {
+	if !validation.UUID(id) {
+		return Brand{}, ErrNotFound
+	}
+
+	var b Brand
+	err := pg.InTenantReadTx(ctx, s.pools.Tenant, tenantID, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT id, name, sort_order FROM brands
+			WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`, tenantID, id,
+		).Scan(&b.ID, &b.Name, &b.SortOrder)
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Brand{}, ErrNotFound
+	}
+
+	return b, err
+}
+
 // Products is the Backoffice list: search by name or SKU, narrow by category,
 // one page at a time.
 func (s *Service) Products(ctx context.Context, tenantID string, f ProductFilter) (ProductPage, error) {
@@ -114,11 +172,12 @@ func (s *Service) Products(ctx context.Context, tenantID string, f ProductFilter
 
 	err := pg.InTenantReadTx(ctx, s.pools.Tenant, tenantID, func(ctx context.Context, tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
-			SELECT p.id, p.name, c.name, p.sku, p.price, p.available,
+			SELECT p.id, p.name, c.name, b.name, p.sku, p.price, p.available,
 			       (SELECT count(*) FROM product_variants v
 			        WHERE v.tenant_id = p.tenant_id AND v.product_id = p.id AND v.deleted_at IS NULL)
 			FROM products p
 			JOIN categories c ON c.tenant_id = p.tenant_id AND c.id = p.category_id
+			LEFT JOIN brands b ON b.tenant_id = p.tenant_id AND b.id = p.brand_id AND b.deleted_at IS NULL
 			WHERE p.tenant_id = $1
 			  AND p.deleted_at IS NULL
 			  AND ($2 = '' OR p.category_id = NULLIF($2, '')::uuid)
@@ -137,7 +196,7 @@ func (s *Service) Products(ctx context.Context, tenantID string, f ProductFilter
 				p     ProductRow
 				count int64
 			)
-			err := row.Scan(&p.ID, &p.Name, &p.CategoryName, &p.SKU, &p.Price, &p.Available, &count)
+			err := row.Scan(&p.ID, &p.Name, &p.CategoryName, &p.BrandName, &p.SKU, &p.Price, &p.Available, &count)
 			p.VariantCount = int(count)
 			return p, err
 		})
@@ -167,11 +226,12 @@ func (s *Service) Product(ctx context.Context, tenantID, id string) (ProductDeta
 	err := pg.InTenantReadTx(ctx, s.pools.Tenant, tenantID, func(ctx context.Context, tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx, `
 			SELECT id, category_id, name, price, cost, sku, tax_rate, description,
-			       image_url, icon_key, available, is_popular, sort_order
+			       image_url, icon_key, available, is_popular, sort_order, brand_id
 			FROM products
 			WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`, tenantID, id,
 		).Scan(&d.ID, &d.CategoryID, &d.Name, &d.Price, &d.Cost, &d.SKU, &d.TaxRate,
-			&d.Description, &d.ImageURL, &d.IconKey, &d.Available, &d.IsPopular, &d.SortOrder); err != nil {
+			&d.Description, &d.ImageURL, &d.IconKey, &d.Available, &d.IsPopular, &d.SortOrder,
+			&d.BrandID); err != nil {
 			return err
 		}
 

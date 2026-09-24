@@ -45,6 +45,7 @@ Future<Employee?> requestAuthorization(
       pickAccount: true,
       pickSubtitle: ctx.l10n.authorizePickHint,
       accountFilter: (employee) =>
+          employee.role == EmployeeRole.custom ||
           permissionsFor(employee.role).contains(permission),
     ),
   );
@@ -204,10 +205,13 @@ class _PinPromptSheetState extends State<_PinPromptSheet> {
     // belongs to someone without the authority, saying which would let anyone
     // at the till map out who holds what — and a wrong PIN is the same dead
     // end either way.
+    final access = employee == null
+        ? EmployeeAccess.locked
+        : await EmployeeRepository.instance.accessFor(employee);
+    if (!mounted) return;
     final accepted =
         employee != null &&
-        (widget.permission == null ||
-            permissionsFor(employee.role).contains(widget.permission));
+        (widget.permission == null || access.can(widget.permission!));
     if (accepted) {
       HapticFeedback.lightImpact();
       Navigator.of(context).pop(employee);

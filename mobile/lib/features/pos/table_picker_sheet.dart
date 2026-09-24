@@ -9,8 +9,10 @@ import '../../core/widgets/glass/glass_card.dart';
 import '../../data/models/enums.dart';
 import '../../data/models/table.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../providers/bill_provider.dart';
 import '../../providers/cart_provider.dart';
 import '../../providers/order_provider.dart';
+import '../bills/bill_ui.dart';
 
 /// Lets the cashier pick a dine-in table for the active cart.
 ///
@@ -110,7 +112,24 @@ class TablePickerSheet extends ConsumerWidget {
                                 (t) => _TableChip(
                                   table: t,
                                   selected: selected == t.id,
-                                  onTap: () {
+                                  onTap: () async {
+                                    // Where saved bills run, picking a table
+                                    // seats it: online, so two tills cannot
+                                    // seat one table (paritas F4).
+                                    if (ref.read(billsEnabledProvider)) {
+                                      final ok = await runBillAction(
+                                        context,
+                                        () => seatTable(
+                                          read: ref.read,
+                                          invalidate: ref.invalidate,
+                                          table: t,
+                                        ),
+                                      );
+                                      if (ok && context.mounted) {
+                                        Navigator.of(context).pop();
+                                      }
+                                      return;
+                                    }
                                     ref.read(cartProvider.notifier).setTable(t);
                                     Navigator.of(context).pop();
                                   },

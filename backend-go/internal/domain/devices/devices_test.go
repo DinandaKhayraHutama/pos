@@ -19,6 +19,7 @@ const appKey = "test-app-key"
 
 type fixture struct {
 	pool       *pgxpool.Pool
+	tenantPool *pgxpool.Pool
 	svc        *devices.Service
 	tenantID   string
 	outletID   string
@@ -34,7 +35,7 @@ func newFixture(t *testing.T) fixture {
 	// Seeding goes through the owner, but the service under test gets exactly
 	// the credentials the running server uses — otherwise these tests would
 	// pass on a configuration that disables RLS entirely.
-	f := fixture{pool: db.Owner, svc: devices.NewService(db.Pools, appKey)}
+	f := fixture{pool: db.Owner, tenantPool: db.Pools.Tenant, svc: devices.NewService(db.Pools, appKey)}
 
 	require.NoError(t, db.Owner.QueryRow(ctx,
 		`INSERT INTO tenants (name, slug) VALUES ('Warung Alpha', 'alpha') RETURNING id`).Scan(&f.tenantID))

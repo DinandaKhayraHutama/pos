@@ -1,0 +1,75 @@
+{
+  "note": "Version 1 = the till's pre-F3 cart math. Figures 1-5 are the ones test/cart/cart_math_test.dart has pinned since before F3; the rest are worked by hand. Version 1 lines are NOT required to add up to the header (floored shares, no remainder).",
+  "vectors": [
+    {
+      "name": "legacy: 10% manual discount on 61000, PB1 11%",
+      "input": {"version": 1, "service_rate_bp": 0, "bill_discount": {"kind": "percent", "value": 1000},
+        "lines": [{"unit_price": 15000, "quantity": 3, "tax_rate_bp": 1100}, {"unit_price": 8000, "quantity": 2, "tax_rate_bp": 1100}]},
+      "expected": {"subtotal": 61000, "discount": 6100, "service_charge": 0, "tax": 6039, "tax_included": 0, "rounding": 0, "total": 60939,
+        "lines": [
+          {"gross": 45000, "line_discount": 0, "bill_discount_share": 4500, "service_share": 0, "tax_amount": 4455, "tax_included": 0, "net_amount": 40500},
+          {"gross": 16000, "line_discount": 0, "bill_discount_share": 1600, "service_share": 0, "tax_amount": 1584, "tax_included": 0, "net_amount": 14400}]}
+    },
+    {
+      "name": "legacy: PB1 rounds half up at exactly .5 (54950 at 1%)",
+      "input": {"version": 1, "service_rate_bp": 0, "lines": [{"unit_price": 54950, "quantity": 1, "tax_rate_bp": 100}]},
+      "expected": {"subtotal": 54950, "discount": 0, "service_charge": 0, "tax": 550, "tax_included": 0, "rounding": 0, "total": 55500,
+        "lines": [{"gross": 54950, "line_discount": 0, "bill_discount_share": 0, "service_share": 0, "tax_amount": 550, "tax_included": 0, "net_amount": 54950}]}
+    },
+    {
+      "name": "legacy: service charge 5% first, PB1 10% over it (54900 + 2745 + 5765)",
+      "input": {"version": 1, "service_rate_bp": 500, "bill_discount": {"kind": "percent", "value": 1000},
+        "lines": [{"unit_price": 15000, "quantity": 3, "tax_rate_bp": 1000}, {"unit_price": 8000, "quantity": 2, "tax_rate_bp": 1000}]},
+      "expected": {"subtotal": 61000, "discount": 6100, "service_charge": 2745, "tax": 5765, "tax_included": 0, "rounding": 0, "total": 63410,
+        "lines": [
+          {"gross": 45000, "line_discount": 0, "bill_discount_share": 4500, "service_share": 2025, "tax_amount": 4253, "tax_included": 0, "net_amount": 40500},
+          {"gross": 16000, "line_discount": 0, "bill_discount_share": 1600, "service_share": 720, "tax_amount": 1512, "tax_included": 0, "net_amount": 14400}]}
+    },
+    {
+      "name": "legacy: service charge rounds half up at exactly .5 (10050 at 5%)",
+      "input": {"version": 1, "service_rate_bp": 500, "lines": [{"unit_price": 10050, "quantity": 1, "tax_rate_bp": 0}]},
+      "expected": {"subtotal": 10050, "discount": 0, "service_charge": 503, "tax": 0, "tax_included": 0, "rounding": 0, "total": 10553,
+        "lines": [{"gross": 10050, "line_discount": 0, "bill_discount_share": 0, "service_share": 503, "tax_amount": 0, "tax_included": 0, "net_amount": 10050}]}
+    },
+    {
+      "name": "legacy: discount and service shares both reach each line before PB1",
+      "input": {"version": 1, "service_rate_bp": 1000, "bill_discount": {"kind": "percent", "value": 1000},
+        "lines": [{"unit_price": 40000, "quantity": 1, "tax_rate_bp": 1000}, {"unit_price": 20000, "quantity": 1, "tax_rate_bp": 1000}]},
+      "expected": {"subtotal": 60000, "discount": 6000, "service_charge": 5400, "tax": 5940, "tax_included": 0, "rounding": 0, "total": 65340,
+        "lines": [
+          {"gross": 40000, "line_discount": 0, "bill_discount_share": 4000, "service_share": 3600, "tax_amount": 3960, "tax_included": 0, "net_amount": 36000},
+          {"gross": 20000, "line_discount": 0, "bill_discount_share": 2000, "service_share": 1800, "tax_amount": 1980, "tax_included": 0, "net_amount": 18000}]}
+    },
+    {
+      "name": "legacy: a zero-rated line takes its discount share but no tax",
+      "input": {"version": 1, "service_rate_bp": 0, "bill_discount": {"kind": "amount", "value": 4000},
+        "lines": [{"unit_price": 30000, "quantity": 1, "tax_rate_bp": 1000}, {"unit_price": 10000, "quantity": 1, "tax_rate_bp": 0}]},
+      "expected": {"subtotal": 40000, "discount": 4000, "service_charge": 0, "tax": 2700, "tax_included": 0, "rounding": 0, "total": 38700,
+        "lines": [
+          {"gross": 30000, "line_discount": 0, "bill_discount_share": 3000, "service_share": 0, "tax_amount": 2700, "tax_included": 0, "net_amount": 27000},
+          {"gross": 10000, "line_discount": 0, "bill_discount_share": 1000, "service_share": 0, "tax_amount": 0, "tax_included": 0, "net_amount": 9000}]}
+    },
+    {
+      "name": "legacy: floored shares do not reconcile (333 x 3 = 999 of 1000)",
+      "input": {"version": 1, "service_rate_bp": 0, "bill_discount": {"kind": "amount", "value": 1000},
+        "lines": [{"unit_price": 10000, "quantity": 1, "tax_rate_bp": 1000}, {"unit_price": 10000, "quantity": 1, "tax_rate_bp": 1000}, {"unit_price": 10000, "quantity": 1, "tax_rate_bp": 1000}]},
+      "expected": {"subtotal": 30000, "discount": 1000, "service_charge": 0, "tax": 2901, "tax_included": 0, "rounding": 0, "total": 31901,
+        "lines": [
+          {"gross": 10000, "line_discount": 0, "bill_discount_share": 333, "service_share": 0, "tax_amount": 967, "tax_included": 0, "net_amount": 9667},
+          {"gross": 10000, "line_discount": 0, "bill_discount_share": 333, "service_share": 0, "tax_amount": 967, "tax_included": 0, "net_amount": 9667},
+          {"gross": 10000, "line_discount": 0, "bill_discount_share": 333, "service_share": 0, "tax_amount": 967, "tax_included": 0, "net_amount": 9667}]}
+    },
+    {
+      "name": "legacy: an amount discount larger than the bill clamps to zero total",
+      "input": {"version": 1, "service_rate_bp": 500, "bill_discount": {"kind": "amount", "value": 8000},
+        "lines": [{"unit_price": 5000, "quantity": 1, "tax_rate_bp": 1000}]},
+      "expected": {"subtotal": 5000, "discount": 5000, "service_charge": 0, "tax": 0, "tax_included": 0, "rounding": 0, "total": 0,
+        "lines": [{"gross": 5000, "line_discount": 0, "bill_discount_share": 5000, "service_share": 0, "tax_amount": 0, "tax_included": 0, "net_amount": 0}]}
+    },
+    {
+      "name": "legacy: empty cart",
+      "input": {"version": 1, "service_rate_bp": 500, "lines": []},
+      "expected": {"subtotal": 0, "discount": 0, "service_charge": 0, "tax": 0, "tax_included": 0, "rounding": 0, "total": 0, "lines": []}
+    }
+  ]
+}

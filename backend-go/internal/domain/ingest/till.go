@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/auth"
 	"time"
 
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/devices"
@@ -43,8 +44,13 @@ func (s *Service) TillLogin(ctx context.Context, b devices.Binding, employee, pi
 	out.ExpiresAtMs = time.Now().Add(24 * time.Hour).UnixMilli()
 	digest := sha256.Sum256([]byte(out.Token))
 	err := pg.InTenantTx(ctx, s.pools.Tenant, b.Tenant.ID, func(ctx context.Context, tx pgx.Tx) error {
-		var hash string
-		err := tx.QueryRow(ctx, `SELECT pin_hash FROM employees WHERE id=$1 AND active AND deleted_at IS NULL`, employee).Scan(&hash)
+		var (
+			hash string
+			role tillRole
+		)
+		err := tx.QueryRow(ctx, `SELECT e.pin_hash, r.system_key, r.permissions, r.pos_access, r.backoffice_access
+			FROM employees e JOIN roles r ON r.tenant_id=e.tenant_id AND r.id=e.role_id
+			WHERE e.id=$1 AND e.active AND e.deleted_at IS NULL`, employee).Scan(&hash, &role.systemKey, &role.permissions, &role.pos, &role.backoffice)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return tillError("invalid_pin")
 		}
@@ -54,19 +60,42 @@ func (s *Service) TillLogin(ctx context.Context, b devices.Binding, employee, pi
 		if bcrypt.CompareHashAndPassword([]byte(hash), []byte(pin)) != nil {
 			return tillError("invalid_pin")
 		}
+		// A role without till access (a Backoffice-only custom role) is
+		// refused like a wrong PIN, after the PIN: the answer must not tell a
+		// guesser which half was wrong.
+		if !role.access().POS {
+			return tillError("invalid_pin")
+		}
 		_, err = tx.Exec(ctx, `INSERT INTO till_access(token_hash,tenant_id,device_id,employee_id,pin_hash,expires_at) VALUES($1,$2,$3,$4,$5,to_timestamp($6::double precision/1000))`, digest[:], b.Tenant.ID, b.Device.ID, employee, hash, out.ExpiresAtMs)
 		return err
 	})
 	return out, err
 }
 
-type tillActor struct{ ID, Name, Role string }
+type tillActor struct {
+	ID, Name, Role string
+	// Access is what the person may do, resolved from their role row on every
+	// call — a role changed in the Backoffice applies to the next request.
+	Access auth.Access
+}
+
+// tillRole is the part of a roles row a till check needs.
+type tillRole struct {
+	systemKey       *string
+	permissions     []string
+	pos, backoffice bool
+}
+
+func (r tillRole) access() auth.Access {
+	return auth.ResolveAccess(r.systemKey, r.permissions, r.pos, r.backoffice)
+}
 
 // TillActor is who a cashier token names, for callers outside this package.
 type TillActor struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Role string `json:"role"`
+	ID     string      `json:"id"`
+	Name   string      `json:"name"`
+	Role   string      `json:"role"`
+	Access auth.Access `json:"-"`
 }
 
 // WhoIsAtTheTill resolves a cashier token to the employee behind it.
@@ -80,20 +109,36 @@ func (s *Service) WhoIsAtTheTill(ctx context.Context, b devices.Binding, token s
 	var out TillActor
 	err := pg.InTenantReadTx(ctx, s.pools.Tenant, b.Tenant.ID, func(ctx context.Context, tx pgx.Tx) error {
 		a, err := tillEmployee(ctx, tx, b, token)
-		out = TillActor{ID: a.ID, Name: a.Name, Role: a.Role}
+		out = TillActor{ID: a.ID, Name: a.Name, Role: a.Role, Access: a.Access}
 		return err
 	})
 	return out, err
 }
 
 func tillEmployee(ctx context.Context, tx pgx.Tx, b devices.Binding, token string) (tillActor, error) {
-	var a tillActor
+	var (
+		a    tillActor
+		role tillRole
+	)
 	h := sha256.Sum256([]byte(token))
-	err := tx.QueryRow(ctx, `SELECT e.id::text,e.name,e.role FROM till_access a JOIN employees e ON e.tenant_id=a.tenant_id AND e.id=a.employee_id WHERE a.token_hash=$1 AND a.device_id=$2 AND a.expires_at>now() AND e.active AND e.deleted_at IS NULL AND e.pin_hash=a.pin_hash`, h[:], b.Device.ID).Scan(&a.ID, &a.Name, &a.Role)
+	err := tx.QueryRow(ctx, `SELECT e.id::text,e.name,e.role,r.system_key,r.permissions,r.pos_access,r.backoffice_access
+		FROM till_access a JOIN employees e ON e.tenant_id=a.tenant_id AND e.id=a.employee_id
+		JOIN roles r ON r.tenant_id=e.tenant_id AND r.id=e.role_id
+		WHERE a.token_hash=$1 AND a.device_id=$2 AND a.expires_at>now() AND e.active AND e.deleted_at IS NULL AND e.pin_hash=a.pin_hash`,
+		h[:], b.Device.ID).Scan(&a.ID, &a.Name, &a.Role, &role.systemKey, &role.permissions, &role.pos, &role.backoffice)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return a, tillError("cashier_auth_required")
 	}
-	return a, err
+	if err != nil {
+		return a, err
+	}
+	a.Access = role.access()
+	// A role moved to Backoffice-only since the token was minted loses the
+	// till on its next call, exactly like a deactivated account.
+	if !a.Access.POS {
+		return a, tillError("cashier_auth_required")
+	}
+	return a, nil
 }
 
 type TillSession struct {
@@ -126,7 +171,7 @@ func (s *Service) OpenTill(ctx context.Context, b devices.Binding, token string,
 		if err != nil {
 			return err
 		}
-		if a.Role != "cashier" {
+		if !a.Access.Grants(auth.OpenCloseShift) {
 			return tillError("cashier_required")
 		}
 		if in.EmployeeId == nil || *in.EmployeeId != a.ID {
@@ -203,7 +248,7 @@ func (s *Service) HandoverTill(ctx context.Context, b devices.Binding, token, id
 		if err != nil {
 			return err
 		}
-		if a.Role != "cashier" {
+		if !a.Access.Grants(auth.Sell) {
 			return tillError("cashier_required")
 		}
 		if _, err = tx.Exec(ctx, `SELECT id FROM pos_registers WHERE id=$1 FOR UPDATE`, b.Register.ID); err != nil {

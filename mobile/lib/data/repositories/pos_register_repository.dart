@@ -87,10 +87,9 @@ class PosRegisterRepository {
   Future<int> sessionCount(String id) async {
     final db = await AppDatabase.instance.db;
     return Sqflite.firstIntValue(
-          await db.rawQuery(
-            'SELECT COUNT(*) FROM shifts WHERE pos_id = ?',
-            [id],
-          ),
+          await db.rawQuery('SELECT COUNT(*) FROM shifts WHERE pos_id = ?', [
+            id,
+          ]),
         ) ??
         0;
   }
@@ -101,10 +100,9 @@ class PosRegisterRepository {
   Future<int> orderCount(String id) async {
     final db = await AppDatabase.instance.db;
     return Sqflite.firstIntValue(
-          await db.rawQuery(
-            'SELECT COUNT(*) FROM orders WHERE pos_id = ?',
-            [id],
-          ),
+          await db.rawQuery('SELECT COUNT(*) FROM orders WHERE pos_id = ?', [
+            id,
+          ]),
         ) ??
         0;
   }

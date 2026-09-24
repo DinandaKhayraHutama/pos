@@ -32,6 +32,23 @@ String businessDateFor(DateTime local) {
       '${two(local.day)}';
 }
 
+const indonesiaTimezoneOffsets = <String, int>{
+  'Asia/Jakarta': 420,
+  'Asia/Makassar': 480,
+  'Asia/Jayapura': 540,
+};
+
+/// Converts one instant to the configured Indonesian business clock. Unknown
+/// zones keep the historical device-local behavior for older servers.
+DateTime businessTimeFor(DateTime now, String? timezone) {
+  final offset = indonesiaTimezoneOffsets[timezone];
+  if (offset == null) return now.toLocal();
+  return now.toUtc().add(Duration(minutes: offset));
+}
+
+int? timezoneOffsetMinutes(String? timezone) =>
+    indonesiaTimezoneOffsets[timezone];
+
 int wireInt(Object? value) => value is num ? value.toInt() : 0;
 
 int? wireIntOrNull(Object? value) => value is num ? value.toInt() : null;

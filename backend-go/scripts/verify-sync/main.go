@@ -240,8 +240,10 @@ func run() error {
 			return err
 		}
 		total += len(rows)
-		check(e.Name+" delivers its complete fixture", len(rows) == seededProducts,
-			"expected %d, got %d", seededProducts, len(rows))
+		entity, _ := syncfeed.Lookup(e.Name)
+		want := syncfixture.ExpectedRows(entity, seededProducts)
+		check(e.Name+" delivers its complete fixture", len(rows) == want,
+			"expected %d, got %d", want, len(rows))
 		// Paging every feed intentionally exceeds a single device's minute
 		// budget. Reset only this disposable device between feeds.
 		rdb.Del(ctx, deviceKey)
@@ -295,6 +297,10 @@ func run() error {
 		return err
 	}
 	for _, e := range syncfeed.Entities() {
+		if e.Singleton {
+			// One row per scope; see syncfeed.Entity.Singleton.
+			continue
+		}
 		if _, err := owner.Exec(ctx, "VACUUM (ANALYZE) "+e.Table); err != nil {
 			return err
 		}

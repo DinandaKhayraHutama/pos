@@ -41,7 +41,7 @@ func newTestHandler(imps Impersonations) *Handler {
 }
 
 func owner(features entitlements.Set) staff.Employee {
-	return staff.Employee{ID: "e", TenantID: "t", Name: "Owner", Role: auth.Owner, Active: true, Features: features}
+	return staff.Employee{ID: "e", TenantID: "t", Name: "Owner", Role: auth.Owner, Access: auth.SystemAccess(auth.Owner), Active: true, Features: features}
 }
 
 // request builds what requireEmployee would have put in the context.

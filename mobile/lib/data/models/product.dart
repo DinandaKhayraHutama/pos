@@ -2,7 +2,9 @@ class Product {
   final String id;
   final String name;
   final String categoryId;
-  final int price; // stored in smallest currency unit (rupiah cents-equivalent -> here plain rupiah)
+  final String? brandId;
+  final int
+  price; // stored in smallest currency unit (rupiah cents-equivalent -> here plain rupiah)
 
   /// Cost of goods for this product, in the same unit as [price]. Null means
   /// it was never entered. Kept separate from [price] so margin reporting can
@@ -43,6 +45,7 @@ class Product {
     required this.id,
     required this.name,
     required this.categoryId,
+    this.brandId,
     required this.price,
     this.cost,
     this.sku,
@@ -81,6 +84,7 @@ class Product {
     id: m['id'] as String,
     name: m['name'] as String,
     categoryId: m['category_id'] as String,
+    brandId: m['brand_id'] as String?,
     price: (m['price'] as num).toInt(),
     cost: (m['cost'] as num?)?.toInt(),
     sku: m['sku'] as String?,
@@ -99,6 +103,7 @@ class Product {
     'id': id,
     'name': name,
     'category_id': categoryId,
+    'brand_id': brandId,
     'price': price,
     // Written unconditionally, including null: an upsert that omitted the key
     // would leave a previous value in place, so clearing a cost or emptying
@@ -123,6 +128,7 @@ class Product {
     String? id,
     String? name,
     String? categoryId,
+    String? brandId,
     int? price,
     int? cost,
     String? sku,
@@ -139,6 +145,7 @@ class Product {
     id: id ?? this.id,
     name: name ?? this.name,
     categoryId: categoryId ?? this.categoryId,
+    brandId: brandId ?? this.brandId,
     price: price ?? this.price,
     cost: cost ?? this.cost,
     sku: sku ?? this.sku,

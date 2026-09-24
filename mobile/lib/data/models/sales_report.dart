@@ -25,6 +25,8 @@ class SalesReport {
     required this.salesReturns,
     required this.tax,
     required this.serviceCharge,
+    this.taxIncluded = 0,
+    this.rounding = 0,
     required this.orderCount,
     required this.itemsSold,
     required this.cancelledCount,
@@ -66,6 +68,14 @@ class SalesReport {
   /// that Service Charge is tracked separately.
   final int tax;
   final int serviceCharge;
+
+  /// Fase 3: the part of [tax] already inside inclusive prices. It is in
+  /// [subtotal], so it comes out of net sales; zero on a legacy receipt.
+  final int taxIncluded;
+
+  /// Fase 3: the final rounding collected — part of [revenue], never of
+  /// sales. May be negative.
+  final int rounding;
   final int orderCount;
   final int itemsSold;
 
@@ -91,8 +101,9 @@ class SalesReport {
   /// the profit so the number is read with the right amount of trust.
   final double costCoverage;
 
-  /// Net sales, the figure the waterfall produces.
-  int get netSales => subtotal - discount;
+  /// Net sales, the figure the waterfall produces: gross − discounts −
+  /// returns − included tax, the server's definition.
+  int get netSales => subtotal - discount - taxIncluded;
 
   /// NET SALES minus cost of goods — not revenue minus cost of goods.
   ///

@@ -80,6 +80,9 @@ func TestAReportFromRollupsMatchesTheOrdersItWasBuiltFrom(t *testing.T) {
 	require.EqualValues(t, 22500, r.ByCategory[1].Net)
 	require.Equal(t, reporting.Uncategorised, r.ByCategory[2].Key)
 	require.EqualValues(t, 5000, r.ByCategory[2].Net)
+	require.Len(t, r.ByBrand, 1)
+	require.Equal(t, reporting.Uncategorised, r.ByBrand[0].Key)
+	require.EqualValues(t, r.NetSales, r.ByBrand[0].Net)
 	var net int64
 	for _, c := range r.ByCategory {
 		net += c.Net

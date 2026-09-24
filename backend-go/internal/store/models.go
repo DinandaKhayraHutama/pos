@@ -22,6 +22,35 @@ type ActivationCode struct {
 	CreatedAt          pgtype.Timestamptz
 }
 
+type Brand struct {
+	ID        string
+	TenantID  string
+	Name      string
+	SortOrder int32
+	SyncSeq   int64
+	DeletedAt pgtype.Timestamptz
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+type BusinessSetting struct {
+	TenantID       string
+	TaxRateBp      int32
+	TaxMode        string
+	ServiceEnabled bool
+	ServiceRateBp  int32
+	ServiceTaxable bool
+	RoundingUnit   int32
+	RoundingMode   string
+	ReceiptLogoUrl pgtype.Text
+	ReceiptLogoKey pgtype.Text
+	ReceiptFooter  pgtype.Text
+	SyncSeq        int64
+	DeletedAt      pgtype.Timestamptz
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+}
+
 type Category struct {
 	ID        string
 	TenantID  string
@@ -35,6 +64,32 @@ type Category struct {
 	UpdatedAt pgtype.Timestamptz
 }
 
+type Customer struct {
+	ID           string
+	TenantID     string
+	Name         string
+	Phone        pgtype.Text
+	Email        pgtype.Text
+	Address      pgtype.Text
+	Note         pgtype.Text
+	PhoneNorm    pgtype.Text
+	EmailNorm    pgtype.Text
+	MergedIntoID pgtype.UUID
+	Active       bool
+	SyncSeq      int64
+	DeletedAt    pgtype.Timestamptz
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+type CustomerExportEvent struct {
+	ID         string
+	TenantID   string
+	ActorID    string
+	RowCount   int32
+	ExportedAt pgtype.Timestamptz
+}
+
 type DailyAdjustmentRollup struct {
 	TenantID     string
 	OutletID     string
@@ -43,6 +98,19 @@ type DailyAdjustmentRollup struct {
 	Label        string
 	OrderCount   int64
 	Amount       int64
+}
+
+type DailyBrandRollup struct {
+	TenantID     string
+	OutletID     string
+	BusinessDate pgtype.Date
+	BrandKey     string
+	BrandName    string
+	NameAtMs     int64
+	GrossSales   int64
+	NetSales     int64
+	ItemsSold    int64
+	ComputedAt   pgtype.Timestamptz
 }
 
 type DailyCategoryRollup struct {
@@ -67,6 +135,18 @@ type DailyEmployeeRollup struct {
 	OrderCount   int64
 	Revenue      int64
 	Discount     int64
+	NetSales     int64
+}
+
+type DailyPaymentMethodRollup struct {
+	TenantID          string
+	OutletID          string
+	BusinessDate      pgtype.Date
+	PaymentMethodKey  string
+	PaymentMethodName string
+	PaymentKind       string
+	OrderCount        int64
+	Revenue           int64
 }
 
 type DailyPaymentRollup struct {
@@ -76,6 +156,19 @@ type DailyPaymentRollup struct {
 	PaymentMethod string
 	OrderCount    int64
 	Revenue       int64
+}
+
+type DailyProductCategoryRollup struct {
+	TenantID     string
+	OutletID     string
+	BusinessDate pgtype.Date
+	CategoryKey  string
+	ProductKey   string
+	ProductName  string
+	NameAtMs     int64
+	Quantity     int64
+	GrossSales   int64
+	NetSales     int64
 }
 
 type DailyProductRollup struct {
@@ -89,43 +182,80 @@ type DailyProductRollup struct {
 	GrossSales     int64
 	CostOfGoods    int64
 	CostedQuantity int64
+	NetSales       int64
 }
 
 type DailySalesRollup struct {
-	TenantID         string
-	OutletID         string
-	BusinessDate     pgtype.Date
-	OrderCount       int64
-	Subtotal         int64
-	Discount         int64
-	Tax              int64
-	ServiceCharge    int64
-	Revenue          int64
-	ItemsSold        int64
-	CostOfGoods      int64
-	CostedItems      int64
-	DiscountedOrders int64
-	CancelledCount   int64
-	CancelledAmount  int64
-	RefundedCount    int64
-	RefundedAmount   int64
-	ComputedAt       pgtype.Timestamptz
+	TenantID           string
+	OutletID           string
+	BusinessDate       pgtype.Date
+	OrderCount         int64
+	Subtotal           int64
+	Discount           int64
+	Tax                int64
+	ServiceCharge      int64
+	Revenue            int64
+	ItemsSold          int64
+	CostOfGoods        int64
+	CostedItems        int64
+	DiscountedOrders   int64
+	CancelledCount     int64
+	CancelledAmount    int64
+	RefundedCount      int64
+	RefundedAmount     int64
+	ComputedAt         pgtype.Timestamptz
+	GrossSales         int64
+	AllDiscount        int64
+	SalesReturns       int64
+	AnomalyCount       int64
+	CalculationVersion int32
+	TaxIncluded        int64
+	Rounding           int64
+}
+
+type DailySalesTypeRollup struct {
+	TenantID      string
+	OutletID      string
+	BusinessDate  pgtype.Date
+	SalesTypeKey  string
+	SalesTypeName string
+	OrderCount    int64
+	Revenue       int64
+	NetSales      int64
 }
 
 type Device struct {
-	ID             string
-	TenantID       string
-	OutletID       string
-	PosRegisterID  string
-	DeviceUuid     string
-	Label          pgtype.Text
-	Platform       pgtype.Text
-	TokenSha256    []byte
-	TokenExpiresAt pgtype.Timestamptz
-	LastSeenAt     pgtype.Timestamptz
-	RevokedAt      pgtype.Timestamptz
-	CreatedAt      pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
+	ID                     string
+	TenantID               string
+	OutletID               string
+	PosRegisterID          string
+	DeviceUuid             string
+	Label                  pgtype.Text
+	Platform               pgtype.Text
+	TokenSha256            []byte
+	TokenExpiresAt         pgtype.Timestamptz
+	LastSeenAt             pgtype.Timestamptz
+	RevokedAt              pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+	Capabilities           []string
+	CapabilitiesReportedAt pgtype.Timestamptz
+}
+
+type Discount struct {
+	ID                    string
+	TenantID              string
+	Name                  string
+	Scope                 string
+	Kind                  string
+	Value                 pgtype.Int8
+	RequiresAuthorization bool
+	Active                bool
+	SortOrder             int32
+	SyncSeq               int64
+	DeletedAt             pgtype.Timestamptz
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
 }
 
 type Employee struct {
@@ -142,6 +272,8 @@ type Employee struct {
 	DeletedAt pgtype.Timestamptz
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
+	RoleID    string
+	Phone     pgtype.Text
 }
 
 type HourlySalesRollup struct {
@@ -151,6 +283,8 @@ type HourlySalesRollup struct {
 	Hour         int16
 	OrderCount   int64
 	Revenue      int64
+	NetSales     int64
+	GrossSales   int64
 }
 
 type ImpersonationSession struct {
@@ -233,6 +367,10 @@ type Order struct {
 	Payload             []byte
 	CreatedAt           pgtype.Timestamptz
 	UpdatedAt           pgtype.Timestamptz
+	CustomerID          pgtype.UUID
+	TaxIncluded         int64
+	RoundingAmount      int64
+	PricingMismatch     bool
 }
 
 type OrderDedupe struct {
@@ -284,6 +422,43 @@ type Outlet struct {
 	AuthGeneration int64
 }
 
+type OutletProductSalesTypePrice struct {
+	TenantID    string
+	OutletID    string
+	ProductID   string
+	SalesTypeID string
+	Price       int64
+	SyncSeq     int64
+	DeletedAt   pgtype.Timestamptz
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
+
+type OutletSetting struct {
+	TenantID           string
+	OutletID           string
+	TaxRateBp          pgtype.Int4
+	TaxMode            pgtype.Text
+	ServiceEnabled     pgtype.Bool
+	ServiceRateBp      pgtype.Int4
+	ServiceTaxable     pgtype.Bool
+	RoundingUnit       pgtype.Int4
+	RoundingMode       pgtype.Text
+	ReceiptHeader      pgtype.Text
+	ReceiptFooter      pgtype.Text
+	ShowAddress        bool
+	ShowPhone          bool
+	TrackServer        bool
+	DefaultSalesTypeID pgtype.UUID
+	SalesTypeIds       []string
+	PaymentGroupID     pgtype.UUID
+	PricingModel       string
+	SyncSeq            int64
+	DeletedAt          pgtype.Timestamptz
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+}
+
 type OutletStock struct {
 	TenantID  string
 	OutletID  string
@@ -304,6 +479,34 @@ type PasswordSetupToken struct {
 	CancelledAt pgtype.Timestamptz
 	CreatedBy   pgtype.UUID
 	CreatedAt   pgtype.Timestamptz
+}
+
+type PaymentGroup struct {
+	ID        string
+	TenantID  string
+	Name      string
+	MethodIds []string
+	Active    bool
+	SortOrder int32
+	SyncSeq   int64
+	DeletedAt pgtype.Timestamptz
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+type PaymentMethod struct {
+	ID                string
+	TenantID          string
+	Name              string
+	Kind              string
+	SystemKey         pgtype.Text
+	RequiresReference bool
+	Active            bool
+	SortOrder         int32
+	SyncSeq           int64
+	DeletedAt         pgtype.Timestamptz
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
 }
 
 type PlatformAuditLog struct {
@@ -380,6 +583,7 @@ type Product struct {
 	CreatedAt   pgtype.Timestamptz
 	UpdatedAt   pgtype.Timestamptz
 	ImageKey    pgtype.Text
+	BrandID     pgtype.UUID
 }
 
 type ProductModifierGroup struct {
@@ -401,6 +605,17 @@ type ProductModifierOption struct {
 	DeletedAt pgtype.Timestamptz
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
+}
+
+type ProductSalesTypePrice struct {
+	TenantID    string
+	ProductID   string
+	SalesTypeID string
+	Price       int64
+	SyncSeq     int64
+	DeletedAt   pgtype.Timestamptz
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
 }
 
 type ProductVariant struct {
@@ -451,24 +666,25 @@ type ReportDirtySlice struct {
 }
 
 type ReportExport struct {
-	ID            string
-	TenantID      string
-	RequestedBy   pgtype.UUID
-	ScheduleID    pgtype.UUID
-	Format        string
-	OutletID      pgtype.UUID
-	DateFrom      pgtype.Date
-	DateTo        pgtype.Date
-	Status        string
-	FileKey       pgtype.Text
-	ByteSize      pgtype.Int8
-	Error         pgtype.Text
-	TokenSha256   []byte
-	LinkExpiresAt pgtype.Timestamptz
-	DeliveredAt   pgtype.Timestamptz
-	DeliveryError pgtype.Text
-	CreatedAt     pgtype.Timestamptz
-	FinishedAt    pgtype.Timestamptz
+	ID                 string
+	TenantID           string
+	RequestedBy        pgtype.UUID
+	ScheduleID         pgtype.UUID
+	Format             string
+	OutletID           pgtype.UUID
+	DateFrom           pgtype.Date
+	DateTo             pgtype.Date
+	Status             string
+	FileKey            pgtype.Text
+	ByteSize           pgtype.Int8
+	Error              pgtype.Text
+	TokenSha256        []byte
+	LinkExpiresAt      pgtype.Timestamptz
+	DeliveredAt        pgtype.Timestamptz
+	DeliveryError      pgtype.Text
+	CreatedAt          pgtype.Timestamptz
+	FinishedAt         pgtype.Timestamptz
+	CalculationVersion int32
 }
 
 type ReportSchedule struct {
@@ -484,6 +700,35 @@ type ReportSchedule struct {
 	LastRunAt  pgtype.Timestamptz
 	CreatedAt  pgtype.Timestamptz
 	UpdatedAt  pgtype.Timestamptz
+}
+
+type Role struct {
+	ID               string
+	TenantID         string
+	Name             string
+	SystemKey        pgtype.Text
+	Permissions      []string
+	PosAccess        bool
+	BackofficeAccess bool
+	SortOrder        int32
+	SyncSeq          int64
+	DeletedAt        pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+}
+
+type SalesType struct {
+	ID        string
+	TenantID  string
+	Name      string
+	SystemKey pgtype.Text
+	UsesTable bool
+	Active    bool
+	SortOrder int32
+	SyncSeq   int64
+	DeletedAt pgtype.Timestamptz
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
 }
 
 type Session struct {
@@ -606,6 +851,7 @@ type Tenant struct {
 	Timezone        string
 	SuspendedAt     pgtype.Timestamptz
 	SuspendedReason pgtype.Text
+	LegacyTimezone  pgtype.Text
 }
 
 type TenantFeatureFlag struct {

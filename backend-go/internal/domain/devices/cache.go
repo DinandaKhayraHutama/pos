@@ -312,3 +312,15 @@ return 1
 func tokenKey(plainToken string) string {
 	return "dev:" + hex.EncodeToString(HashToken(plainToken))
 }
+
+// RecordCapabilities stores what a device reported and drops its cached
+// binding, so the next request reads the new set instead of re-recording it.
+// Only the reporting device's entry goes: nothing else about the register,
+// outlet or merchant changed, so no generation is bumped.
+func (c *CachedAuthenticator) RecordCapabilities(ctx context.Context, plainToken string, b Binding, caps []string) error {
+	if err := c.svc.RecordCapabilities(ctx, b, caps); err != nil {
+		return err
+	}
+	c.forget(ctx, tokenKey(plainToken))
+	return nil
+}

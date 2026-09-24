@@ -14,12 +14,15 @@ import (
 
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/backoffice"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/catalogue"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/customer"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/devices"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/history"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/ingest"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/outlets"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/payments"
 	domainplatform "github.com/daniryckidinata/nti_pos/backend-go/internal/domain/platform"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/promos"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/settings"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/staff"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/stock"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/syncfeed"
@@ -88,9 +91,11 @@ func NewRouter(d Deps) http.Handler {
 	// files are served straight off the shared volume and never reach this
 	// process. Either way the URL and the headers are identical.
 	// A nil *media.Store must not become a non-nil ImageStore interface.
+	var settingsImages settings.ImageStore
 	var images catalogue.ImageStore
 	if d.Media != nil {
 		images = d.Media
+		settingsImages = d.Media
 		r.Handle("/media/*", http.StripPrefix("/media", d.Media.Handler()))
 	}
 
@@ -132,7 +137,10 @@ func NewRouter(d Deps) http.Handler {
 		Pools:          d.Pools,
 		SessionDB:      d.SessionDB,
 		Staff:          staff.NewService(d.Pools, feed),
+		Settings:       settings.NewService(d.Pools, feed, settingsImages, catalogue.ProcessUpload),
+		Payments:       payments.NewService(d.Pools, feed),
 		Catalogue:      catalogue.NewService(d.Pools, feed, images),
+		Customers:      customer.NewService(d.Pools, feed),
 		Promos:         promos.NewService(d.Pools, feed),
 		Outlets:        outlets.NewService(d.Pools, feed, cachedAuth),
 		Stock:          stock.NewService(d.Pools, feed),

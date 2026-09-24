@@ -64,6 +64,10 @@ class DeadLetterStore {
     'stale_revision',
     'register_busy',
     'archived',
+    // Fase 4: this till no longer owns the bill — it was parked, claimed
+    // elsewhere or released by a manager's takeover. Kept as evidence; never
+    // sent again from here.
+    'bill_not_owned',
   };
 
   /// Moves the sent snapshot out of the outbox and into this table, in one

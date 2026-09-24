@@ -5,6 +5,8 @@ import 'package:sqflite/sqflite.dart';
 
 import '../database/app_database.dart';
 import '../models/employee.dart';
+import '../../core/auth/permissions.dart';
+import 'employee_role_repository.dart';
 
 /// The only place employees are read or written.
 ///
@@ -33,6 +35,29 @@ class EmployeeRepository {
       limit: 1,
     );
     return rows.isEmpty ? null : Employee.fromMap(rows.first);
+  }
+
+  /// Resolves the identity behind a live session. A tombstoned or inactive
+  /// employee is no longer a valid principal and must be signed out.
+  Future<Employee?> byIdForSession(String id) async {
+    final db = await AppDatabase.instance.db;
+    final rows = await db.query(
+      'employees',
+      where: 'id = ? AND active = 1',
+      whereArgs: [id],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : Employee.fromMap(rows.first);
+  }
+
+  Future<EmployeeAccess> accessFor(Employee employee) async {
+    if (employee.role != EmployeeRole.custom) {
+      return EmployeeAccess.system(employee.role);
+    }
+    final role = await EmployeeRoleRepository.instance.byId(employee.roleId);
+    return role == null
+        ? EmployeeAccess.locked
+        : EmployeeAccess.custom(role.permissions, posAccess: role.posAccess);
   }
 
   /// Resolves a typed PIN to the employee it belongs to.

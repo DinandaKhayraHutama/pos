@@ -57,6 +57,9 @@ func (h *Handler) activate(w http.ResponseWriter, r *http.Request) {
 		DeviceUUID: deviceUUID,
 		Label:      req.Label,
 		Platform:   req.Platform,
+		// Absent on a build older than Fase 3: an empty set, which is exactly
+		// what refuses it once the business runs a model it cannot honour.
+		Capabilities: devices.ParseCapabilities(r.Header.Get(capabilitiesHeader)),
 	})
 
 	switch {
@@ -67,6 +70,12 @@ func (h *Handler) activate(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, devices.ErrBoundToAnother):
 		render.Error(w, h.logger, http.StatusUnprocessableEntity, "bound_to_another_register",
 			"This installation is already bound to another register.")
+		return
+	case errors.Is(err, devices.ErrIncompatibleApp):
+		// 422 like every refusal the till reads as "this code did not
+		// activate"; the code stays unconsumed for the updated app.
+		render.Error(w, h.logger, http.StatusUnprocessableEntity, "app_update_required",
+			"This business runs features this app version cannot. Update the app, then activate again.")
 		return
 	case errors.Is(err, entitlements.ErrLimitReached):
 		// 422 like the other refusals: the till already reads 422 as "this code
@@ -104,7 +113,7 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
 func wireBinding(b devices.Binding) wire.Binding {
 	return wire.Binding{
 		Device:      wire.Device{Id: b.Device.ID, DeviceUuid: b.Device.UUID, Label: b.Device.Label, Platform: b.Device.Platform},
-		Tenant:      wire.Tenant{Id: b.Tenant.ID, Name: b.Tenant.Name},
+		Tenant:      wire.Tenant{Id: b.Tenant.ID, Name: b.Tenant.Name, Timezone: nonEmpty(b.Tenant.Timezone)},
 		Outlet:      wire.Outlet{Id: b.Outlet.ID, Name: b.Outlet.Name, Address: b.Outlet.Address, Phone: b.Outlet.Phone},
 		PosRegister: wire.Register{Id: b.Register.ID, OutletId: b.Register.OutletID, Name: b.Register.Name, TableService: b.Register.TableService},
 	}
@@ -112,4 +121,11 @@ func wireBinding(b devices.Binding) wire.Binding {
 
 func epochMillis(t time.Time) int64 {
 	return t.UnixMilli()
+}
+
+func nonEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }

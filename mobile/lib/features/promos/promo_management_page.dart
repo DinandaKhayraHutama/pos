@@ -171,7 +171,9 @@ class _PromoFormSheet extends ConsumerStatefulWidget {
 }
 
 class _PromoFormSheetState extends ConsumerState<_PromoFormSheet> {
-  late final _nameCtrl = TextEditingController(text: widget.existing?.name ?? '');
+  late final _nameCtrl = TextEditingController(
+    text: widget.existing?.name ?? '',
+  );
   late final _valueCtrl = TextEditingController(
     text: widget.existing?.value.toString() ?? '',
   );
@@ -201,7 +203,8 @@ class _PromoFormSheetState extends ConsumerState<_PromoFormSheet> {
         left: AppDimensions.space16,
         right: AppDimensions.space16,
         top: AppDimensions.space8,
-        bottom: MediaQuery.of(context).viewInsets.bottom + AppDimensions.space16,
+        bottom:
+            MediaQuery.of(context).viewInsets.bottom + AppDimensions.space16,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -337,7 +340,9 @@ class _PromoFormSheetState extends ConsumerState<_PromoFormSheet> {
         .read(promosProvider.notifier)
         .upsert(
           Promo(
-            id: existing?.id ?? 'promo_${DateTime.now().millisecondsSinceEpoch}',
+            id:
+                existing?.id ??
+                'promo_${DateTime.now().millisecondsSinceEpoch}',
             name: name,
             kind: _kind,
             value: value,

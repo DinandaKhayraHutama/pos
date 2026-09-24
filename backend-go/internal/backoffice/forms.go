@@ -3,7 +3,6 @@ package backoffice
 import (
 	"encoding/json"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -63,11 +62,6 @@ func (p *parser) optionalInteger(name string) *int {
 	return &n
 }
 
-var (
-	plainAmount   = regexp.MustCompile(`^-?[0-9]+$`)
-	groupedAmount = regexp.MustCompile(`^-?[0-9]{1,3}(\.[0-9]{3})+$`)
-)
-
 // money reads integer rupiah.
 //
 // Thousands separators are accepted only where they ARE thousands separators:
@@ -83,26 +77,12 @@ func (p *parser) money(name string) int64 {
 	return n
 }
 
-// parseRupiah is shared by every form and the price-list import, so a price
-// typed into a form and the same price in a spreadsheet cannot be read two
-// different ways. Blank is zero; a non-empty message means it was refused.
-func parseRupiah(input string) (int64, string) {
-	raw := strings.NewReplacer(" ", "", "Rp", "", "rp", "").Replace(strings.TrimSpace(input))
-	switch {
-	case raw == "":
-		return 0, ""
-	case groupedAmount.MatchString(raw):
-		raw = strings.ReplaceAll(raw, ".", "")
-	case !plainAmount.MatchString(raw):
-		return 0, "Harus rupiah bulat, tanpa desimal."
-	}
-
-	n, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil {
-		return 0, "Angka terlalu besar."
-	}
-	return n, ""
-}
+// parseRupiah is shared by every form, the legacy price-list import and
+// Fase 2's full catalogue import, so a price typed into a form and the same
+// price in a spreadsheet cannot be read two different ways. It is now just
+// this package's name for validation.ParseRupiah — the one reader of money —
+// kept so every existing call site here stays unchanged.
+func parseRupiah(input string) (int64, string) { return validation.ParseRupiah(input) }
 
 func (p *parser) optionalMoney(name string) *int64 {
 	if p.text(name) == "" {

@@ -5,14 +5,18 @@ import 'package:go_router/go_router.dart';
 import '../../core/auth/permissions.dart';
 import '../../core/auth/role_display.dart';
 import '../../core/localization/l10n.dart';
+import '../../core/pricing/pricing.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimensions.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/glass/glass_app_bar.dart';
 import '../../core/widgets/glass/glass_buttons.dart';
 import '../../core/widgets/glass/glass_card.dart';
+import '../../core/utils/formatters.dart';
 import '../../core/widgets/glass/glass_text_field.dart';
+import '../../data/models/sales_config.dart';
 import '../../providers/device_sync_provider.dart';
+import '../../providers/pricing_provider.dart';
 import '../../data/device/till_binding.dart';
 import '../../providers/settings_provider.dart';
 import 'sync_status_card.dart';
@@ -30,6 +34,12 @@ class SettingsPage extends ConsumerWidget {
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text('$e')),
       data: (data) {
+        // Once the owner has saved the business settings in the Backoffice,
+        // they are the ones in force on a connected till and this device
+        // only shows them. Until then the till keeps its own values (D8).
+        final businessConfig = TillBinding.current == null
+            ? null
+            : ref.watch(pricingContextProvider).valueOrNull?.config;
         return Scaffold(
           backgroundColor: Colors.transparent,
           appBar: GlassAppBar(title: l10n.settingsTitle),
@@ -154,9 +164,24 @@ class SettingsPage extends ConsumerWidget {
                   ],
                 ),
               ),
-              if (data.can(AppPermission.manageSettings)) ...[
+              if (data.can(AppPermission.manageSettings) &&
+                  businessConfig != null) ...[
                 const SizedBox(height: AppDimensions.space16),
                 _SectionTitle(text: l10n.settingsBusiness),
+                const SizedBox(height: AppDimensions.space8),
+                _ManagedBusinessCard(config: businessConfig),
+              ],
+              if (data.can(AppPermission.manageSettings) &&
+                  businessConfig == null) ...[
+                const SizedBox(height: AppDimensions.space16),
+                _SectionTitle(text: l10n.settingsBusiness),
+                if (TillBinding.current != null) ...[
+                  const SizedBox(height: AppDimensions.space4),
+                  Text(
+                    l10n.settingsBusinessDeviceOnly,
+                    style: TextStyle(fontSize: 12, color: design.textMedium),
+                  ),
+                ],
                 const SizedBox(height: AppDimensions.space8),
                 _Card(
                   child: Column(
@@ -328,7 +353,8 @@ class SettingsPage extends ConsumerWidget {
                         value: l10n.shiftHistory,
                         onTap: () => context.push('/shift'),
                       ),
-                    if (data.can(AppPermission.manageOutlets))
+                    if (TillBinding.current == null &&
+                        data.can(AppPermission.manageOutlets))
                       _SettingTile(
                         icon: Icons.store_mall_directory_outlined,
                         iconColor: design.primary,
@@ -341,7 +367,8 @@ class SettingsPage extends ConsumerWidget {
                     // each is for. No separate permission, because the holder
                     // set would be identical and a second row in the table is
                     // a second thing to keep in step.
-                    if (data.can(AppPermission.manageOutlets))
+                    if (TillBinding.current == null &&
+                        data.can(AppPermission.manageOutlets))
                       _SettingTile(
                         icon: Icons.point_of_sale_outlined,
                         iconColor: design.info,
@@ -349,7 +376,8 @@ class SettingsPage extends ConsumerWidget {
                         value: l10n.registersSubtitle,
                         onTap: () => context.push('/registers'),
                       ),
-                    if (data.can(AppPermission.manageEmployees))
+                    if (TillBinding.current == null &&
+                        data.can(AppPermission.manageEmployees))
                       _SettingTile(
                         icon: Icons.badge_outlined,
                         iconColor: design.secondary,
@@ -357,7 +385,8 @@ class SettingsPage extends ConsumerWidget {
                         value: l10n.employeesManage,
                         onTap: () => context.push('/employees'),
                       ),
-                    if (data.can(AppPermission.manageSettings))
+                    if (TillBinding.current == null &&
+                        data.can(AppPermission.manageSettings))
                       _SettingTile(
                         icon: Icons.restart_alt_rounded,
                         iconColor: design.tertiary,
@@ -893,6 +922,66 @@ class _ChoiceChip extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The business settings as the Backoffice set them, shown and not edited:
+/// on a connected till whose owner has saved them, they are the ones in force.
+class _ManagedBusinessCard extends StatelessWidget {
+  const _ManagedBusinessCard({required this.config});
+  final EffectiveBusinessConfig config;
+
+  static String _percent(int bp) =>
+      bp % 100 == 0 ? '${bp ~/ 100} %' : '${(bp / 100).toStringAsFixed(2)} %';
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final design = context.design;
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(AppDimensions.space12),
+            child: Text(
+              l10n.settingsBusinessManaged,
+              style: TextStyle(fontSize: 12, color: design.textMedium),
+            ),
+          ),
+          const Divider(height: 1),
+          _SettingTile(
+            icon: Icons.percent_outlined,
+            title: l10n.settingsTaxRate,
+            value: _percent(config.taxRateBp),
+          ),
+          const Divider(height: 1),
+          _SettingTile(
+            icon: Icons.receipt_long_outlined,
+            title: l10n.settingsTaxMode,
+            value: config.taxMode == TaxMode.inclusive
+                ? l10n.settingsTaxModeInclusive
+                : l10n.settingsTaxModeExclusive,
+          ),
+          const Divider(height: 1),
+          _SettingTile(
+            icon: Icons.room_service_outlined,
+            title: l10n.settingsServiceCharge,
+            value: config.serviceRateBp == 0
+                ? l10n.settingsServiceChargeOff
+                : _percent(config.serviceRateBp),
+          ),
+          const Divider(height: 1),
+          _SettingTile(
+            icon: Icons.price_change_outlined,
+            title: l10n.posRounding,
+            value: config.roundingUnit == 0
+                ? l10n.settingsRoundingNone
+                : MoneyFormatter.format(config.roundingUnit),
+          ),
+        ],
       ),
     );
   }

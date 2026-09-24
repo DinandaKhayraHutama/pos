@@ -55,14 +55,16 @@ type AnomalyReport struct {
 // money that cannot have been handed back. They need different answers, so
 // they are never merged into one "bad row" count.
 const (
-	AnomalyTotalMismatch = "total_mismatch"
-	AnomalyOverRefund    = "over_refund"
+	AnomalyTotalMismatch   = "total_mismatch"
+	AnomalyOverRefund      = "over_refund"
+	AnomalyPricingMismatch = "pricing_mismatch"
 )
 
 const anomalyWhere = `
 	o.tenant_id = $1 AND o.business_date BETWEEN $2::date AND $3::date
 	AND ($4::uuid IS NULL OR o.outlet_id = $4::uuid)
-	AND (o.total <> o.subtotal - o.discount + o.tax + o.service_charge_amount
+	AND (o.total <> o.subtotal - o.discount + o.tax - o.tax_included + o.service_charge_amount + o.rounding_amount
+	     OR o.pricing_mismatch
 	     OR (o.status = 'refunded' AND o.refunded_amount > o.total))`
 
 // Anomalies lists orders whose figures do not close, without changing
@@ -79,8 +81,9 @@ func (s *Service) Anomalies(ctx context.Context, tenantID string, f Filter) (Ano
 	// One snapshot, so the counts and the sample describe the same instant.
 	err := pg.InTenantReadTx(ctx, s.pools.Tenant, tenantID, func(ctx context.Context, tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
-			SELECT CASE WHEN o.total <> o.subtotal - o.discount + o.tax + o.service_charge_amount
-			            THEN '`+AnomalyTotalMismatch+`' ELSE '`+AnomalyOverRefund+`' END,
+			SELECT CASE WHEN o.total <> o.subtotal - o.discount + o.tax - o.tax_included + o.service_charge_amount + o.rounding_amount
+			            THEN '`+AnomalyTotalMismatch+`' WHEN o.pricing_mismatch THEN '`+AnomalyPricingMismatch+`'
+			            ELSE '`+AnomalyOverRefund+`' END,
 			       count(*)::bigint
 			FROM orders o WHERE `+anomalyWhere+` GROUP BY 1`, args...)
 		if err != nil {
@@ -104,10 +107,11 @@ func (s *Service) Anomalies(ctx context.Context, tenantID string, f Filter) (Ano
 		rows, err = tx.Query(ctx, `
 			SELECT o.id::text, o.outlet_id::text, ol.name, o.business_date,
 			       COALESCE(o.payload->>'number', ''), o.status,
-			       CASE WHEN o.total <> o.subtotal - o.discount + o.tax + o.service_charge_amount
-			            THEN '`+AnomalyTotalMismatch+`' ELSE '`+AnomalyOverRefund+`' END,
+			       CASE WHEN o.total <> o.subtotal - o.discount + o.tax - o.tax_included + o.service_charge_amount + o.rounding_amount
+			            THEN '`+AnomalyTotalMismatch+`' WHEN o.pricing_mismatch THEN '`+AnomalyPricingMismatch+`'
+			            ELSE '`+AnomalyOverRefund+`' END,
 			       o.subtotal, o.discount, o.tax, o.service_charge_amount, o.total,
-			       o.subtotal - o.discount + o.tax + o.service_charge_amount, o.refunded_amount
+			       o.subtotal - o.discount + o.tax - o.tax_included + o.service_charge_amount + o.rounding_amount, o.refunded_amount
 			FROM orders o
 			JOIN outlets ol ON ol.tenant_id = o.tenant_id AND ol.id = o.outlet_id
 			WHERE `+anomalyWhere+`

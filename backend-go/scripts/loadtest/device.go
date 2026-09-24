@@ -240,7 +240,7 @@ func (t *Till) receipt(products []product) wire.Order {
 		// a day late still lands in the day it was rung up.
 		BusinessDate: now.UTC().Format(time.DateOnly),
 		Number:       fmt.Sprintf("LOAD-%s-%d", t.id[:8], t.sequence),
-		PlacedAtMs:   now.UnixMilli(), Type: "dinein", Status: "paid",
+		PlacedAtMs:   now.UnixMilli(), Type: "dineIn", Status: "paid",
 		PosSessionId: t.sessionID, Subtotal: subtotal, Total: subtotal,
 		AmountPaid: subtotal, PaymentMethod: "cash", CashierName: "Load Cashier",
 		Items: []wire.OrderItem{lineOne, lineTwo},

@@ -22,11 +22,14 @@ import (
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/backoffice/views"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/auth"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/catalogue"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/customer"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/devices"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/entitlements"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/ingest"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/outlets"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/payments"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/promos"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/settings"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/staff"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/stock"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/infra/pg"
@@ -52,7 +55,10 @@ const (
 type Handler struct {
 	pools     pg.Pools
 	staff     *staff.Service
+	settings  *settings.Service
+	payments  *payments.Service
 	catalogue *catalogue.Service
+	customers *customer.Service
 	promos    *promos.Service
 	outlets   *outlets.Service
 	stock     *stock.Service
@@ -75,7 +81,11 @@ type Deps struct {
 	Pools     pg.Pools
 	SessionDB *sql.DB
 	Staff     *staff.Service
+	// Settings and Payments serve the Fase 3 business configuration.
+	Settings  *settings.Service
+	Payments  *payments.Service
 	Catalogue *catalogue.Service
+	Customers *customer.Service
 	Promos    *promos.Service
 	Outlets   *outlets.Service
 	Stock     *stock.Service
@@ -85,7 +95,7 @@ type Deps struct {
 	Reports ReportService
 	// History serves the read-only transaction and shift screens. Nil leaves
 	// them unmounted; they also need Reports, for the merchant's clock.
-	History HistoryService
+	History    HistoryService
 	Devices    *devices.Service
 	CachedAuth *devices.CachedAuthenticator
 	Recovery   *ingest.Service
@@ -117,7 +127,10 @@ func New(d Deps) *Handler {
 	return &Handler{
 		pools:          d.Pools,
 		staff:          d.Staff,
+		settings:       d.Settings,
+		payments:       d.Payments,
 		catalogue:      d.Catalogue,
+		customers:      d.Customers,
 		promos:         d.Promos,
 		outlets:        d.Outlets,
 		stock:          d.Stock,
@@ -243,6 +256,8 @@ func (h *Handler) panelRoutes(r chi.Router) {
 	if h.history != nil && h.reports != nil {
 		r.With(h.require(auth.ViewAllOrders)).Get("/transactions", h.transactionsPage)
 		r.With(h.require(auth.ViewAllOrders)).Get("/transactions/{id}", h.transactionPage)
+		r.With(h.require(auth.ViewAllOrders)).Get("/bills", h.billsPage)
+		r.With(h.require(auth.ViewAllOrders)).Get("/bills/{id}", h.billPage)
 		r.With(h.require(auth.ViewCashDrawer)).Get("/shifts", h.shiftsPage)
 		r.With(h.require(auth.ViewCashDrawer)).Get("/shifts/{id}", h.shiftPage)
 	}
@@ -272,17 +287,28 @@ func (h *Handler) panelRoutes(r chi.Router) {
 		r.Post("/categories/{id}", h.updateCategory)
 		r.Post("/categories/{id}/delete", h.deleteCategory)
 
+		r.Get("/brands", h.brandsPage)
+		r.Post("/brands", h.createBrand)
+		r.Get("/brands/{id}", h.brandPage)
+		r.Post("/brands/{id}", h.updateBrand)
+		r.Post("/brands/{id}/delete", h.deleteBrand)
+
 		r.Get("/products", h.productsPage)
 		r.Get("/products/new", h.newProductPage)
 		r.Post("/products", h.createProduct)
+		r.Get("/products/export", h.exportProducts)
 		r.Get("/products/import", h.importPage)
-		r.Post("/products/import", h.importPrices)
+		r.Post("/products/import", h.importProducts)
+		r.Post("/products/import/confirm", h.confirmImportProducts)
 		r.Get("/products/{id}", h.productPage)
 		r.Post("/products/{id}", h.updateProduct)
 		r.Post("/products/{id}/availability", h.setProductAvailability)
 		r.Post("/products/{id}/delete", h.deleteProduct)
 		r.Post("/products/{id}/image", h.uploadProductImage)
 		r.Post("/products/{id}/image/delete", h.removeProductImage)
+		// Fase 3: a product's sales-type prices, loaded into its page.
+		r.Get("/products/{id}/prices", h.productPricesCard)
+		r.Post("/products/{id}/prices", h.saveProductPrices)
 		r.Post("/products/{id}/variants", h.saveVariant)
 		r.Post("/products/{id}/variants/{variantID}", h.saveVariant)
 		r.Post("/products/{id}/variants/{variantID}/delete", h.deleteVariant)
@@ -310,11 +336,75 @@ func (h *Handler) panelRoutes(r chi.Router) {
 		r.Post("/{id}/delete", h.deletePromo)
 	})
 
+	// Named discounts (Fase 3) are promotions in the owner's head and in
+	// permissions, but not a module the platform sells separately.
+	r.Route("/discounts", func(r chi.Router) {
+		r.Use(h.require(auth.ManagePromos))
+		r.Get("/", h.discountsPage)
+		r.Post("/", h.createDiscount)
+		r.Post("/{id}/toggle", h.toggleDiscount)
+		r.Post("/{id}/delete", h.deleteDiscount)
+	})
+
+	// Anyone signed in manages their own account; a password needs the
+	// current one, and support inside a merchant may not change it.
+	r.Get("/account", h.accountPage)
+	r.Post("/account", h.saveAccount)
+	r.With(h.refuseWhileImpersonating).Post("/account/password", h.changeOwnPassword)
+
+	if h.settings != nil && h.payments != nil {
+		r.Route("/settings", func(r chi.Router) {
+			r.Use(h.require(auth.ManageSettings))
+			r.Get("/", h.settingsPage)
+			r.Post("/profile", h.saveSettingsProfile)
+			r.Post("/business", h.saveBusinessSettings)
+			r.Post("/logo", h.uploadReceiptLogo)
+			r.Post("/logo/delete", h.deleteReceiptLogo)
+			r.Get("/outlets", h.outletSettingsList)
+			r.Get("/outlets/{id}", h.outletSettingsPage)
+			r.Post("/outlets/{id}", h.saveOutletSettings)
+			r.Post("/outlets/{id}/pricing", h.setOutletPricingModel)
+			r.Post("/outlets/{id}/bills", h.setOutletBillModel)
+			r.Get("/sales-types", h.salesTypesPage)
+			r.Post("/sales-types", h.createSalesType)
+			r.Post("/sales-types/{id}/toggle", h.toggleSalesType)
+			r.Post("/sales-types/{id}/delete", h.deleteSalesType)
+			r.Get("/payments", h.paymentsPage)
+			r.Post("/payments/methods", h.createPaymentMethod)
+			r.Post("/payments/methods/{id}/toggle", h.togglePaymentMethod)
+			r.Post("/payments/methods/{id}/delete", h.deletePaymentMethod)
+			r.Post("/payments/groups", h.createPaymentGroup)
+			r.Post("/payments/groups/{id}/delete", h.deletePaymentGroup)
+		})
+	}
+
+	if h.customers != nil {
+		r.Route("/customers", func(r chi.Router) {
+			r.Use(h.require(auth.ManageCustomers))
+			r.Get("/", h.customersPage)
+			r.Post("/", h.createCustomer)
+			r.Get("/export", h.exportCustomers)
+			r.Post("/import", h.importCustomers)
+			r.Get("/{id}", h.customerPage)
+			r.Post("/{id}", h.updateCustomer)
+			r.Post("/{id}/active", h.setCustomerActive)
+			r.Post("/{id}/merge", h.mergeCustomer)
+		})
+	}
+
 	r.Route("/staff", func(r chi.Router) {
 		r.Use(h.require(auth.ManageEmployees))
 
 		r.Get("/", h.staffPage)
 		r.Get("/new", h.newStaffPage)
+		// Roles (Fase 3) ride on the same permission as the people who hold
+		// them; the domain refuses handing out more than the editor holds.
+		r.Get("/roles", h.rolesPage)
+		r.Get("/roles/new", h.newRolePage)
+		r.Post("/roles", h.createRole)
+		r.Get("/roles/{id}", h.rolePage)
+		r.Post("/roles/{id}", h.updateRole)
+		r.Post("/roles/{id}/delete", h.deleteRole)
 		r.Post("/", h.createStaff)
 		r.Get("/{id}", h.staffMemberPage)
 		r.Post("/{id}", h.updateStaff)

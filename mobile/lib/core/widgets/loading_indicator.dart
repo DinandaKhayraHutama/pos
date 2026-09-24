@@ -50,10 +50,9 @@ class LoadingIndicator extends StatelessWidget {
                   bottom: i == lines - 1 ? 0 : AppDimensions.space10,
                 ),
                 child: Skeleton(
-                  width:
-                      hasWidth
-                          ? constraints.maxWidth * fractions[i % fractions.length]
-                          : null,
+                  width: hasWidth
+                      ? constraints.maxWidth * fractions[i % fractions.length]
+                      : null,
                   height: 16,
                 ),
               ),

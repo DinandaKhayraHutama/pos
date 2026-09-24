@@ -506,6 +506,17 @@ func (s *Service) RecordFromDevice(ctx context.Context, w *syncfeed.Writer, b de
 	if in.BasisSeq > currentSeq {
 		return Applied{}, reject("schema_rejected", "basis_seq is ahead of this table.")
 	}
+	// Fase 4: a seated table (an open table session) is freed only by closing
+	// its seating online, once no bill on it is still open. A status event
+	// from the older per-till path — a queued one from before the branch
+	// switched to saved bills, or an old build — must not clear or re-book
+	// it underneath the guests; it is recorded, and superseded.
+	var seated bool
+	if err := w.Tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM table_sessions
+		WHERE tenant_id = $1 AND table_id = $2 AND closed_at_ms IS NULL)`, b.Tenant.ID, in.TableID).Scan(&seated); err != nil {
+		return Applied{}, err
+	}
+	sessionHolds := seated && in.Status != StatusOccupied
 	var lastClientSeq int64
 	if err := w.Tx.QueryRow(ctx, `SELECT COALESCE(MAX(client_seq), 0) FROM table_status_events
 		WHERE tenant_id=$1 AND table_id=$2 AND device_id=$3`,
@@ -513,6 +524,8 @@ func (s *Service) RecordFromDevice(ctx context.Context, w *syncfeed.Writer, b de
 		return Applied{}, err
 	}
 	switch {
+	case sessionHolds:
+		outcome, contested = OutcomeSuperseded, currentContested
 	case in.ClientSeq <= lastClientSeq:
 		outcome, contested = OutcomeSuperseded, currentContested
 	case in.BasisSeq == currentSeq:
@@ -565,4 +578,35 @@ func (s *Service) RecordFromDevice(ctx context.Context, w *syncfeed.Writer, b de
 	}
 
 	return Applied{StatusSeq: seq, Outcome: outcome, Contested: contested, Inserted: true}, nil
+}
+
+// SetFromSeating moves a table's live status because a seating (Fase 4
+// table session) opened or closed, inside the caller's transaction.
+//
+// A seating is decided online, so there is no device event to record and no
+// race to judge: the status is the server's, the mark of any earlier contest
+// is cleared, and the row is numbered on the outlet's status feed like every
+// other change, so tills pull it on their next poll. The table_status row is
+// locked before the counter, the order every writer of this feed keeps.
+func SetFromSeating(ctx context.Context, w *syncfeed.Writer, tenantID, outletID, tableID, status, employeeName string, atMs int64) (int64, error) {
+	var found bool
+	if err := w.Tx.QueryRow(ctx, `SELECT true FROM table_status
+		WHERE tenant_id = $1 AND table_id = $2 AND outlet_id = $3 FOR UPDATE`,
+		tenantID, tableID, outletID).Scan(&found); err != nil {
+		return 0, err
+	}
+	seq, err := w.OutletSeqBlock(ctx, StatusEntity, outletID, 1)
+	if err != nil {
+		return 0, err
+	}
+	if len([]rune(employeeName)) > 120 {
+		employeeName = string([]rune(employeeName)[:120])
+	}
+	_, err = w.Tx.Exec(ctx, `
+		UPDATE table_status
+		SET status = $3, occurred_at_ms = $4, event_id = NULL, device_id = NULL,
+		    employee_name = $5, contested = false, sync_seq = $6, updated_at = now()
+		WHERE tenant_id = $1 AND table_id = $2`,
+		tenantID, tableID, status, atMs, employeeName, seq)
+	return seq, err
 }

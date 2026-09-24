@@ -328,6 +328,9 @@ templ TransactionPage(s Session, v TransactionView) {
 				<div><div class="sub">Waktu transaksi</div>{ millis(v.Order.PlacedAtMs, v.Location) }</div>
 				<div><div class="sub">Outlet</div>{ v.Order.OutletName }</div>
 				<div><div class="sub">Register</div>{ v.Order.RegisterName }</div>
+				if v.Order.BillID != "" {
+					<div><div class="sub">Bill asal</div><a href={ templ.SafeURL("/backoffice/bills/" + v.Order.BillID) }>Lihat bill</a></div>
+				}
 				<div><div class="sub">Kasir</div>{ v.Order.CashierName }</div>
 				<div><div class="sub">Metode bayar</div>{ reporting.PaymentLabel(v.Order.PaymentMethod) }</div>
 				<div><div class="sub">Jenis</div>{ orNotRecorded(v.Order.Type) }</div>

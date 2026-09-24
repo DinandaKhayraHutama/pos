@@ -61,6 +61,17 @@ func ingestSession(ctx context.Context, tx pgx.Tx, b devices.Binding, in wire.Se
 		if count != *in.OrderCount {
 			return retry("dependency_pending", "Upload every receipt before closing this drawer.")
 		}
+		// Fase 4: a drawer still responsible for an open bill cannot close —
+		// the bill has to be paid, cancelled or parked for another till first.
+		// Kept as a retry: the till refuses to close with an owned open bill,
+		// so this only fires while the bill's last revision is still on its way.
+		open, err := openBillsOfSession(ctx, tx, in.Id)
+		if err != nil {
+			return err
+		}
+		if open > 0 {
+			return retry("dependency_pending", "Settle, cancel or park this drawer's open bills before closing it.")
+		}
 	}
 	var previous wire.Session
 	if err := json.Unmarshal(old.Payload, &previous); err != nil {

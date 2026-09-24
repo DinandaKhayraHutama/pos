@@ -1,0 +1,19 @@
+{
+  "note": "Near the Money ceiling. amount x basis points exceeds 2^53 here, which a Flutter web build represents as a double; both ports must stay exact.",
+  "vectors": [
+    {
+      "name": "exclusive at the ceiling",
+      "input": {"version": 2, "tax_mode": "exclusive", "service_rate_bp": 1000, "service_taxable": true,
+        "lines": [{"unit_price": 999999999999, "quantity": 1, "tax_rate_bp": 1100}]},
+      "expected": {"subtotal": 999999999999, "discount": 0, "service_charge": 100000000000, "tax": 121000000000, "tax_included": 0, "rounding": 0, "total": 1220999999999,
+        "lines": [{"gross": 999999999999, "line_discount": 0, "bill_discount_share": 0, "service_share": 100000000000, "tax_amount": 121000000000, "tax_included": 0, "net_amount": 999999999999}]}
+    },
+    {
+      "name": "inclusive at the ceiling",
+      "input": {"version": 2, "tax_mode": "inclusive", "service_rate_bp": 0, "service_taxable": true,
+        "lines": [{"unit_price": 999999999999, "quantity": 1, "tax_rate_bp": 1100}]},
+      "expected": {"subtotal": 999999999999, "discount": 0, "service_charge": 0, "tax": 99099099099, "tax_included": 99099099099, "rounding": 0, "total": 999999999999,
+        "lines": [{"gross": 999999999999, "line_discount": 0, "bill_discount_share": 0, "service_share": 0, "tax_amount": 99099099099, "tax_included": 99099099099, "net_amount": 900900900900}]}
+    }
+  ]
+}

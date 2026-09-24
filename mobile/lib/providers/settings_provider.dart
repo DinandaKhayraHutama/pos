@@ -11,6 +11,8 @@ import '../data/models/employee.dart';
 import '../data/models/outlet.dart';
 import '../data/preferences/app_preferences.dart';
 import '../data/repositories/employee_repository.dart';
+import '../data/repositories/employee_role_repository.dart';
+import '../data/repositories/remote_order_repository.dart';
 import '../data/repositories/outlet_repository.dart';
 import '../data/repositories/pos_register_repository.dart';
 import '../data/repositories/shift_repository.dart';
@@ -42,6 +44,7 @@ class SettingsState {
     // would say nothing extra.
     this.employeeId = '',
     this.employeeRole = EmployeeRole.owner,
+    this.employeeAccess,
     this.navRailExpanded,
     // Also defaulted, for the same reason and one more: ON is what an install
     // that predates the setting has always behaved like.
@@ -75,6 +78,7 @@ class SettingsState {
   /// existed, and silently demoting such a user would take away screens they
   /// were using yesterday. Signing out and back in resolves a real role.
   final EmployeeRole employeeRole;
+  final EmployeeAccess? employeeAccess;
 
   final bool loggedIn;
 
@@ -133,12 +137,14 @@ class SettingsState {
 
   /// What this session is allowed to do. Screens ask [can]; nothing compares
   /// roles directly.
-  Set<AppPermission> get permissions => permissionsFor(employeeRole);
+  Set<AppPermission> get permissions =>
+      (employeeAccess ?? EmployeeAccess.system(employeeRole)).permissions;
 
   bool can(AppPermission permission) => permissions.contains(permission);
 
   /// Where this role belongs when a route is off-limits or after sign-in.
-  String get homeRoute => homeRouteFor(employeeRole);
+  String get homeRoute =>
+      homeRouteForAccess(employeeAccess ?? EmployeeAccess.system(employeeRole));
 
   ThemeData get lightTheme => AppTheme.light(brand);
   ThemeData get darkTheme => AppTheme.dark(brand);
@@ -156,6 +162,7 @@ class SettingsState {
     String? cashierName,
     String? employeeId,
     EmployeeRole? employeeRole,
+    EmployeeAccess? employeeAccess,
     bool? loggedIn,
     bool? navRailExpanded,
     bool? tableServiceEnabled,
@@ -176,6 +183,7 @@ class SettingsState {
     cashierName: cashierName ?? this.cashierName,
     employeeId: employeeId ?? this.employeeId,
     employeeRole: employeeRole ?? this.employeeRole,
+    employeeAccess: employeeAccess ?? this.employeeAccess,
     loggedIn: loggedIn ?? this.loggedIn,
     navRailExpanded: navRailExpanded ?? this.navRailExpanded,
     tableServiceEnabled: tableServiceEnabled ?? this.tableServiceEnabled,
@@ -210,7 +218,8 @@ class SettingsNotifier extends AsyncNotifier<SettingsState> {
     final employeeId = _prefs.employeeId;
     final employee = employeeId.isEmpty
         ? null
-        : await EmployeeRepository.instance.byId(employeeId);
+        : await EmployeeRepository.instance.byIdForSession(employeeId);
+    final access = await _resolveAccess(employee);
     await _foldLegacyTableServiceIntoRegisters();
     // Resolved here too, and for the same reason: the router decides whether a
     // cashier may reach the sell screen from this, and a frame of "no session"
@@ -229,7 +238,13 @@ class SettingsNotifier extends AsyncNotifier<SettingsState> {
       cashierName: _prefs.cashierName,
       employeeId: _prefs.employeeId,
       employeeRole: employee?.role ?? EmployeeRole.owner,
-      loggedIn: _prefs.isLoggedIn,
+      employeeAccess: access,
+      // A remembered identity that no longer resolves — deleted, deactivated,
+      // or holding a role that cannot open the POS — is signed out, never
+      // let in on the legacy owner default.
+      loggedIn:
+          _prefs.isLoggedIn &&
+          (employeeId.isEmpty || (employee != null && access.posAccess)),
       navRailExpanded: _prefs.navRailExpanded,
       tableServiceEnabled: pos.tableService,
       // An activated device reports the outlet it is bound to, whatever a
@@ -238,6 +253,55 @@ class SettingsNotifier extends AsyncNotifier<SettingsState> {
       posSessionId: pos.sessionId,
       posRegisterId: pos.registerId,
       posRegisterName: pos.registerName,
+    );
+  }
+
+  Future<EmployeeAccess> _resolveAccess(Employee? employee) async {
+    if (employee == null) {
+      // Standalone/demo installs retain their historical owner default. A
+      // connected identity that vanished from the feed is locked instead.
+      return TillBinding.current == null
+          ? EmployeeAccess.system(EmployeeRole.owner)
+          : EmployeeAccess.locked;
+    }
+    if (employee.role != EmployeeRole.custom) {
+      return EmployeeAccess.system(employee.role);
+    }
+    final role = await EmployeeRoleRepository.instance.byId(employee.roleId);
+    if (role == null || !role.posAccess) return EmployeeAccess.locked;
+    return EmployeeAccess.custom(role.permissions, posAccess: role.posAccess);
+  }
+
+  /// Re-resolves the current principal after a master-data pull. Role changes
+  /// take effect without restarting; deleted/deactivated identities are
+  /// signed out and never inherit the permissive legacy owner fallback.
+  Future<void> refreshSignedInEmployee() async {
+    final current = state.valueOrNull;
+    if (current == null || current.employeeId.isEmpty) return;
+    final employee = await EmployeeRepository.instance.byIdForSession(
+      current.employeeId,
+    );
+    if (employee == null) {
+      await logout();
+      return;
+    }
+    final access = await _resolveAccess(employee);
+    if (!access.posAccess) {
+      await logout();
+      return;
+    }
+    // Losing the right to read every order also loses the copies of them
+    // this device downloaded under the old right.
+    if (current.can(AppPermission.viewAllOrders) &&
+        !access.can(AppPermission.viewAllOrders)) {
+      await RemoteOrderRepository.forget(current.employeeId);
+    }
+    state = AsyncValue.data(
+      current.copyWith(
+        employeeRole: employee.role,
+        employeeAccess: access,
+        cashierName: employee.name,
+      ),
     );
   }
 
@@ -538,14 +602,19 @@ class SettingsNotifier extends AsyncNotifier<SettingsState> {
   /// login screen re-resolves instead, so the new person lands on their own
   /// session or on the picker — never silently inside somebody else's drawer.
   Future<void> signIn(Employee employee, {bool keepPosSession = false}) async {
+    final access = await _resolveAccess(employee);
+    if (!employee.active || !access.posAccess) return;
     final coordinator = TillCoordinator.current;
     if (coordinator != null) {
       final session = state.valueOrNull?.posSessionId ?? '';
       if (keepPosSession && session.isNotEmpty) {
         await coordinator.handover(employee.id, session);
       } else {
-        try { await coordinator.recover(employee.id); }
-        on TillOperationException { /* Cached confirmed sessions remain available offline. */ }
+        try {
+          await coordinator.recover(employee.id);
+        } on TillOperationException {
+          /* Cached confirmed sessions remain available offline. */
+        }
       }
     }
     state = state.whenData(
@@ -553,6 +622,7 @@ class SettingsNotifier extends AsyncNotifier<SettingsState> {
         loggedIn: true,
         employeeId: employee.id,
         employeeRole: employee.role,
+        employeeAccess: access,
         cashierName: employee.name,
       ),
     );
@@ -573,6 +643,7 @@ class SettingsNotifier extends AsyncNotifier<SettingsState> {
   /// meets the picker and finds that till shown as taken rather than inheriting
   /// it. Whoever opened it adopts it again the moment they sign back in.
   Future<void> logout() async {
+    final previous = state.valueOrNull?.employeeId ?? '';
     state = state.whenData(
       (s) => s.copyWith(
         loggedIn: false,
@@ -585,6 +656,15 @@ class SettingsNotifier extends AsyncNotifier<SettingsState> {
     await _prefs.setEmployeeId('');
     await _prefs.setPosSessionId('');
     await _prefs.setLoggedIn(false);
+    // Everything this person downloaded from the server goes with them. It is
+    // a read cache of receipts and takings scoped to what THEY may see, and
+    // the next person at this till may not be allowed the same view — leaving
+    // it behind is how a cashier ends up reading a manager's outlet totals
+    // from SQLite while offline. The device's own orders are untouched: those
+    // are the till's, not the person's.
+    if (previous.isNotEmpty) {
+      await RemoteOrderRepository.forget(previous);
+    }
   }
 
   Future<void> resetDemoData() async {

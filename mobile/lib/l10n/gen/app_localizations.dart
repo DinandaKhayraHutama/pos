@@ -488,6 +488,24 @@ abstract class AppLocalizations {
   /// **'e.g. no chili, extra sauce'**
   String get posNoteHint;
 
+  /// No description provided for @posOrderDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Customer & note'**
+  String get posOrderDetails;
+
+  /// No description provided for @posLineNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Item note'**
+  String get posLineNote;
+
+  /// No description provided for @posLineNoteHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. well done, no onion'**
+  String get posLineNoteHint;
+
   /// No description provided for @posOrderType.
   ///
   /// In en, this message translates to:
@@ -3697,6 +3715,630 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Your account cannot open this report.'**
   String get reportNotPermitted;
+
+  /// No description provided for @posCreateCustomer.
+  ///
+  /// In en, this message translates to:
+  /// **'Create this customer'**
+  String get posCreateCustomer;
+
+  /// No description provided for @reportByBrand.
+  ///
+  /// In en, this message translates to:
+  /// **'Sales by brand'**
+  String get reportByBrand;
+
+  /// No description provided for @posPaymentEwallet.
+  ///
+  /// In en, this message translates to:
+  /// **'E-wallet'**
+  String get posPaymentEwallet;
+
+  /// No description provided for @posPaymentTransfer.
+  ///
+  /// In en, this message translates to:
+  /// **'Bank transfer'**
+  String get posPaymentTransfer;
+
+  /// No description provided for @posPaymentOther.
+  ///
+  /// In en, this message translates to:
+  /// **'Other'**
+  String get posPaymentOther;
+
+  /// No description provided for @posSalesTypeCustom.
+  ///
+  /// In en, this message translates to:
+  /// **'Other sales type'**
+  String get posSalesTypeCustom;
+
+  /// No description provided for @posPaymentReference.
+  ///
+  /// In en, this message translates to:
+  /// **'Reference number'**
+  String get posPaymentReference;
+
+  /// No description provided for @posPaymentReferenceRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the payment reference number'**
+  String get posPaymentReferenceRequired;
+
+  /// No description provided for @posPaymentManual.
+  ///
+  /// In en, this message translates to:
+  /// **'Recorded manually: confirm the payment went through before completing the sale'**
+  String get posPaymentManual;
+
+  /// No description provided for @posCashShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Cash received is less than the total'**
+  String get posCashShort;
+
+  /// No description provided for @posServedBy.
+  ///
+  /// In en, this message translates to:
+  /// **'Served by'**
+  String get posServedBy;
+
+  /// No description provided for @posServedByRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose who served this order'**
+  String get posServedByRequired;
+
+  /// No description provided for @posTaxIncluded.
+  ///
+  /// In en, this message translates to:
+  /// **'PB1 included in prices'**
+  String get posTaxIncluded;
+
+  /// No description provided for @posRounding.
+  ///
+  /// In en, this message translates to:
+  /// **'Rounding'**
+  String get posRounding;
+
+  /// No description provided for @posCustomAmount.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom amount'**
+  String get posCustomAmount;
+
+  /// No description provided for @posCustomAmountLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Description'**
+  String get posCustomAmountLabel;
+
+  /// No description provided for @posCustomAmountValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount'**
+  String get posCustomAmountValue;
+
+  /// No description provided for @authorizeReasonCustomAmount.
+  ///
+  /// In en, this message translates to:
+  /// **'A custom amount needs approval from someone allowed to enter one.'**
+  String get authorizeReasonCustomAmount;
+
+  /// No description provided for @posItemDiscount.
+  ///
+  /// In en, this message translates to:
+  /// **'Item discount'**
+  String get posItemDiscount;
+
+  /// No description provided for @posItemDiscountLocked.
+  ///
+  /// In en, this message translates to:
+  /// **'An item discount needs a manager\'s approval'**
+  String get posItemDiscountLocked;
+
+  /// No description provided for @authorizeReasonItemDiscount.
+  ///
+  /// In en, this message translates to:
+  /// **'Item discounts need a manager or owner PIN.'**
+  String get authorizeReasonItemDiscount;
+
+  /// No description provided for @posNamedDiscounts.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved discounts'**
+  String get posNamedDiscounts;
+
+  /// No description provided for @posNamedDiscountValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Type the value for {name}'**
+  String posNamedDiscountValue(String name);
+
+  /// No description provided for @posDiscountNeedsApproval.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs approval'**
+  String get posDiscountNeedsApproval;
+
+  /// No description provided for @receiptServedBy.
+  ///
+  /// In en, this message translates to:
+  /// **'Served by'**
+  String get receiptServedBy;
+
+  /// No description provided for @receiptManualPayment.
+  ///
+  /// In en, this message translates to:
+  /// **'(manual)'**
+  String get receiptManualPayment;
+
+  /// No description provided for @employeeRoleCustom.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom role'**
+  String get employeeRoleCustom;
+
+  /// No description provided for @employeeRoleCustomHint.
+  ///
+  /// In en, this message translates to:
+  /// **'This role\'s permissions are managed in the Backoffice.'**
+  String get employeeRoleCustomHint;
+
+  /// No description provided for @settingsBusinessDeviceOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'These values apply to this device only, until the owner saves the business settings in the Backoffice.'**
+  String get settingsBusinessDeviceOnly;
+
+  /// No description provided for @settingsBusinessManaged.
+  ///
+  /// In en, this message translates to:
+  /// **'Tax, service charge, rounding and the receipt are set in the Backoffice.'**
+  String get settingsBusinessManaged;
+
+  /// No description provided for @settingsTaxMode.
+  ///
+  /// In en, this message translates to:
+  /// **'PB1 mode'**
+  String get settingsTaxMode;
+
+  /// No description provided for @settingsTaxModeInclusive.
+  ///
+  /// In en, this message translates to:
+  /// **'Included in prices'**
+  String get settingsTaxModeInclusive;
+
+  /// No description provided for @settingsTaxModeExclusive.
+  ///
+  /// In en, this message translates to:
+  /// **'Added at checkout'**
+  String get settingsTaxModeExclusive;
+
+  /// No description provided for @settingsRoundingNone.
+  ///
+  /// In en, this message translates to:
+  /// **'None'**
+  String get settingsRoundingNone;
+
+  /// No description provided for @billSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save bill'**
+  String get billSave;
+
+  /// No description provided for @billSendToKitchen.
+  ///
+  /// In en, this message translates to:
+  /// **'Send to kitchen ({count})'**
+  String billSendToKitchen(int count);
+
+  /// No description provided for @billSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Bill {number} saved'**
+  String billSaved(String number);
+
+  /// No description provided for @billSentToKitchen.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent to the kitchen'**
+  String get billSentToKitchen;
+
+  /// No description provided for @billLineInKitchen.
+  ///
+  /// In en, this message translates to:
+  /// **'In kitchen'**
+  String get billLineInKitchen;
+
+  /// No description provided for @billNothingToSend.
+  ///
+  /// In en, this message translates to:
+  /// **'Every item is already in the kitchen'**
+  String get billNothingToSend;
+
+  /// No description provided for @billOpenBills.
+  ///
+  /// In en, this message translates to:
+  /// **'Open bills'**
+  String get billOpenBills;
+
+  /// No description provided for @billOpenBillsCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Open bills ({count})'**
+  String billOpenBillsCount(int count);
+
+  /// No description provided for @billThisTill.
+  ///
+  /// In en, this message translates to:
+  /// **'On this till'**
+  String get billThisTill;
+
+  /// No description provided for @billOtherTills.
+  ///
+  /// In en, this message translates to:
+  /// **'Other tills'**
+  String get billOtherTills;
+
+  /// No description provided for @billParkedWaiting.
+  ///
+  /// In en, this message translates to:
+  /// **'Parked, waiting to be taken over'**
+  String get billParkedWaiting;
+
+  /// No description provided for @billHeldBy.
+  ///
+  /// In en, this message translates to:
+  /// **'Held by {register}'**
+  String billHeldBy(String register);
+
+  /// No description provided for @billOpenAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get billOpenAction;
+
+  /// No description provided for @billClaim.
+  ///
+  /// In en, this message translates to:
+  /// **'Take over'**
+  String get billClaim;
+
+  /// No description provided for @billPark.
+  ///
+  /// In en, this message translates to:
+  /// **'Park bill'**
+  String get billPark;
+
+  /// No description provided for @billParkHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Releases the bill so another till, or this one after a shift change, can take it over.'**
+  String get billParkHint;
+
+  /// No description provided for @billParked.
+  ///
+  /// In en, this message translates to:
+  /// **'Bill parked'**
+  String get billParked;
+
+  /// No description provided for @billClaimed.
+  ///
+  /// In en, this message translates to:
+  /// **'Bill {number} is now on this till'**
+  String billClaimed(String number);
+
+  /// No description provided for @billCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel bill'**
+  String get billCancel;
+
+  /// No description provided for @billCancelReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Reason'**
+  String get billCancelReason;
+
+  /// No description provided for @billCancelInKitchen.
+  ///
+  /// In en, this message translates to:
+  /// **'Items already sent to the kitchen'**
+  String get billCancelInKitchen;
+
+  /// No description provided for @billCancelRestock.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to stock'**
+  String get billCancelRestock;
+
+  /// No description provided for @billCancelWaste.
+  ///
+  /// In en, this message translates to:
+  /// **'Wasted'**
+  String get billCancelWaste;
+
+  /// No description provided for @billCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Bill cancelled'**
+  String get billCancelled;
+
+  /// No description provided for @billCloseEditor.
+  ///
+  /// In en, this message translates to:
+  /// **'Close bill (it stays saved)'**
+  String get billCloseEditor;
+
+  /// No description provided for @billPrebill.
+  ///
+  /// In en, this message translates to:
+  /// **'Print pre-bill'**
+  String get billPrebill;
+
+  /// No description provided for @billPrebillUnpaid.
+  ///
+  /// In en, this message translates to:
+  /// **'UNPAID'**
+  String get billPrebillUnpaid;
+
+  /// No description provided for @billPrebillTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'PRE-BILL'**
+  String get billPrebillTitle;
+
+  /// No description provided for @billPrebillRevision.
+  ///
+  /// In en, this message translates to:
+  /// **'Revision {revision}'**
+  String billPrebillRevision(int revision);
+
+  /// No description provided for @billPrebillEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimate. Final amounts are on the paid receipt.'**
+  String get billPrebillEstimate;
+
+  /// No description provided for @billNoOpenBills.
+  ///
+  /// In en, this message translates to:
+  /// **'No open bills'**
+  String get billNoOpenBills;
+
+  /// No description provided for @billBoardCached.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline. List as of {time}'**
+  String billBoardCached(String time);
+
+  /// No description provided for @billBoardUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Bills on other tills need a connection'**
+  String get billBoardUnavailable;
+
+  /// No description provided for @billItems.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} items'**
+  String billItems(int count);
+
+  /// No description provided for @billSavedLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved'**
+  String get billSavedLabel;
+
+  /// No description provided for @billUnsaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Not saved yet'**
+  String get billUnsaved;
+
+  /// No description provided for @billErrorNotEditable.
+  ///
+  /// In en, this message translates to:
+  /// **'This bill can no longer be changed on this till.'**
+  String get billErrorNotEditable;
+
+  /// No description provided for @billErrorOtherSession.
+  ///
+  /// In en, this message translates to:
+  /// **'This bill belongs to another drawer. Park it, then take it over from the drawer that is open now.'**
+  String get billErrorOtherSession;
+
+  /// No description provided for @billErrorNeedsServer.
+  ///
+  /// In en, this message translates to:
+  /// **'This needs a connection to the server.'**
+  String get billErrorNeedsServer;
+
+  /// No description provided for @billErrorSyncFirst.
+  ///
+  /// In en, this message translates to:
+  /// **'Some changes have not reached the server yet. Sync, then try again.'**
+  String get billErrorSyncFirst;
+
+  /// No description provided for @billErrorNotParked.
+  ///
+  /// In en, this message translates to:
+  /// **'Another till already has this bill.'**
+  String get billErrorNotParked;
+
+  /// No description provided for @billErrorTableBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'Another till just seated this table.'**
+  String get billErrorTableBusy;
+
+  /// No description provided for @billErrorOpenBillsRemaining.
+  ///
+  /// In en, this message translates to:
+  /// **'Settle or cancel every bill at this table first.'**
+  String get billErrorOpenBillsRemaining;
+
+  /// No description provided for @billErrorDecisionMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose back to stock or wasted for every item already in the kitchen.'**
+  String get billErrorDecisionMissing;
+
+  /// No description provided for @billErrorNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'No connection to the server. Try again when it is back.'**
+  String get billErrorNetwork;
+
+  /// No description provided for @billErrorGeneric.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not complete this ({code}).'**
+  String billErrorGeneric(String code);
+
+  /// No description provided for @kitchenBoard.
+  ///
+  /// In en, this message translates to:
+  /// **'Kitchen'**
+  String get kitchenBoard;
+
+  /// No description provided for @kitchenEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing in the kitchen'**
+  String get kitchenEmpty;
+
+  /// No description provided for @kitchenStatusQueued.
+  ///
+  /// In en, this message translates to:
+  /// **'Queued'**
+  String get kitchenStatusQueued;
+
+  /// No description provided for @kitchenStatusPreparing.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing'**
+  String get kitchenStatusPreparing;
+
+  /// No description provided for @kitchenStatusReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready'**
+  String get kitchenStatusReady;
+
+  /// No description provided for @kitchenStatusServed.
+  ///
+  /// In en, this message translates to:
+  /// **'Served'**
+  String get kitchenStatusServed;
+
+  /// No description provided for @kitchenStatusCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled'**
+  String get kitchenStatusCancelled;
+
+  /// No description provided for @kitchenStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Start'**
+  String get kitchenStart;
+
+  /// No description provided for @kitchenMarkReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready'**
+  String get kitchenMarkReady;
+
+  /// No description provided for @kitchenMarkServed.
+  ///
+  /// In en, this message translates to:
+  /// **'Served'**
+  String get kitchenMarkServed;
+
+  /// No description provided for @kitchenSentAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent {time} by {name}'**
+  String kitchenSentAt(String time, String name);
+
+  /// No description provided for @tableSeat.
+  ///
+  /// In en, this message translates to:
+  /// **'Seat guests'**
+  String get tableSeat;
+
+  /// No description provided for @tableSeatedFor.
+  ///
+  /// In en, this message translates to:
+  /// **'Seated {duration}'**
+  String tableSeatedFor(String duration);
+
+  /// No description provided for @tableClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear table'**
+  String get tableClear;
+
+  /// No description provided for @tableCleared.
+  ///
+  /// In en, this message translates to:
+  /// **'Table cleared'**
+  String get tableCleared;
+
+  /// No description provided for @tableNewBill.
+  ///
+  /// In en, this message translates to:
+  /// **'New bill'**
+  String get tableNewBill;
+
+  /// No description provided for @tablePaidStillSeated.
+  ///
+  /// In en, this message translates to:
+  /// **'Paid, table still in use'**
+  String get tablePaidStillSeated;
+
+  /// No description provided for @tableBillsOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} open bills'**
+  String tableBillsOpen(int count);
+
+  /// No description provided for @tableMoveLater.
+  ///
+  /// In en, this message translates to:
+  /// **'Moving a seated bill to another table is not available yet.'**
+  String get tableMoveLater;
+
+  /// No description provided for @shiftOpenBillsBlock.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} open bills still belong to this drawer. Settle, cancel or park them before closing.'**
+  String shiftOpenBillsBlock(int count);
+
+  /// No description provided for @refundRestock.
+  ///
+  /// In en, this message translates to:
+  /// **'The items came back to stock'**
+  String get refundRestock;
+
+  /// No description provided for @refundRestockHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave this off for food that was made: it is no longer stock.'**
+  String get refundRestockHint;
+
+  /// No description provided for @deadLetterBillNotOwned.
+  ///
+  /// In en, this message translates to:
+  /// **'This till no longer owns the bill. The change is kept here as evidence and cannot be sent again.'**
+  String get deadLetterBillNotOwned;
+
+  /// No description provided for @orderFromBill.
+  ///
+  /// In en, this message translates to:
+  /// **'Settles bill {number}'**
+  String orderFromBill(String number);
 }
 
 class _AppLocalizationsDelegate

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/daniryckidinata/nti_pos/backend-go/api"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/customer"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/devices"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/stock"
 	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/syncfeed"
@@ -28,13 +29,14 @@ import (
 )
 
 type Service struct {
-	pools   pg.Pools
-	logger  *slog.Logger
-	schemas map[string]*openapi3.SchemaRef
-	queue   *river.Client[pgx.Tx]
-	feed    *syncfeed.Service
-	stock   *stock.Service
-	tables  *tables.Service
+	pools     pg.Pools
+	logger    *slog.Logger
+	schemas   map[string]*openapi3.SchemaRef
+	queue     *river.Client[pgx.Tx]
+	feed      *syncfeed.Service
+	stock     *stock.Service
+	tables    *tables.Service
+	customers *customer.Service
 }
 
 // NewService needs the sync feed because stock movements and table status
@@ -55,13 +57,17 @@ func NewService(pools pg.Pools, feed *syncfeed.Service, logger *slog.Logger) (*S
 	}
 	return &Service{
 		pools: pools, logger: logger, queue: queue, feed: feed,
-		stock:  stock.NewService(pools, feed),
-		tables: tables.NewService(pools, feed),
+		stock:     stock.NewService(pools, feed),
+		tables:    tables.NewService(pools, feed),
+		customers: customer.NewService(pools, feed),
 		schemas: map[string]*openapi3.SchemaRef{
 			"pos_sessions":     doc.Components.Schemas["Session"],
 			"orders":           doc.Components.Schemas["Order"],
 			stock.Entity:       doc.Components.Schemas["StockMovement"],
 			tables.EventEntity: doc.Components.Schemas["TableStatusEvent"],
+			"customers":        doc.Components.Schemas["Customer"],
+			BillEntity:         doc.Components.Schemas["Bill"],
+			DispatchEntity:     doc.Components.Schemas["KitchenDispatch"],
 		},
 	}, nil
 }
@@ -142,8 +148,13 @@ func (s *Service) domain(ctx context.Context, b devices.Binding, entity string, 
 		return err
 	}
 
-	if entity == stock.Entity || entity == tables.EventEntity || entity == "orders" {
+	if entity == stock.Entity || entity == tables.EventEntity || entity == "orders" || entity == "customers" ||
+		entity == BillEntity || entity == DispatchEntity {
 		// Numbered inside this transaction, announced after it commits.
+		// customers included here — a company-scoped PULL feed a till also
+		// pushes to, same as stock_movements and table_status_events are
+		// outlet-scoped ones — because the row it creates has to get a
+		// sync_seq before any other till can ever pull it back down.
 		return s.feed.Write(ctx, b.Tenant.ID, func(ctx context.Context, w *syncfeed.Writer) error {
 			if err := guard(ctx, w.Tx); err != nil {
 				return err
@@ -153,6 +164,18 @@ func (s *Service) domain(ctx context.Context, b devices.Binding, entity string, 
 			}
 			if entity == "orders" {
 				return s.ingestSale(ctx, w, b, raw, result)
+			}
+			if entity == "customers" {
+				return s.ingestCustomer(ctx, w, b, raw, result)
+			}
+			// A bill and a dispatch write through the feed writer because a
+			// cancellation or a dispatch moves stock, numbered on the outlet
+			// feeds in the same transaction.
+			if entity == BillEntity {
+				return s.ingestBill(ctx, w, b, raw, result)
+			}
+			if entity == DispatchEntity {
+				return s.ingestDispatch(ctx, w, b, raw, result)
 			}
 			return s.ingestStock(ctx, w, b, raw, result)
 		})
@@ -308,5 +331,5 @@ func (s *Service) failure(ctx context.Context, b devices.Binding, err error, res
 	}
 	// Rolled back or commit outcome unknown: nothing about the write is echoed.
 	result.Inserted, result.StockSeq, result.BalanceAfter = nil, nil, nil
-	result.StatusSeq, result.Outcome = nil, nil
+	result.StatusSeq, result.Outcome, result.Effects = nil, nil, nil
 }

@@ -38,11 +38,21 @@ func validateOrder(in wire.Order) error {
 	if _, err := time.Parse(time.DateOnly, in.BusinessDate); err != nil {
 		return reject("schema_rejected", "Invalid business date.")
 	}
-	if in.BusinessDate < "1970-01-01" || in.PlacedAtMs > maxMillis || strings.TrimSpace(in.Number) == "" || strings.TrimSpace(in.CashierName) == "" || !optionalUUIDs(in.CashierId, in.TableId) {
+	if in.BusinessDate < "1970-01-01" || in.PlacedAtMs > maxMillis || strings.TrimSpace(in.Number) == "" || strings.TrimSpace(in.CashierName) == "" || !optionalUUIDs(in.CashierId, in.TableId, in.CustomerId) {
 		return reject("schema_rejected", "Invalid order identity or timestamp.")
 	}
-	if in.Discount > in.Subtotal || in.Total != in.Subtotal-in.Discount+in.Tax+in.ServiceChargeAmount {
+	// Fase 3 widened the equation by two terms that are zero for every till
+	// older than it, so a pre-F3 receipt is checked exactly as before.
+	taxIncluded, rounding := deref(in.TaxIncluded), deref(in.RoundingAmount)
+	if in.Discount > in.Subtotal || taxIncluded > in.Tax ||
+		in.Total != in.Subtotal-in.Discount+in.Tax-taxIncluded+in.ServiceChargeAmount+rounding {
 		return reject("schema_rejected", "Header amounts do not reconcile.")
+	}
+	if !optionalUUIDs(in.SalesTypeId, in.PaymentMethodId, in.ServedById, in.DiscountId, in.DiscountAuthorizedById) {
+		return reject("schema_rejected", "Invalid order identity or timestamp.")
+	}
+	if err := validatePricing(in); err != nil {
+		return err
 	}
 	if in.RefundedAmount != nil && *in.RefundedAmount > in.Total {
 		return reject("schema_rejected", "Refund exceeds total.")
@@ -58,8 +68,13 @@ func validateOrder(in wire.Order) error {
 	ids := map[string]bool{strings.ToLower(in.Id): true}
 	sum := new(big.Int)
 	for _, item := range in.Items {
-		if !optionalUUIDs(item.ProductId, item.CategoryId) || strings.TrimSpace(item.ProductName) == "" {
+		if !optionalUUIDs(item.ProductId, item.CategoryId, item.BrandId, item.LineDiscountId, item.LineDiscountAuthorizedById) || strings.TrimSpace(item.ProductName) == "" {
 			return reject("schema_rejected", "Invalid item snapshot.")
+		}
+		// A custom amount names no product, so it can never carry a stock
+		// effect — the receipt-lines bound on movements relies on that.
+		if item.Custom != nil && *item.Custom && item.ProductId != nil {
+			return reject("schema_rejected", "A custom amount names no product.")
 		}
 		id := strings.ToLower(item.Id)
 		if ids[id] {

@@ -1,0 +1,640 @@
+package views
+
+import (
+	"strconv"
+
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/catalogue"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/payments"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/promos"
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/settings"
+)
+
+var TaxModeOptions = []Option{
+	{Value: "exclusive", Label: "Belum termasuk harga (ditambahkan di struk)"},
+	{Value: "inclusive", Label: "Sudah termasuk harga menu"},
+}
+
+var RoundingUnitOptions = []Option{
+	{Value: "0", Label: "Tanpa pembulatan"},
+	{Value: "100", Label: "Rp 100"},
+	{Value: "500", Label: "Rp 500"},
+	{Value: "1000", Label: "Rp 1.000"},
+}
+
+var RoundingModeOptions = []Option{
+	{Value: "nearest", Label: "Terdekat"},
+	{Value: "up", Label: "Ke atas"},
+	{Value: "down", Label: "Ke bawah"},
+}
+
+var TimezoneOptions = []Option{
+	{Value: "Asia/Jakarta", Label: "WIB (Asia/Jakarta)"},
+	{Value: "Asia/Makassar", Label: "WITA (Asia/Makassar)"},
+	{Value: "Asia/Jayapura", Label: "WIT (Asia/Jayapura)"},
+}
+
+var PaymentKindOptions = []Option{
+	{Value: "cash", Label: "Tunai"},
+	{Value: "card", Label: "Kartu / EDC"},
+	{Value: "qris", Label: "QRIS"},
+	{Value: "ewallet", Label: "Dompet digital"},
+	{Value: "transfer", Label: "Transfer bank"},
+	{Value: "other", Label: "Lainnya"},
+}
+
+// ReceiptPreview is a sample bill priced with the settings on screen, by the
+// same engine the till runs, so the owner sees what a customer will pay.
+type ReceiptPreview struct {
+	BusinessName string
+	Header       string
+	Footer       string
+	LogoURL      string
+	Lines        []PreviewLine
+	Totals       []PreviewLine
+}
+
+type PreviewLine struct {
+	Label  string
+	Amount string
+	Strong bool
+}
+
+templ SettingsPage(s Session, profile Form, business Form, b settings.Business, preview ReceiptPreview) {
+	@Shell("Pengaturan bisnis", s) {
+		<h1>Pengaturan bisnis</h1>
+		if !b.Configured {
+			<p class="sub">Belum pernah disimpan. Sampai Anda menyimpan, setiap till tetap memakai tarif yang diatur di perangkatnya sendiri.</p>
+		} else {
+			<p class="sub">Berlaku untuk semua outlet, kecuali yang diatur ulang di pengaturan outlet. Struk yang sudah terbit tidak berubah.</p>
+		}
+		<div class="card">
+			<h2>Profil bisnis</h2>
+			@ProfileSettingsForm(profile)
+		</div>
+		<div class="card">
+			<h2>Pajak, layanan, dan pembulatan</h2>
+			@BusinessSettingsForm(business)
+		</div>
+		<div class="card">
+			<h2>Logo struk</h2>
+			if b.ReceiptLogoURL != nil {
+				<p><img src={ *b.ReceiptLogoURL } alt="Logo struk" style="max-width:200px"/></p>
+				<form hx-post="/backoffice/settings/logo/delete" hx-confirm="Hapus logo dari struk?">
+					<button type="submit" class="danger">Hapus logo</button>
+				</form>
+			}
+			<form hx-post="/backoffice/settings/logo" hx-encoding="multipart/form-data" class="inline">
+				<label>
+					Unggah logo (JPG/PNG, dicetak hitam-putih)
+					<input type="file" name="logo" accept="image/png,image/jpeg,image/webp" required/>
+				</label>
+				<button type="submit" class="primary">Unggah</button>
+			</form>
+		</div>
+		<div class="card">
+			<h2>Pratinjau struk</h2>
+			@ReceiptPreviewCard(preview)
+		</div>
+	}
+}
+
+templ ProfileSettingsForm(f Form) {
+	<form class="grid" hx-post="/backoffice/settings/profile" hx-swap="outerHTML">
+		@Field(f, "Nama bisnis", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+		@Select(f, "Zona waktu", "timezone", TimezoneOptions)
+		<p class="hint wide">Zona waktu menentukan tanggal bisnis struk dan jam pada laporan. Mengubahnya tidak memindahkan transaksi lama.</p>
+		<div class="actions wide"><button type="submit" class="primary">Simpan profil</button></div>
+	</form>
+}
+
+templ BusinessSettingsForm(f Form) {
+	<form class="grid" hx-post="/backoffice/settings/business" hx-swap="outerHTML">
+		@Field(f, "PB1 / pajak (%)", "tax_rate", "text", templ.Attributes{"inputmode": "decimal", "required": true})
+		@Select(f, "Pajak dihitung", "tax_mode", TaxModeOptions)
+		@Check(f, "Aktifkan service charge", "service_enabled")
+		@Field(f, "Service charge (%)", "service_rate", "text", templ.Attributes{"inputmode": "decimal"})
+		@Check(f, "Service charge ikut dikenai pajak", "service_taxable")
+		@Select(f, "Bulatkan total ke", "rounding_unit", RoundingUnitOptions)
+		@Select(f, "Arah pembulatan", "rounding_mode", RoundingModeOptions)
+		@TextArea(f, "Catatan kaki struk", "receipt_footer", templ.Attributes{"maxlength": "600"})
+		<p class="hint wide">Pajak "sudah termasuk", pembulatan, dan diskon per item baru berlaku di outlet yang sudah memakai model harga baru.</p>
+		<div class="actions wide"><button type="submit" class="primary">Simpan</button></div>
+	</form>
+}
+
+templ ReceiptPreviewCard(p ReceiptPreview) {
+	<div class="receipt-preview" style="font-family:monospace;max-width:320px;border:1px dashed var(--border, #ccc);padding:12px">
+		if p.LogoURL != "" {
+			<p style="text-align:center"><img src={ p.LogoURL } alt="" style="max-width:160px"/></p>
+		}
+		<p style="text-align:center"><strong>{ p.BusinessName }</strong></p>
+		if p.Header != "" {
+			<p style="text-align:center;white-space:pre-line">{ p.Header }</p>
+		}
+		<hr/>
+		for _, l := range p.Lines {
+			<div style="display:flex;justify-content:space-between"><span>{ l.Label }</span><span>{ l.Amount }</span></div>
+		}
+		<hr/>
+		for _, l := range p.Totals {
+			<div style="display:flex;justify-content:space-between">
+				if l.Strong {
+					<strong>{ l.Label }</strong><strong>{ l.Amount }</strong>
+				} else {
+					<span>{ l.Label }</span><span>{ l.Amount }</span>
+				}
+			</div>
+		}
+		if p.Footer != "" {
+			<hr/>
+			<p style="text-align:center;white-space:pre-line">{ p.Footer }</p>
+		}
+	</div>
+}
+
+// OutletSettingsRow is one line of the outlet settings list.
+type OutletSettingsRow struct {
+	ID           string
+	Name         string
+	Configured   bool
+	PricingModel string
+	BillModel    string
+	Incompatible int
+}
+
+templ OutletSettingsListPage(s Session, rows []OutletSettingsRow) {
+	@Shell("Pengaturan outlet", s) {
+		<h1>Pengaturan outlet</h1>
+		<p class="sub">Atur ulang tarif, struk, dan model harga untuk satu cabang. Kosong berarti mengikuti pengaturan bisnis.</p>
+		<div class="card">
+			<table>
+				<thead><tr><th>Outlet</th><th>Status</th><th>Model harga</th><th>Saved bill</th><th></th></tr></thead>
+				<tbody>
+					for _, o := range rows {
+						<tr>
+							<td>{ o.Name }</td>
+							<td>
+								if o.Configured {
+									<span class="badge on">diatur</span>
+								} else {
+									<span class="badge">mengikuti bisnis</span>
+								}
+							</td>
+							<td>
+								if o.PricingModel == "v2" {
+									<span class="badge on">harga baru</span>
+								} else {
+									<span class="badge">lama</span>
+								}
+								if o.Incompatible > 0 {
+									<span class="badge off">{ strconv.Itoa(o.Incompatible) } perangkat perlu update</span>
+								}
+							</td>
+							<td>
+								if o.BillModel == "v1" {
+									<span class="badge on">aktif</span>
+								} else {
+									<span class="badge">nonaktif</span>
+								}
+							</td>
+							<td style="text-align:right"><a href={ templ.URL("/backoffice/settings/outlets/" + o.ID) }>Atur</a></td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}
+
+templ OutletSettingsPage(s Session, o settings.Outlet, f Form, salesTypes []catalogue.SalesType, groups []Option, stale []IncompatibleDeviceView, staleBills []IncompatibleDeviceView) {
+	@Shell("Pengaturan "+o.OutletName, s) {
+		<p><a href="/backoffice/settings/outlets">← Pengaturan outlet</a></p>
+		<h1>{ o.OutletName }</h1>
+		<div class="card">
+			<h2>Tarif dan struk</h2>
+			@OutletSettingsForm(o.OutletID, f, salesTypes, groups)
+		</div>
+		<div class="card" id="pricing-model">
+			@PricingModelCard(o, stale, NewForm())
+		</div>
+		<div class="card" id="bill-model">
+			@BillModelCard(o, staleBills, NewForm())
+		</div>
+	}
+}
+
+type IncompatibleDeviceView struct {
+	Label    string
+	Register string
+	LastSeen string
+}
+
+templ PricingModelCard(o settings.Outlet, stale []IncompatibleDeviceView, f Form) {
+	<div id="pricing-model-card">
+		<h2>Model harga</h2>
+		if o.PricingModel == "v2" {
+			<p class="sub">Outlet ini memakai model harga baru: harga per jenis penjualan, pajak sudah termasuk, pembulatan, diskon per item, dan nominal bebas.</p>
+			<button class="danger" hx-post={ "/backoffice/settings/outlets/" + o.OutletID + "/pricing" } hx-vals={ `{"model":"legacy"}` }
+				hx-target="#pricing-model-card" hx-swap="outerHTML" hx-confirm="Kembali ke model harga lama?">Kembali ke model lama</button>
+		} else {
+			<p class="sub">Outlet ini masih memakai perhitungan lama. Model baru hanya bisa diaktifkan bila semua perangkat kasir di outlet ini sudah memakai aplikasi versi terbaru.</p>
+			if len(stale) > 0 {
+				<p><strong>Perangkat yang belum siap:</strong></p>
+				<ul>
+					for _, d := range stale {
+						<li>{ d.Register } — { d.Label } (terakhir terlihat { d.LastSeen })</li>
+					}
+				</ul>
+				<p class="hint">Perbarui aplikasinya lalu lakukan sinkron, atau cabut perangkatnya di halaman Perangkat.</p>
+			}
+			<button class="primary" hx-post={ "/backoffice/settings/outlets/" + o.OutletID + "/pricing" } hx-vals={ `{"model":"v2"}` }
+				hx-target="#pricing-model-card" hx-swap="outerHTML" disabled?={ len(stale) > 0 }>Aktifkan model harga baru</button>
+		}
+		@FormError(f, "pricing_model")
+	</div>
+}
+
+// BillModelCard switches saved bills (Fase 4) on or off at one outlet.
+templ BillModelCard(o settings.Outlet, stale []IncompatibleDeviceView, f Form) {
+	<div id="bill-model-card">
+		<h2>Saved bill dan dapur</h2>
+		if o.BillModel == "v1" {
+			<p class="sub">Outlet ini memakai saved bill: bill disimpan tanpa menerima uang, stok berkurang saat pesanan dikirim ke dapur, dan meja dipakai sampai dilepas secara eksplisit.</p>
+			<p class="hint">Menonaktifkan tidak menghapus apa pun: bill yang sudah terbuka tetap bisa dibayar, dibatalkan, diparkir, atau diklaim. Hanya bill baru yang berhenti dibuat.</p>
+			<button class="danger" hx-post={ "/backoffice/settings/outlets/" + o.OutletID + "/bills" } hx-vals={ `{"model":"legacy"}` }
+				hx-target="#bill-model-card" hx-swap="outerHTML" hx-confirm="Hentikan pembuatan saved bill baru di outlet ini?">Nonaktifkan saved bill</button>
+		} else {
+			<p class="sub">Aktifkan agar kasir dapat menyimpan bill, mengirim pesanan ke dapur, dan menduduki meja per kunjungan. Hanya bisa diaktifkan bila semua perangkat kasir di outlet ini sudah memakai aplikasi versi terbaru.</p>
+			if len(stale) > 0 {
+				<p><strong>Perangkat yang belum siap:</strong></p>
+				<ul>
+					for _, d := range stale {
+						<li>{ d.Register } — { d.Label } (terakhir terlihat { d.LastSeen })</li>
+					}
+				</ul>
+				<p class="hint">Perbarui aplikasinya lalu lakukan sinkron, atau cabut perangkatnya di halaman Perangkat.</p>
+			}
+			<button class="primary" hx-post={ "/backoffice/settings/outlets/" + o.OutletID + "/bills" } hx-vals={ `{"model":"v1"}` }
+				hx-target="#bill-model-card" hx-swap="outerHTML" disabled?={ len(stale) > 0 }>Aktifkan saved bill</button>
+		}
+		@FormError(f, "bill_model")
+	</div>
+}
+
+templ OutletSettingsForm(id string, f Form, salesTypes []catalogue.SalesType, groups []Option) {
+	<form class="grid" hx-post={ "/backoffice/settings/outlets/" + id } hx-swap="outerHTML">
+		@Field(f, "PB1 / pajak (%) — kosong = ikut bisnis", "tax_rate", "text", templ.Attributes{"inputmode": "decimal"})
+		@Select(f, "Pajak dihitung", "tax_mode", append([]Option{{Value: "", Label: "Ikut bisnis"}}, TaxModeOptions...))
+		@Select(f, "Service charge", "service_enabled", []Option{{Value: "", Label: "Ikut bisnis"}, {Value: "on", Label: "Aktif"}, {Value: "off", Label: "Nonaktif"}})
+		@Field(f, "Service charge (%) — kosong = ikut bisnis", "service_rate", "text", templ.Attributes{"inputmode": "decimal"})
+		@Select(f, "Bulatkan total ke", "rounding_unit", append([]Option{{Value: "", Label: "Ikut bisnis"}}, RoundingUnitOptions...))
+		@Select(f, "Arah pembulatan", "rounding_mode", append([]Option{{Value: "", Label: "Ikut bisnis"}}, RoundingModeOptions...))
+		@TextArea(f, "Kepala struk (alamat, media sosial)", "receipt_header", templ.Attributes{"maxlength": "600"})
+		@TextArea(f, "Catatan kaki struk — kosong = ikut bisnis", "receipt_footer", templ.Attributes{"maxlength": "600"})
+		@Check(f, "Tampilkan alamat outlet di struk", "show_address")
+		@Check(f, "Tampilkan telepon outlet di struk", "show_phone")
+		@Check(f, "Catat pelayan (track server)", "track_server")
+		<fieldset class="wide">
+			<legend>Jenis penjualan yang tersedia (kosongkan semua = semua aktif)</legend>
+			for _, st := range salesTypes {
+				<label class="check">
+					<input type="checkbox" name="sales_types" value={ st.ID } checked?={ f.Has("sales_types", st.ID) }/>
+					{ st.Name }
+				</label>
+			}
+			@FormError(f, "sales_types")
+		</fieldset>
+		@Select(f, "Jenis penjualan bawaan", "default_sales_type", salesTypeOptions(salesTypes))
+		@Select(f, "Grup pembayaran", "payment_group", groups)
+		<div class="actions wide"><button type="submit" class="primary">Simpan</button></div>
+	</form>
+}
+
+func salesTypeOptions(types []catalogue.SalesType) []Option {
+	out := []Option{{Value: "", Label: "— tidak ada —"}}
+	for _, st := range types {
+		out = append(out, Option{Value: st.ID, Label: st.Name})
+	}
+	return out
+}
+
+templ SalesTypesPage(s Session, types []catalogue.SalesType, f Form) {
+	@Shell("Jenis penjualan", s) {
+		<h1>Jenis penjualan</h1>
+		<p class="sub">Makan di tempat, bawa pulang, pesan antar, atau jenis Anda sendiri (mis. GoFood). Jenis bawaan bisa diganti nama atau dinonaktifkan, tetapi tidak dihapus. Jenis baru hanya muncul di outlet yang memakai model harga baru.</p>
+		@SalesTypesSection(types, f)
+	}
+}
+
+templ SalesTypesSection(types []catalogue.SalesType, f Form) {
+	<div id="sales-types">
+		<div class="card">
+			<h2>Tambah jenis penjualan</h2>
+			<form class="inline" hx-post="/backoffice/settings/sales-types" hx-target="#sales-types" hx-swap="outerHTML">
+				@Field(f, "Nama", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+				@Check(f, "Pakai meja", "uses_table")
+				<button type="submit" class="primary">Tambah</button>
+			</form>
+		</div>
+		<div class="card">
+			<table>
+				<thead><tr><th>Nama</th><th>Meja</th><th>Status</th><th></th></tr></thead>
+				<tbody>
+					for _, st := range types {
+						<tr>
+							<td>
+								{ st.Name }
+								if st.SystemKey != nil {
+									<span class="badge">bawaan</span>
+								}
+							</td>
+							<td>
+								if st.UsesTable {
+									ya
+								}
+							</td>
+							<td>
+								@ActiveBadge(st.Active)
+							</td>
+							<td style="text-align:right">
+								<button hx-post={ "/backoffice/settings/sales-types/" + st.ID + "/toggle" } hx-target="#sales-types" hx-swap="outerHTML">
+									if st.Active {
+										Nonaktifkan
+									} else {
+										Aktifkan
+									}
+								</button>
+								if st.SystemKey == nil {
+									<button class="danger" hx-post={ "/backoffice/settings/sales-types/" + st.ID + "/delete" } hx-target="#sales-types" hx-swap="outerHTML" hx-confirm="Hapus jenis penjualan ini beserta harganya?">Hapus</button>
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	</div>
+}
+
+templ PaymentsPage(s Session, methods []payments.Method, groups []payments.Group, mf Form, gf Form) {
+	@Shell("Metode pembayaran", s) {
+		<h1>Metode pembayaran</h1>
+		<p class="sub">Semua pembayaran non-tunai dicatat manual oleh kasir; tidak ada integrasi penyedia pembayaran. Metode jenis dompet digital, transfer, dan lainnya hanya muncul di outlet dengan model harga baru.</p>
+		@PaymentMethodsSection(methods, mf)
+		@PaymentGroupsSection(methods, groups, gf)
+	}
+}
+
+templ PaymentMethodsSection(methods []payments.Method, f Form) {
+	<div id="payment-methods">
+		<div class="card">
+			<h2>Tambah metode</h2>
+			<form class="inline" hx-post="/backoffice/settings/payments/methods" hx-target="#payment-methods" hx-swap="outerHTML">
+				@Field(f, "Nama (mis. EDC BCA)", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+				@Select(f, "Jenis", "kind", PaymentKindOptions)
+				@Check(f, "Wajib isi nomor referensi", "requires_reference")
+				<button type="submit" class="primary">Tambah</button>
+			</form>
+		</div>
+		<div class="card">
+			<table>
+				<thead><tr><th>Nama</th><th>Jenis</th><th>Status</th><th></th></tr></thead>
+				<tbody>
+					for _, m := range methods {
+						<tr>
+							<td>
+								{ m.Name }
+								if m.SystemKey != nil {
+									<span class="badge">bawaan</span>
+								}
+							</td>
+							<td>{ optionLabel(PaymentKindOptions, m.Kind) }</td>
+							<td>
+								@ActiveBadge(m.Active)
+							</td>
+							<td style="text-align:right">
+								<button hx-post={ "/backoffice/settings/payments/methods/" + m.ID + "/toggle" } hx-target="#payment-methods" hx-swap="outerHTML">
+									if m.Active {
+										Nonaktifkan
+									} else {
+										Aktifkan
+									}
+								</button>
+								if m.SystemKey == nil {
+									<button class="danger" hx-post={ "/backoffice/settings/payments/methods/" + m.ID + "/delete" } hx-target="#payment-methods" hx-swap="outerHTML" hx-confirm="Hapus metode ini?">Hapus</button>
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	</div>
+}
+
+templ PaymentGroupsSection(methods []payments.Method, groups []payments.Group, f Form) {
+	<div id="payment-groups">
+		<div class="card">
+			<h2>Grup pembayaran</h2>
+			<p class="sub">Kumpulan metode yang ditugaskan ke outlet di pengaturan outlet. Outlet tanpa grup menawarkan semua metode aktif.</p>
+			<form class="grid" hx-post="/backoffice/settings/payments/groups" hx-target="#payment-groups" hx-swap="outerHTML">
+				@Field(f, "Nama grup", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+				<fieldset class="wide">
+					<legend>Metode</legend>
+					for _, m := range methods {
+						<label class="check">
+							<input type="checkbox" name="methods" value={ m.ID } checked?={ f.Has("methods", m.ID) }/>
+							{ m.Name }
+						</label>
+					}
+					@FormError(f, "methods")
+				</fieldset>
+				<div class="actions wide"><button type="submit" class="primary">Tambah grup</button></div>
+			</form>
+		</div>
+		<div class="card">
+			<table>
+				<thead><tr><th>Grup</th><th class="num">Metode</th><th class="num">Outlet</th><th></th></tr></thead>
+				<tbody>
+					for _, g := range groups {
+						<tr>
+							<td>{ g.Name }</td>
+							<td class="num">{ strconv.Itoa(len(g.MethodIDs)) }</td>
+							<td class="num">{ strconv.Itoa(g.Outlets) }</td>
+							<td style="text-align:right">
+								<button class="danger" hx-post={ "/backoffice/settings/payments/groups/" + g.ID + "/delete" } hx-target="#payment-groups" hx-swap="outerHTML" hx-confirm="Hapus grup ini?">Hapus</button>
+							</td>
+						</tr>
+					}
+					if len(groups) == 0 {
+						<tr><td colspan="4" class="sub">Belum ada grup.</td></tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	</div>
+}
+
+var DiscountScopeOptions = []Option{{Value: "bill", Label: "Seluruh tagihan"}, {Value: "item", Label: "Per item"}}
+var DiscountKindOptions = []Option{{Value: "percent", Label: "Persen"}, {Value: "amount", Label: "Nominal (Rp)"}}
+
+templ DiscountsPage(s Session, rows []promos.Discount, f Form) {
+	@Shell("Diskon", s) {
+		<h1>Diskon</h1>
+		<p class="sub">Diskon bernama yang dipilih kasir. Kosongkan nilai agar kasir mengetik sendiri — itu selalu butuh izin diskon manual. Diskon per item hanya muncul di outlet dengan model harga baru.</p>
+		@DiscountsSection(rows, f)
+	}
+}
+
+templ DiscountsSection(rows []promos.Discount, f Form) {
+	<div id="discounts">
+		<div class="card">
+			<h2>Tambah diskon</h2>
+			<form class="grid" hx-post="/backoffice/discounts" hx-target="#discounts" hx-swap="outerHTML">
+				@Field(f, "Nama (mis. Diskon karyawan)", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+				@Select(f, "Berlaku untuk", "scope", DiscountScopeOptions)
+				@Select(f, "Bentuk", "kind", DiscountKindOptions)
+				@Field(f, "Nilai (kosong = diisi kasir)", "value", "text", templ.Attributes{"inputmode": "decimal"})
+				@Check(f, "Butuh persetujuan atasan", "requires_authorization")
+				<div class="actions wide"><button type="submit" class="primary">Tambah</button></div>
+			</form>
+		</div>
+		<div class="card">
+			<table>
+				<thead><tr><th>Nama</th><th>Berlaku</th><th>Nilai</th><th>Status</th><th></th></tr></thead>
+				<tbody>
+					for _, d := range rows {
+						<tr>
+							<td>{ d.Name }</td>
+							<td>{ optionLabel(DiscountScopeOptions, d.Scope) }</td>
+							<td>{ discountValue(d) }</td>
+							<td>
+								@ActiveBadge(d.Active)
+							</td>
+							<td style="text-align:right">
+								<button hx-post={ "/backoffice/discounts/" + d.ID + "/toggle" } hx-target="#discounts" hx-swap="outerHTML">
+									if d.Active {
+										Nonaktifkan
+									} else {
+										Aktifkan
+									}
+								</button>
+								<button class="danger" hx-post={ "/backoffice/discounts/" + d.ID + "/delete" } hx-target="#discounts" hx-swap="outerHTML" hx-confirm="Hapus diskon ini?">Hapus</button>
+							</td>
+						</tr>
+					}
+					if len(rows) == 0 {
+						<tr><td colspan="5" class="sub">Belum ada diskon.</td></tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	</div>
+}
+
+func discountValue(d promos.Discount) string {
+	switch {
+	case d.Value == nil:
+		return "diisi kasir"
+	case d.Kind == "percent":
+		return BasisPoints(*d.Value) + "%"
+	default:
+		return Rupiah(*d.Value)
+	}
+}
+
+// BasisPoints renders 1050 as "10,5".
+func BasisPoints(bp int64) string {
+	whole, frac := bp/100, bp%100
+	if frac == 0 {
+		return strconv.FormatInt(whole, 10)
+	}
+	s := strconv.FormatInt(frac, 10)
+	if frac < 10 {
+		s = "0" + s
+	}
+	if s[1] == '0' {
+		s = s[:1]
+	}
+	return strconv.FormatInt(whole, 10) + "," + s
+}
+
+func optionLabel(options []Option, value string) string {
+	for _, o := range options {
+		if o.Value == value {
+			return o.Label
+		}
+	}
+	return value
+}
+
+templ AccountPage(s Session, profile Form, password Form, email string) {
+	@Shell("Akun saya", s) {
+		<h1>Akun saya</h1>
+		<p class="sub">Masuk sebagai { email }. Peran dan email diubah oleh yang mengelola karyawan.</p>
+		<div class="card">
+			<h2>Profil</h2>
+			@AccountProfileForm(profile)
+		</div>
+		<div class="card">
+			<h2>Ganti kata sandi</h2>
+			@AccountPasswordForm(password)
+		</div>
+	}
+}
+
+templ AccountProfileForm(f Form) {
+	<form class="grid" hx-post="/backoffice/account" hx-swap="outerHTML">
+		@Field(f, "Nama", "name", "text", templ.Attributes{"required": true, "maxlength": "120"})
+		@Field(f, "Telepon", "phone", "tel", templ.Attributes{"maxlength": "32"})
+		<div class="actions wide"><button type="submit" class="primary">Simpan</button></div>
+	</form>
+}
+
+templ AccountPasswordForm(f Form) {
+	<form class="grid" hx-post="/backoffice/account/password" hx-swap="outerHTML">
+		@Field(f, "Kata sandi saat ini", "current_password", "password", templ.Attributes{"required": true, "autocomplete": "current-password"})
+		@Field(f, "Kata sandi baru", "password", "password", templ.Attributes{"required": true, "minlength": "12", "autocomplete": "new-password"})
+		<div class="actions wide"><button type="submit" class="primary">Ganti kata sandi</button></div>
+	</form>
+}
+
+// PriceGrid is one product's sales-type prices: one row per sales type, one
+// column for the business price and one per outlet override.
+type PriceGrid struct {
+	SalesTypes []catalogue.SalesType
+	Outlets    []Option
+}
+
+templ ProductPricesCard(productID string, grid PriceGrid, f Form) {
+	<div id="product-prices">
+		<h2>Harga per jenis penjualan</h2>
+		<p class="sub">Kosong berarti memakai harga dasar produk. Harga outlet mengalahkan harga bisnis. Hanya berlaku di outlet dengan model harga baru; varian dan modifier tetap ditambahkan sekali.</p>
+		<form hx-post={ "/backoffice/catalogue/products/" + productID + "/prices" } hx-target="#product-prices" hx-swap="outerHTML">
+			<table>
+				<thead>
+					<tr>
+						<th>Jenis penjualan</th>
+						<th>Semua outlet</th>
+						for _, o := range grid.Outlets {
+							<th>{ o.Label }</th>
+						}
+					</tr>
+				</thead>
+				<tbody>
+					for _, st := range grid.SalesTypes {
+						<tr>
+							<td>{ st.Name }</td>
+							<td><input type="text" inputmode="numeric" name={ "price." + st.ID } value={ f.V("price." + st.ID) } style="max-width:9em"/></td>
+							for _, o := range grid.Outlets {
+								<td><input type="text" inputmode="numeric" name={ "price." + st.ID + "." + o.Value } value={ f.V("price." + st.ID + "." + o.Value) } style="max-width:9em"/></td>
+							}
+						</tr>
+					}
+				</tbody>
+			</table>
+			@FormError(f, "prices")
+			<div class="actions"><button type="submit" class="primary">Simpan harga</button></div>
+		</form>
+	</div>
+}

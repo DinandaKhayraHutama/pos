@@ -75,6 +75,16 @@ func (s *Service) ingestOrder(ctx context.Context, tx pgx.Tx, b devices.Binding,
 			return retry("server_unavailable", "Order changed concurrently; retry.")
 		}
 	} else {
+		if in.CustomerId != nil {
+			var exists bool
+			err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM customers WHERE tenant_id=$1 AND id=$2)`, b.Tenant.ID, *in.CustomerId).Scan(&exists)
+			if err != nil {
+				return err
+			}
+			if !exists {
+				return retry("dependency_pending", "Push the customer before this order.")
+			}
+		}
 		// Closed sessions still accept late offline sales. Identity, not the
 		// current drawer status, decides which session a receipt belongs to.
 		var registerID string
@@ -88,7 +98,7 @@ func (s *Service) ingestOrder(ctx context.Context, tx pgx.Tx, b devices.Binding,
 		if registerID != b.Register.ID {
 			return reject("schema_rejected", "Session belongs to another register.")
 		}
-		if err := q.InsertOrder(ctx, store.InsertOrderParams{BusinessDate: date, TenantID: b.Tenant.ID, OutletID: b.Outlet.ID, PosRegisterID: b.Register.ID, DeviceID: b.Device.ID, Column6: encode(in)}); err != nil {
+		if err := q.InsertOrder(ctx, store.InsertOrderParams{BusinessDate: date, TenantID: b.Tenant.ID, OutletID: b.Outlet.ID, PosRegisterID: b.Register.ID, DeviceID: b.Device.ID, Column6: encode(in), PricingMismatch: pricingMismatch(in)}); err != nil {
 			return err
 		}
 		items := encode(in.Items)

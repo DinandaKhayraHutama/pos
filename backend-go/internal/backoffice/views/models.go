@@ -2,6 +2,8 @@ package views
 
 import (
 	"slices"
+
+	"github.com/daniryckidinata/nti_pos/backend-go/internal/domain/reporting"
 	"strconv"
 	"strings"
 )
@@ -32,6 +34,7 @@ type Session struct {
 	// Which sections this person may open. Asked of permissions, never of the
 	// role, so the nav cannot drift from what the routes actually allow.
 	CanCatalogue bool
+	CanCustomers bool
 	CanPromos    bool
 	CanStaff     bool
 	CanOutlets   bool
@@ -47,6 +50,11 @@ type Session struct {
 	// merchant; the sections above that are sold as modules fold the switch in.
 	CanTables  bool
 	CanExports bool
+	// CanSettings opens the Fase 3 business configuration (manageSettings).
+	CanSettings bool
+	// CanDiscounts is managePromos without the promos module switch: named
+	// discounts are not sold separately.
+	CanDiscounts bool
 	// Impersonation is set while a platform admin is signed in as this owner.
 	// Every page shows it, and nothing about it can be dismissed.
 	Impersonation *ImpersonationBanner
@@ -89,6 +97,10 @@ type Device struct {
 	OutletName   string
 	LastSeen     string
 	Revoked      bool
+	// Outdated is a build that has not reported every Fase 3 capability
+	// (pricing-v2, roles-v1): while it is active the Backoffice refuses to
+	// switch an outlet to v2 pricing or assign a custom role.
+	Outdated bool
 }
 
 type IssuedCode struct {
@@ -193,6 +205,9 @@ func SignedRupiah(delta int64) string {
 type Option struct {
 	Value string
 	Label string
+	// System is set when the option is a built-in role, so a form can default
+	// to the cashier role by what it is rather than by its id.
+	System string
 }
 
 var RoleOptions = []Option{
@@ -209,3 +224,54 @@ func RoleLabel(role string) string {
 	}
 	return role
 }
+
+// PermissionGroup is one block of checkboxes on the role form. Values are the
+// wire names shared with the till (internal/domain/auth); labels say what a
+// person may DO, because that is what an owner is deciding.
+type PermissionGroup struct {
+	Label   string
+	Options []Option
+}
+
+var PermissionGroups = []PermissionGroup{
+	{Label: "Kasir", Options: []Option{
+		{Value: "sell", Label: "Berjualan di kasir"},
+		{Value: "openCloseShift", Label: "Membuka dan menutup shift"},
+		{Value: "manageTables", Label: "Mengatur meja (duduk dan kosongkan)"},
+		{Value: "viewOwnOrders", Label: "Melihat transaksi sendiri hari ini"},
+		{Value: "enterCustomAmount", Label: "Memasukkan nominal bebas (custom amount)"},
+	}},
+	{Label: "Pengawasan", Options: []Option{
+		{Value: "viewAllOrders", Label: "Melihat semua transaksi"},
+		{Value: "voidOrder", Label: "Membatalkan transaksi"},
+		{Value: "refundOrder", Label: "Refund transaksi"},
+		{Value: "applyManualDiscount", Label: "Memberi diskon manual"},
+		{Value: "viewCashDrawer", Label: "Melihat laci kas semua shift"},
+		{Value: "viewDailySummary", Label: "Melihat ringkasan penjualan"},
+		{Value: "viewFinancialReports", Label: "Melihat laporan keuangan (HPP dan laba)"},
+	}},
+	{Label: "Pengelolaan", Options: []Option{
+		{Value: "manageCatalogue", Label: "Mengelola produk dan harga"},
+		{Value: "managePromos", Label: "Mengelola promo dan diskon"},
+		{Value: "adjustStock", Label: "Menyesuaikan stok"},
+		{Value: "manageCustomers", Label: "Mengelola pelanggan"},
+		{Value: "manageEmployees", Label: "Mengelola karyawan dan peran"},
+		{Value: "manageOutlets", Label: "Mengelola outlet dan perangkat"},
+		{Value: "manageSettings", Label: "Mengubah pengaturan bisnis"},
+	}},
+}
+
+// PermissionLabel is the label a permission is shown with.
+func PermissionLabel(name string) string {
+	for _, g := range PermissionGroups {
+		for _, o := range g.Options {
+			if o.Value == name {
+				return o.Label
+			}
+		}
+	}
+	return name
+}
+
+// SalesTypeLabel names a sales type on a report (reporting.SalesTypeLabel).
+func SalesTypeLabel(name string) string { return reporting.SalesTypeLabel(name) }

@@ -23,6 +23,8 @@ type HistoryService interface {
 	Order(ctx context.Context, tenantID, orderID string) (history.OrderDetail, error)
 	Sessions(ctx context.Context, tenantID string, f history.SessionFilter) (history.SessionPage, error)
 	Session(ctx context.Context, tenantID, sessionID string) (history.SessionDetail, error)
+	Bills(ctx context.Context, tenantID string, f history.BillFilter) (history.BillPage, error)
+	Bill(ctx context.Context, tenantID, billID string) (history.BillDetail, error)
 }
 
 // historyDefaultDays is how far back a list reaches when nobody picked a

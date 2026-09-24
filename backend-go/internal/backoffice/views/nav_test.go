@@ -35,9 +35,10 @@ func TestTheMenuOffersOnlyWhatThisPersonMayOpen(t *testing.T) {
 		"/backoffice/dashboard",
 		"/backoffice/reports", "/backoffice/reports/exports", "/backoffice/reports/schedules",
 		"/backoffice/catalogue/products", "/backoffice/catalogue/categories",
+		"/backoffice/catalogue/brands",
 		"/backoffice/catalogue/modifiers", "/backoffice/promos",
 		"/backoffice/stock",
-		"/backoffice/staff",
+		"/backoffice/staff", "/backoffice/staff/roles",
 		"/backoffice/outlets", "/backoffice/devices",
 	}, hrefs(owner))
 }

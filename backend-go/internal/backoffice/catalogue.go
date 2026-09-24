@@ -1,6 +1,7 @@
 package backoffice
 
 import (
+	"bytes"
 	"encoding/csv"
 	"errors"
 	"io"
@@ -150,6 +151,7 @@ func productForm(p catalogue.Product) views.Form {
 		f.Values["cost"] = i64toa(*p.Cost)
 	}
 	f.Values["sku"] = optionalString(p.SKU)
+	f.Values["brand_id"] = optionalString(p.BrandID)
 	if p.TaxRate != nil {
 		f.Values["tax_rate"] = strconv.FormatFloat(*p.TaxRate, 'f', -1, 64)
 	}
@@ -170,6 +172,7 @@ func productFromForm(f views.Form, id string) (catalogue.Product, *parser) {
 		Price:       p.money("price"),
 		Cost:        p.optionalMoney("cost"),
 		SKU:         p.optionalText("sku"),
+		BrandID:     p.optionalText("brand_id"),
 		TaxRate:     p.optionalRate("tax_rate"),
 		Description: p.optionalText("description"),
 		IconKey:     p.text("icon_key"),
@@ -216,11 +219,16 @@ func (h *Handler) newProductPage(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
+	brands, err := h.brandOptions(r)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 
 	f := views.NewForm()
 	f.Values["available"] = "on"
 	f.Values["icon_key"] = "restaurant"
-	h.render(w, r, views.ProductNewPage(h.sessionView(r), withBlank(categories), f))
+	h.render(w, r, views.ProductNewPage(h.sessionView(r), withBlank(categories), brands, f))
 }
 
 func (h *Handler) createProduct(w http.ResponseWriter, r *http.Request) {
@@ -249,7 +257,12 @@ func (h *Handler) createProduct(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, loadErr)
 		return
 	}
-	h.render(w, r, views.ProductForm("/backoffice/catalogue/products", withBlank(categories), f))
+	brands, loadErr := h.brandOptions(r)
+	if loadErr != nil {
+		h.serverError(w, r, loadErr)
+		return
+	}
+	h.render(w, r, views.ProductForm("/backoffice/catalogue/products", withBlank(categories), brands, f))
 }
 
 func (h *Handler) productPage(w http.ResponseWriter, r *http.Request) {
@@ -265,6 +278,11 @@ func (h *Handler) productPage(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
+	brands, err := h.brandOptions(r)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 
 	groups, modifiers, err := h.productModifiers(r, id)
 	if err != nil {
@@ -272,7 +290,7 @@ func (h *Handler) productPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.render(w, r, views.ProductPage(h.sessionView(r), id, categories,
+	h.render(w, r, views.ProductPage(h.sessionView(r), id, categories, brands,
 		productForm(product.Product), product.ImageURL, product.Variants, groups, modifiers))
 }
 
@@ -300,7 +318,12 @@ func (h *Handler) updateProduct(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, loadErr)
 		return
 	}
-	h.render(w, r, views.ProductForm("/backoffice/catalogue/products/"+id, categories, f))
+	brands, loadErr := h.brandOptions(r)
+	if loadErr != nil {
+		h.serverError(w, r, loadErr)
+		return
+	}
+	h.render(w, r, views.ProductForm("/backoffice/catalogue/products/"+id, categories, brands, f))
 }
 
 func (h *Handler) setProductAvailability(w http.ResponseWriter, r *http.Request) {
@@ -527,21 +550,14 @@ func (h *Handler) importPage(w http.ResponseWriter, r *http.Request) {
 // price list is a few hundred kilobytes.
 const maxImportBytes = 2 << 20
 
-func (h *Handler) importPrices(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxImportBytes)
-	if err := r.ParseMultipartForm(maxImportBytes); err != nil {
-		h.render(w, r, views.ImportResult(0, 0, []catalogue.ImportError{{Message: "Berkas tidak terbaca atau lebih dari 2 MB."}}))
-		return
-	}
-
-	file, _, err := r.FormFile("file")
-	if err != nil {
-		h.render(w, r, views.ImportResult(0, 0, []catalogue.ImportError{{Message: "Pilih berkas CSV."}}))
-		return
-	}
-	defer file.Close()
-
-	rows, problems := readPriceList(file)
+// applyLegacyPriceList is what importPrices used to run as its own HTTP
+// handler, unchanged: scripts/verify-backoffice-crud pins its toast text and
+// its one-shot-apply behaviour, so this keeps reading and behaving exactly
+// as it always has. importProducts (catalogue_io.go) is the route's actual
+// entry point now and calls here only when the upload is the legacy
+// two-column shape; raw is the upload's bytes, already read once by it.
+func (h *Handler) applyLegacyPriceList(w http.ResponseWriter, r *http.Request, raw []byte) {
+	rows, problems := readPriceList(bytes.NewReader(raw))
 	if len(problems) > 0 {
 		h.render(w, r, views.ImportResult(0, 0, problems))
 		return

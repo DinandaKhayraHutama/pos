@@ -118,11 +118,7 @@ class _RegisterManagementPageState
     );
   }
 
-  void _openForm(
-    BuildContext context,
-    String outletId,
-    PosRegister? existing,
-  ) {
+  void _openForm(BuildContext context, String outletId, PosRegister? existing) {
     showGlassSheet<void>(
       context: context,
       builder: (_) =>
@@ -168,10 +164,8 @@ class _RegisterList extends ConsumerWidget {
             register: list[i],
             onEdit: () => showGlassSheet<void>(
               context: context,
-              builder: (_) => _RegisterFormSheet(
-                outletId: outletId,
-                existing: list[i],
-              ),
+              builder: (_) =>
+                  _RegisterFormSheet(outletId: outletId, existing: list[i]),
             ),
           ),
         );
@@ -324,7 +318,8 @@ class _RegisterFormSheetState extends ConsumerState<_RegisterFormSheet> {
         left: AppDimensions.space16,
         right: AppDimensions.space16,
         top: AppDimensions.space16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + AppDimensions.space16,
+        bottom:
+            MediaQuery.of(context).viewInsets.bottom + AppDimensions.space16,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -432,9 +427,7 @@ class _RegisterFormSheetState extends ConsumerState<_RegisterFormSheet> {
         .read(posRegistersProvider(widget.outletId).notifier)
         .save(
           PosRegister(
-            id:
-                existing?.id ??
-                'pos_${DateTime.now().millisecondsSinceEpoch}',
+            id: existing?.id ?? 'pos_${DateTime.now().millisecondsSinceEpoch}',
             outletId: widget.outletId,
             name: name,
             tableService: _tableService,

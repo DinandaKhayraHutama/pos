@@ -2,9 +2,18 @@
 
 **Tanggal:** 22 September 2026  
 **Dokumen:** `docs/RENCANA_PARITAS_FITUR_MOKAPOS.md`  
-**Status:** Fase 0 sudah diimplementasikan dan lulus gate otomatis lokal; build
-rilis Windows, UAT dua instalasi, dan workflow CI masih menjadi exit gate
-lingkungan sebelum Fase 0 ditutup formal. Fase 1 adalah pekerjaan berikutnya.
+**Status:** Fase 0 sudah selesai. **Implementasi Fase 1 juga selesai seluruhnya
+(F1.1–F1.6)** dan semua gate otomatis lokal yang dapat dijalankan telah lulus,
+termasuk build Android. Build Windows release dan eksekusi workflow GitHub
+masih menunggu lingkungan yang sesuai; rinciannya dicatat di
+[FASE_1_VERIFICATION.md](FASE_1_VERIFICATION.md). **Implementasi Fase 2 juga
+selesai**, dan seluruh gate otomatis lokal yang tersedia telah lulus berdasarkan
+[RENCANA_IMPLEMENTASI_FASE_2.md](RENCANA_IMPLEMENTASI_FASE_2.md). Bukti serta
+gate lingkungan dicatat di [FASE_2_VERIFICATION.md](FASE_2_VERIFICATION.md).
+**Implementasi Fase 3 juga selesai**
+([RENCANA_IMPLEMENTASI_FASE_3.md](RENCANA_IMPLEMENTASI_FASE_3.md)); gate otomatis
+lokal lulus dan gate lingkungan dicatat di
+[FASE_3_VERIFICATION.md](FASE_3_VERIFICATION.md).
 
 ## 1. Tujuan, acuan, dan keputusan produk
 
@@ -172,8 +181,9 @@ Rincian implementasi: [RENCANA_IMPLEMENTASI_FASE_0.md](RENCANA_IMPLEMENTASI_FASE
 ### F1 — Visibilitas transaksi dan koreksi laporan
 
 Rincian implementasi: [RENCANA_IMPLEMENTASI_FASE_1.md](RENCANA_IMPLEMENTASI_FASE_1.md).
+Bukti verifikasi: [FASE_1_VERIFICATION.md](FASE_1_VERIFICATION.md).
 
-**P1 · Kecil–sedang · Bergantung F0**
+**P1 · Kecil–sedang · Bergantung F0 · Implementasi selesai, gate lokal lulus**
 
 - Tambahkan halaman Backoffice transaksi dan shift dengan filter outlet, periode, kasir, nomor struk, serta detail pembatalan yang tersedia.
 - Perluas penelusuran riwayat POS dengan periode dan pagination yang benar, tetap menjaga cache remote sebagai data baca.
@@ -186,6 +196,9 @@ Rincian implementasi: [RENCANA_IMPLEMENTASI_FASE_1.md](RENCANA_IMPLEMENTASI_FASE
 **Kriteria lulus:** detail transaksi, agregat dan ekspor cocok untuk fixture yang sama; pergantian periode tidak melewatkan/menggandakan baris; angka pajak/layanan tidak menaikkan laba penjualan.
 
 ### F2 — Kelengkapan katalog dan pelanggan dasar
+
+Rincian implementasi: [RENCANA_IMPLEMENTASI_FASE_2.md](RENCANA_IMPLEMENTASI_FASE_2.md).
+Bukti verifikasi: [FASE_2_VERIFICATION.md](FASE_2_VERIFICATION.md). **Status implementasi: selesai.**
 
 **P1 · Sedang · Bergantung F0–F1**
 
@@ -200,6 +213,9 @@ Rincian implementasi: [RENCANA_IMPLEMENTASI_FASE_1.md](RENCANA_IMPLEMENTASI_FASE
 **Kriteria lulus:** ekspor–impor dapat dilakukan tanpa menggandakan entitas; pelanggan offline tersinkron dengan ID tetap; perubahan nama master tidak mengubah isi struk lama.
 
 ### F3 — Pengaturan bisnis, akses, dan mesin harga
+
+Rincian implementasi: [RENCANA_IMPLEMENTASI_FASE_3.md](RENCANA_IMPLEMENTASI_FASE_3.md).
+Bukti verifikasi: [FASE_3_VERIFICATION.md](FASE_3_VERIFICATION.md). **Status implementasi: selesai.**
 
 **P1 · Besar · Bergantung F2**
 
@@ -217,6 +233,8 @@ Urutan pekerjaan di dalam fase: konfigurasi dan role → master penjualan/pembay
 **Kriteria lulus:** dataset perhitungan yang sama menghasilkan nominal identik di Go dan Flutter; perubahan konfigurasi tidak mengubah bill/struk yang sudah dibekukan; role lama tidak mendapat akses tambahan tanpa penetapan.
 
 ### F4 — Saved bill dan siklus pesanan restoran
+
+Rincian rencana implementasi: [RENCANA_IMPLEMENTASI_FASE_4.md](RENCANA_IMPLEMENTASI_FASE_4.md). **Status: perencanaan, belum diimplementasikan.**
 
 **P1 · Besar · Bergantung F3**
 

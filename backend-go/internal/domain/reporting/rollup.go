@@ -16,6 +16,8 @@ import (
 var rollupTables = []string{
 	"daily_sales_rollup", "daily_category_rollup", "daily_product_rollup", "daily_employee_rollup",
 	"daily_payment_rollup", "hourly_sales_rollup", "daily_adjustment_rollup", "daily_product_category_rollup",
+	"daily_brand_rollup",
+	"daily_sales_type_rollup", "daily_payment_method_rollup",
 }
 
 // revenue is the till's rule: every order that is not undone.
@@ -30,7 +32,7 @@ const sliceOrders = `tenant_id = $1 AND outlet_id = $2 AND business_date = $3::d
 const salesSQL = `
 WITH o AS (
 	SELECT id, ` + revenue + ` AS rev, status, subtotal, discount, tax, service_charge_amount,
-	       total, refunded_amount
+	       tax_included, rounding_amount, pricing_mismatch, total, refunded_amount
 	FROM orders
 	WHERE ` + sliceOrders + `
 ), i AS (
@@ -45,7 +47,8 @@ INSERT INTO daily_sales_rollup (
 	tenant_id, outlet_id, business_date, order_count, subtotal, discount, tax, service_charge,
 	revenue, items_sold, cost_of_goods, costed_items, discounted_orders,
 	cancelled_count, cancelled_amount, refunded_count, refunded_amount,
-	gross_sales, all_discount, sales_returns, anomaly_count, calculation_version)
+	gross_sales, all_discount, sales_returns, anomaly_count, calculation_version,
+	tax_included, rounding)
 SELECT $1, $2, $3::date,
 	count(*) FILTER (WHERE rev),
 	COALESCE(sum(subtotal) FILTER (WHERE rev), 0),
@@ -72,8 +75,10 @@ SELECT $1, $2, $3::date,
 	-- F1 shows it beside the return rather than inventing lines for it. A NULL
 	-- refunded_amount means the whole total, so it is not compared at all:
 	-- an IS DISTINCT FROM test would flag every ordinary full refund.
-	count(*) FILTER (WHERE total <> subtotal - discount + tax + service_charge_amount
-		OR (status = 'refunded' AND refunded_amount > total)), 2
+	count(*) FILTER (WHERE total <> subtotal - discount + tax - tax_included + service_charge_amount + rounding_amount
+		OR pricing_mismatch OR (status = 'refunded' AND refunded_amount > total)), 2,
+	COALESCE(sum(tax_included) FILTER (WHERE rev), 0),
+	COALESCE(sum(rounding_amount) FILTER (WHERE rev), 0)
 FROM o
 HAVING count(*) > 0`
 
@@ -102,7 +107,7 @@ INSERT INTO daily_employee_rollup (tenant_id, outlet_id, business_date, cashier_
 SELECT $1, $2, $3::date,
 	COALESCE(NULLIF(payload->>'cashier_id', ''), 'name:' || cashier_name),
 	(array_agg(cashier_name ORDER BY placed_at_ms DESC, id DESC))[1],
-	max(placed_at_ms), count(*), sum(total), sum(discount), sum(subtotal - discount)
+	max(placed_at_ms), count(*), sum(total), sum(discount), sum(subtotal - discount - tax_included)
 FROM orders
 WHERE ` + sliceOrders + ` AND ` + revenue + `
 GROUP BY 4`
@@ -114,6 +119,24 @@ FROM orders
 WHERE ` + sliceOrders + ` AND ` + revenue + `
 GROUP BY payment_method`
 
+const salesTypeSQL = `
+INSERT INTO daily_sales_type_rollup (tenant_id, outlet_id, business_date, sales_type_key,
+	sales_type_name, order_count, revenue, net_sales)
+SELECT $1, $2, $3::date,
+	COALESCE(NULLIF(payload->>'sales_type_id', ''), 'type:' || COALESCE(NULLIF(payload->>'type', ''), 'unknown')),
+	COALESCE(NULLIF(payload->>'sales_type_name', ''), NULLIF(payload->>'type', ''), 'Tidak diketahui'),
+	count(*), sum(total), sum(subtotal - discount - tax_included)
+FROM orders WHERE ` + sliceOrders + ` AND ` + revenue + ` GROUP BY 4, 5`
+
+const paymentMethodSQL = `
+INSERT INTO daily_payment_method_rollup (tenant_id, outlet_id, business_date, payment_method_key,
+	payment_method_name, payment_kind, order_count, revenue)
+SELECT $1, $2, $3::date,
+	COALESCE(NULLIF(payload->>'payment_method_id', ''), payment_method),
+	COALESCE(NULLIF(payload->>'payment_method_name', ''), payment_method), payment_method,
+	count(*), sum(total)
+FROM orders WHERE ` + sliceOrders + ` AND ` + revenue + ` GROUP BY 4, 5, 6`
+
 // Every per-dimension rollup — hour, product, category, cashier — is over the
 // revenue orders only, so its gross is the day's gross MINUS what was refunded
 // and its net adds up to exactly daily_sales_rollup's subtotal - discount. The
@@ -121,10 +144,13 @@ GROUP BY payment_method`
 const hourlySQL = `
 INSERT INTO hourly_sales_rollup (tenant_id, outlet_id, business_date, hour, order_count, revenue, net_sales, gross_sales)
 SELECT $1, $2, $3::date,
-	extract(hour FROM (to_timestamp(o.placed_at_ms / 1000.0) AT TIME ZONE t.timezone))::smallint,
-	count(*), sum(o.total), sum(o.subtotal - o.discount), sum(o.subtotal)
+	extract(hour FROM CASE WHEN NULLIF(o.payload->>'tz_offset_minutes','') IS NOT NULL
+		THEN to_timestamp(o.placed_at_ms / 1000.0) AT TIME ZONE 'UTC' +
+		     make_interval(mins => (o.payload->>'tz_offset_minutes')::int)
+		ELSE to_timestamp(o.placed_at_ms / 1000.0) AT TIME ZONE COALESCE(t.legacy_timezone, t.timezone) END)::smallint,
+	count(*), sum(o.total), sum(o.subtotal - o.discount - o.tax_included), sum(o.subtotal)
 FROM orders o
-CROSS JOIN (SELECT timezone FROM tenants WHERE id = $1) t
+CROSS JOIN (SELECT timezone, legacy_timezone FROM tenants WHERE id = $1) t
 WHERE o.tenant_id = $1 AND o.outlet_id = $2 AND o.business_date = $3::date AND o.` + revenue + `
 GROUP BY 4`
 
@@ -133,7 +159,7 @@ GROUP BY 4`
 // authorised the void or refund.
 const adjustmentSQL = `
 INSERT INTO daily_adjustment_rollup (tenant_id, outlet_id, business_date, kind, label, order_count, amount)
-SELECT $1, $2, $3::date, 'discount', COALESCE(payload->>'promo_name', ''), count(*), sum(discount)
+SELECT $1, $2, $3::date, 'discount', COALESCE(NULLIF(payload->>'discount_name',''), payload->>'promo_name', ''), count(*), sum(discount)
 FROM orders
 WHERE ` + sliceOrders + ` AND ` + revenue + ` AND discount > 0
 GROUP BY 5
@@ -221,6 +247,8 @@ func writeSlice(ctx context.Context, tx pgx.Tx, tenantID, outletID, date string)
 		{"daily_payment_rollup", paymentSQL},
 		{"hourly_sales_rollup", hourlySQL},
 		{"daily_adjustment_rollup", adjustmentSQL},
+		{"daily_sales_type_rollup", salesTypeSQL},
+		{"daily_payment_method_rollup", paymentMethodSQL},
 	} {
 		if _, err := tx.Exec(ctx, stmt.sql, tenantID, outletID, date); err != nil {
 			return fmt.Errorf("write %s: %w", stmt.table, err)
@@ -229,5 +257,8 @@ func writeSlice(ctx context.Context, tx pgx.Tx, tenantID, outletID, date string)
 
 	// The category split and the product-inside-category split share one read
 	// and one allocation, so they cannot disagree by a rounding rupiah.
-	return writeCategoryAndProduct(ctx, tx, tenantID, outletID, date)
+	if err := writeCategoryAndProduct(ctx, tx, tenantID, outletID, date); err != nil {
+		return err
+	}
+	return writeBrands(ctx, tx, tenantID, outletID, date)
 }

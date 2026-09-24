@@ -13,8 +13,10 @@ import 'app_dimensions.dart';
 class AppTheme {
   AppTheme._();
 
-  static ThemeData light(BrandPreset brand) => _build(brand.light, Brightness.light);
-  static ThemeData dark(BrandPreset brand) => _build(brand.dark, Brightness.dark);
+  static ThemeData light(BrandPreset brand) =>
+      _build(brand.light, Brightness.light);
+  static ThemeData dark(BrandPreset brand) =>
+      _build(brand.dark, Brightness.dark);
 
   static ThemeData _build(BrandColors bc, Brightness brightness) {
     final isLight = brightness == Brightness.light;
@@ -39,14 +41,15 @@ class AppTheme {
       surface: bc.surfaceBase,
       onSurface: bc.textHigh,
       onSurfaceVariant: bc.textMedium,
-      surfaceContainerLowest:
-          isLight ? Colors.white : const Color(0xFF070809),
+      surfaceContainerLowest: isLight ? Colors.white : const Color(0xFF070809),
       surfaceContainerLow: bc.surfaceRaised,
       surfaceContainer: bc.surfaceOverlay,
-      surfaceContainerHigh:
-          isLight ? const Color(0xFFF0F1F5) : const Color(0xFF22252D),
-      surfaceContainerHighest:
-          isLight ? const Color(0xFFE9EBF0) : const Color(0xFF2A2D36),
+      surfaceContainerHigh: isLight
+          ? const Color(0xFFF0F1F5)
+          : const Color(0xFF22252D),
+      surfaceContainerHighest: isLight
+          ? const Color(0xFFE9EBF0)
+          : const Color(0xFF2A2D36),
       outline: bc.textMedium,
       outlineVariant: bc.textLow,
       inverseSurface: bc.textHigh,
@@ -226,7 +229,7 @@ class AppTheme {
       double? letterSpacing,
       List<FontFeature>? fontFeatures,
       FontWeight? fontWeight,
-   }) {
+    }) {
       final src = s ?? const TextStyle();
       return src.copyWith(
         fontFamily: family,

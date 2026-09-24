@@ -30,6 +30,11 @@ var (
 	// category is a bookkeeping act; retiring the twelve products under it is a
 	// menu change, and the person clicking should be the one to say so.
 	ErrCategoryInUse = errors.New("catalogue: the category still has products")
+	// ErrBrandInUse mirrors ErrCategoryInUse: a brand still labelling products
+	// is not retired out from under them. Unlike a category a product's brand
+	// is optional, so the fix is "clear the brand on those products first",
+	// not "move them" — but it is still the person clicking who says so.
+	ErrBrandInUse = errors.New("catalogue: the brand still has products")
 )
 
 type Service struct {
@@ -74,6 +79,17 @@ type Product struct {
 	IconKey   string
 	Available bool
 	IsPopular bool
+	SortOrder int
+	// BrandID is optional — unlike CategoryID a product with no brand is an
+	// ordinary product, not an incomplete one.
+	BrandID *string
+}
+
+// Brand is a flat, company-wide label a product may carry — see brands.go for
+// why it is never scoped to an outlet.
+type Brand struct {
+	ID        string
+	Name      string
 	SortOrder int
 }
 
@@ -192,6 +208,9 @@ func validateProduct(in Product) validation.Errors {
 	if in.TaxRate != nil && (*in.TaxRate < 0 || *in.TaxRate > 100) {
 		errs.Add("tax_rate", "Tarif pajak harus antara 0 dan 100.")
 	}
+	if in.BrandID != nil && !validation.UUID(*in.BrandID) {
+		errs.Add("brand_id", "Brand tidak ditemukan.")
+	}
 
 	errs.Optional("sku", in.SKU, 64)
 	errs.Optional("description", in.Description, 500)
@@ -237,6 +256,22 @@ func (s *Service) SaveProduct(ctx context.Context, tenantID string, in Product) 
 			return validation.Errors{"category_id": "Kategori tidak ditemukan."}
 		}
 
+		// A retired brand still satisfying the (deferred) FK would let a
+		// product file itself under a brand no Backoffice page shows either —
+		// same defence as the category check just above, just optional.
+		if in.BrandID != nil {
+			var liveBrand bool
+			if err := w.Tx.QueryRow(ctx, `
+				SELECT EXISTS (SELECT 1 FROM brands
+				               WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL)`,
+				tenantID, *in.BrandID).Scan(&liveBrand); err != nil {
+				return err
+			}
+			if !liveBrand {
+				return validation.Errors{"brand_id": "Brand tidak ditemukan."}
+			}
+		}
+
 		// A variant is a delta on this price, so lowering the base can push a
 		// size below zero — a line that pays the customer.
 		if in.ID != "" {
@@ -260,9 +295,9 @@ func (s *Service) SaveProduct(ctx context.Context, tenantID string, in Product) 
 		return w.Tx.QueryRow(ctx, `
 			INSERT INTO products
 				(id, tenant_id, category_id, name, price, cost, sku, tax_rate, description,
-				 icon_key, available, is_popular, sort_order, sync_seq)
+				 icon_key, available, is_popular, sort_order, sync_seq, brand_id)
 			VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()),
-			        $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			        $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 			ON CONFLICT (id) DO UPDATE
 			SET category_id = EXCLUDED.category_id,
 			    name        = EXCLUDED.name,
@@ -276,11 +311,12 @@ func (s *Service) SaveProduct(ctx context.Context, tenantID string, in Product) 
 			    is_popular  = EXCLUDED.is_popular,
 			    sort_order  = EXCLUDED.sort_order,
 			    sync_seq    = EXCLUDED.sync_seq,
+			    brand_id    = EXCLUDED.brand_id,
 			    deleted_at  = NULL,
 			    updated_at  = now()
 			RETURNING id`,
 			in.ID, tenantID, in.CategoryID, in.Name, in.Price, in.Cost, in.SKU, in.TaxRate,
-			in.Description, in.IconKey, in.Available, in.IsPopular, in.SortOrder, seq,
+			in.Description, in.IconKey, in.Available, in.IsPopular, in.SortOrder, seq, in.BrandID,
 		).Scan(&id)
 	})
 	if err != nil {
@@ -354,6 +390,7 @@ func (s *Service) DeleteProduct(ctx context.Context, tenantID, id string) error 
 		// in opposite directions.
 		for _, dependant := range []string{
 			"product_variants", "product_modifier_groups", "product_modifier_options",
+			"product_sales_type_prices",
 		} {
 			if _, err := retire(ctx, w, dependant, dependant,
 				"tenant_id = $1 AND product_id = $2", tenantID, id); err != nil {
@@ -361,7 +398,7 @@ func (s *Service) DeleteProduct(ctx context.Context, tenantID, id string) error 
 			}
 		}
 
-		return nil
+		return retireOutletPrices(ctx, w, "tenant_id = $1 AND product_id = $2", tenantID, id)
 	})
 }
 

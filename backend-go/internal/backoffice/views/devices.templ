@@ -158,7 +158,12 @@ templ DeviceRow(d Device) {
 	<tr id={ "device-" + d.ID }>
 		<td>{ d.Label }</td>
 		<td>{ d.OutletName } · { d.RegisterName }</td>
-		<td>{ d.Platform }</td>
+		<td>
+			{ d.Platform }
+			if !d.Revoked && d.Outdated {
+				<br/><span class="badge off" title="Build ini belum bisa menjalankan harga v2 atau peran kustom; perbarui aplikasinya sebelum mengaktifkan keduanya.">perlu update</span>
+			}
+		</td>
 		<td>{ d.LastSeen }</td>
 		<td>
 			if d.Revoked {

@@ -74,20 +74,17 @@ void main() {
       expect(restored.resolvedItemCount, items.length);
     });
 
-    test(
-      'a map missing pb1_rate/service_charge_rate/service_charge_amount '
-      'entirely (a pre-v19 row) reads as amount 0, rates null',
-      () {
-        final m = fixture.toMap()
-          ..remove('pb1_rate')
-          ..remove('service_charge_rate')
-          ..remove('service_charge_amount');
-        final restored = Order.fromMapRow(m, items: items);
-        expect(restored.serviceChargeAmount, 0);
-        expect(restored.pb1Rate, isNull);
-        expect(restored.serviceChargeRate, isNull);
-      },
-    );
+    test('a map missing pb1_rate/service_charge_rate/service_charge_amount '
+        'entirely (a pre-v19 row) reads as amount 0, rates null', () {
+      final m = fixture.toMap()
+        ..remove('pb1_rate')
+        ..remove('service_charge_rate')
+        ..remove('service_charge_amount');
+      final restored = Order.fromMapRow(m, items: items);
+      expect(restored.serviceChargeAmount, 0);
+      expect(restored.pb1Rate, isNull);
+      expect(restored.serviceChargeRate, isNull);
+    });
 
     group('resolvedItemCount (LEFT JOIN COUNT gotcha)', () {
       test('no item_count key -> falls back to items.length', () {
@@ -102,13 +99,15 @@ void main() {
         expect(o.resolvedItemCount, 5);
       });
 
-      test('item_count: 5 + 2 items -> 5 (item_count wins over items.length)',
-          () {
-        final m = fixture.toMap()..['item_count'] = 5;
-        final o = Order.fromMapRow(m, items: items);
-        expect(o.resolvedItemCount, 5);
-        expect(o.items.length, items.length);
-      });
+      test(
+        'item_count: 5 + 2 items -> 5 (item_count wins over items.length)',
+        () {
+          final m = fixture.toMap()..['item_count'] = 5;
+          final o = Order.fromMapRow(m, items: items);
+          expect(o.resolvedItemCount, 5);
+          expect(o.items.length, items.length);
+        },
+      );
     });
 
     group('change (amountPaid - total)', () {
@@ -151,14 +150,14 @@ void main() {
         for (final v in OrderType.values) {
           expect(OrderTypeX.fromWire(v.wire), v);
         }
-        expect(OrderTypeX.fromWire('bogus'), OrderType.dineIn);
+        expect(OrderTypeX.fromWire('bogus'), OrderType.custom);
       });
 
       test('PaymentMethod: each known value + unknown fallback', () {
         for (final v in PaymentMethod.values) {
           expect(PaymentMethodX.fromWire(v.wire), v);
         }
-        expect(PaymentMethodX.fromWire('bogus'), PaymentMethod.cash);
+        expect(PaymentMethodX.fromWire('bogus'), PaymentMethod.other);
       });
 
       test('OrderStatus: each known value + unknown fallback', () {
@@ -180,24 +179,24 @@ void main() {
 
 /// Order has no copyWith; rebuild a fixture with one field changed.
 Order _rebuild(Order src, {int? amountPaid}) => Order(
-      id: src.id,
-      number: src.number,
-      createdAt: src.createdAt,
-      type: src.type,
-      table: src.table,
-      customerName: src.customerName,
-      note: src.note,
-      subtotal: src.subtotal,
-      discount: src.discount,
-      tax: src.tax,
-      serviceChargeAmount: src.serviceChargeAmount,
-      pb1Rate: src.pb1Rate,
-      serviceChargeRate: src.serviceChargeRate,
-      total: src.total,
-      amountPaid: amountPaid ?? src.amountPaid,
-      paymentMethod: src.paymentMethod,
-      status: src.status,
-      cashierId: src.cashierId,
-      cashierName: src.cashierName,
-      items: src.items,
-    );
+  id: src.id,
+  number: src.number,
+  createdAt: src.createdAt,
+  type: src.type,
+  table: src.table,
+  customerName: src.customerName,
+  note: src.note,
+  subtotal: src.subtotal,
+  discount: src.discount,
+  tax: src.tax,
+  serviceChargeAmount: src.serviceChargeAmount,
+  pb1Rate: src.pb1Rate,
+  serviceChargeRate: src.serviceChargeRate,
+  total: src.total,
+  amountPaid: amountPaid ?? src.amountPaid,
+  paymentMethod: src.paymentMethod,
+  status: src.status,
+  cashierId: src.cashierId,
+  cashierName: src.cashierName,
+  items: src.items,
+);

@@ -9,6 +9,7 @@ import '../models/enums.dart';
 import '../models/shift.dart';
 import '../sync/outbox_store.dart';
 import '../sync/session_push.dart';
+import 'bill_repository.dart';
 
 /// Thrown when a till already has somebody signed on to it.
 ///
@@ -23,6 +24,16 @@ class RegisterBusyException implements Exception {
 
   @override
   String toString() => 'Register $registerName is already open for $holderName';
+}
+
+/// A drawer cannot close while it still owns open bills (paritas F4): each
+/// has to be paid, cancelled or parked for another till first.
+class OpenBillsException implements Exception {
+  const OpenBillsException(this.count);
+  final int count;
+
+  @override
+  String toString() => 'OpenBillsException($count)';
 }
 
 /// POS sessions. The only place shifts are read or written.
@@ -231,6 +242,13 @@ class ShiftRepository {
   }) async {
     final db = await AppDatabase.instance.db;
 
+    // Paritas F4: a drawer still responsible for an open bill cannot close —
+    // the bill would be left with nobody to settle it. It has to be paid,
+    // cancelled or parked for another till first. The server refuses the same
+    // close; this says so before the count is typed.
+    final open = await BillRepository.instance.openBills(sessionId: shift.id);
+    if (open.isNotEmpty) throw OpenBillsException(open.length);
+
     // Read before the transaction opens: totalsFor runs several aggregates over
     // `orders`, and holding a write transaction open across them would block
     // the till from ringing up a sale while a drawer is being counted.
@@ -266,8 +284,12 @@ class ShiftRepository {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
       if (TillCoordinator.current != null) {
-        await txn.update('_till_sessions', {'state': 'closing_pending'},
-            where: 'id = ?', whereArgs: [shift.id]);
+        await txn.update(
+          '_till_sessions',
+          {'state': 'closing_pending'},
+          where: 'id = ?',
+          whereArgs: [shift.id],
+        );
       }
       await OutboxStore.enqueueWithin(txn, SessionPush.entity, shift.id);
     });

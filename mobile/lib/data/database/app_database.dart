@@ -81,7 +81,7 @@ class AppDatabase {
 
   /// Schema version the app currently targets. Exposed so tests can open an
   /// in-memory DB at the same version via [openForTest].
-  static const int currentVersion = 30;
+  static const int currentVersion = 33;
 
   /// Seed image ids that no longer resolve (all 404; `1605478371 size_400`
   /// was malformed with a literal space). Cleared in the v3 migration so
@@ -627,6 +627,42 @@ class AppDatabase {
       await db.execute(_remoteReportsDdl);
     }
 
+    if (oldVersion < 31) {
+      await db.execute(_brandsDdl);
+      await db.execute(_customersDdl);
+      await _addColumnIfMissing(db, 'products', 'brand_id', 'TEXT');
+      await _addColumnIfMissing(db, 'orders', 'customer_id', 'TEXT');
+      await _addColumnIfMissing(db, 'order_items', 'brand_id', 'TEXT');
+    }
+    if (oldVersion < 32) {
+      for (final ddl in _f3MasterDdl) {
+        await db.execute(ddl);
+      }
+      await _addColumnIfMissing(db, 'employees', 'role_id', 'TEXT');
+      for (final entry in _f3OrderColumns.entries) {
+        await _addColumnIfMissing(db, 'orders', entry.key, entry.value);
+      }
+      for (final entry in _f3OrderItemColumns.entries) {
+        await _addColumnIfMissing(db, 'order_items', entry.key, entry.value);
+      }
+    }
+    if (oldVersion < 33) {
+      // v33 (paritas F4): saved bills, kitchen dispatches and table
+      // seatings. Additive: every existing receipt stays exactly the receipt
+      // it was (bill_id NULL), and the queue, dead letters and ledger rows
+      // are untouched — last_queued_at is NULL on an entry queued before,
+      // which the stock barrier reads as its queued_at.
+      for (final ddl in _f4Ddl) {
+        await db.execute(ddl);
+      }
+      for (final table in _f4Columns.entries) {
+        if (!await _tableExists(db, table.key)) continue;
+        for (final column in table.value.entries) {
+          await _addColumnIfMissing(db, table.key, column.key, column.value);
+        }
+      }
+    }
+
     // ---- Deferred data steps -------------------------------------------
     //
     // Everything above this line changes the SCHEMA only. Everything below
@@ -969,6 +1005,11 @@ class AppDatabase {
     String column,
     String type,
   ) async {
+    // Some repository migration fixtures intentionally contain only the
+    // subsystem under test. A later additive migration must leave those
+    // partial legacy stores usable instead of issuing ALTER TABLE on a table
+    // that was never part of the fixture.
+    if (!await _tableExists(db, table)) return;
     final columns = await db.rawQuery('PRAGMA table_info($table)');
     if (columns.any((c) => c['name'] == column)) return;
     await db.execute('ALTER TABLE $table ADD COLUMN $column $type');
@@ -1958,6 +1999,114 @@ class AppDatabase {
     )
   ''';
 
+  static const _brandsDdl = '''
+    CREATE TABLE IF NOT EXISTS brands (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    )
+  ''';
+
+  static const _f3MasterDdl = <String>[
+    '''CREATE TABLE IF NOT EXISTS roles (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, system_key TEXT,
+      permissions TEXT NOT NULL DEFAULT '', pos_access INTEGER NOT NULL DEFAULT 0,
+      backoffice_access INTEGER NOT NULL DEFAULT 0, sort_order INTEGER NOT NULL DEFAULT 0
+    )''',
+    '''CREATE TABLE IF NOT EXISTS business_settings (
+      id TEXT PRIMARY KEY, tax_rate_bp INTEGER NOT NULL, tax_mode TEXT NOT NULL,
+      service_enabled INTEGER NOT NULL, service_rate_bp INTEGER NOT NULL,
+      service_taxable INTEGER NOT NULL, rounding_unit INTEGER NOT NULL,
+      rounding_mode TEXT NOT NULL, receipt_logo_url TEXT, receipt_footer TEXT
+    )''',
+    '''CREATE TABLE IF NOT EXISTS sales_types (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, system_key TEXT,
+      uses_table INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    )''',
+    '''CREATE TABLE IF NOT EXISTS payment_methods (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL,
+      system_key TEXT, requires_reference INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 0
+    )''',
+    '''CREATE TABLE IF NOT EXISTS payment_groups (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, method_ids TEXT NOT NULL DEFAULT '',
+      active INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 0
+    )''',
+    '''CREATE TABLE IF NOT EXISTS discounts (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, scope TEXT NOT NULL, kind TEXT NOT NULL,
+      value INTEGER, requires_authorization INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 0
+    )''',
+    '''CREATE TABLE IF NOT EXISTS outlet_settings (
+      outlet_id TEXT PRIMARY KEY, tax_rate_bp INTEGER, tax_mode TEXT,
+      service_enabled INTEGER, service_rate_bp INTEGER, service_taxable INTEGER,
+      rounding_unit INTEGER, rounding_mode TEXT, receipt_header TEXT,
+      receipt_footer TEXT, show_address INTEGER NOT NULL DEFAULT 1,
+      show_phone INTEGER NOT NULL DEFAULT 1, track_server INTEGER NOT NULL DEFAULT 0,
+      default_sales_type_id TEXT, sales_type_ids TEXT, payment_group_id TEXT,
+      pricing_model TEXT NOT NULL DEFAULT 'legacy'
+    )''',
+    '''CREATE TABLE IF NOT EXISTS product_sales_type_prices (
+      product_id TEXT NOT NULL, sales_type_id TEXT NOT NULL, price INTEGER NOT NULL,
+      PRIMARY KEY (product_id, sales_type_id)
+    )''',
+    '''CREATE TABLE IF NOT EXISTS outlet_product_sales_type_prices (
+      outlet_id TEXT NOT NULL, product_id TEXT NOT NULL, sales_type_id TEXT NOT NULL,
+      price INTEGER NOT NULL, PRIMARY KEY (outlet_id, product_id, sales_type_id)
+    )''',
+  ];
+
+  static const _f3OrderColumns = <String, String>{
+    'pricing_version': 'INTEGER',
+    'pricing': 'TEXT',
+    'tax_included': 'INTEGER NOT NULL DEFAULT 0',
+    'rounding_amount': 'INTEGER NOT NULL DEFAULT 0',
+    'tz_offset_minutes': 'INTEGER',
+    'sales_type_id': 'TEXT',
+    'sales_type_name': 'TEXT',
+    'payment_method_id': 'TEXT',
+    'payment_method_name': 'TEXT',
+    'payment_reference': 'TEXT',
+    'served_by_id': 'TEXT',
+    'served_by_name': 'TEXT',
+    'discount_id': 'TEXT',
+    'discount_name': 'TEXT',
+    'discount_authorized_by_id': 'TEXT',
+    'discount_authorized_by_name': 'TEXT',
+    'receipt_snapshot': 'TEXT',
+  };
+
+  static const _f3OrderItemColumns = <String, String>{
+    'custom': 'INTEGER NOT NULL DEFAULT 0',
+    'base_price': 'INTEGER',
+    'price_source': 'TEXT',
+    'tax_rate_bp': 'INTEGER',
+    'discount_spec': 'TEXT',
+    'line_discount_id': 'TEXT',
+    'line_discount_name': 'TEXT',
+    'line_discount_authorized_by_id': 'TEXT',
+    'line_discount_authorized_by_name': 'TEXT',
+    'line_discount': 'INTEGER NOT NULL DEFAULT 0',
+    'bill_discount_share': 'INTEGER NOT NULL DEFAULT 0',
+    'service_share': 'INTEGER NOT NULL DEFAULT 0',
+    'tax_amount': 'INTEGER NOT NULL DEFAULT 0',
+    'tax_included': 'INTEGER NOT NULL DEFAULT 0',
+    'net_amount': 'INTEGER',
+  };
+
+  static const _customersDdl = '''
+    CREATE TABLE IF NOT EXISTS customers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      phone TEXT,
+      email TEXT,
+      address TEXT,
+      note TEXT,
+      active INTEGER NOT NULL DEFAULT 1
+    )
+  ''';
+
   /// Tables a connected store may hold, children before parents.
   ///
   /// Ordered so a delete never trips a foreign key, rather than relying on
@@ -1966,6 +2115,13 @@ class AppDatabase {
     'order_item_modifiers',
     'order_items',
     'orders',
+    'outlet_product_sales_type_prices',
+    'product_sales_type_prices',
+    'outlet_settings',
+    'payment_groups',
+    'payment_methods',
+    'discounts',
+    'sales_types',
     'shifts',
     'stock_movements',
     'outlet_stock',
@@ -1977,8 +2133,12 @@ class AppDatabase {
     'modifier_groups',
     'product_variants',
     'products',
+    'brands',
     'categories',
+    'customers',
     'employees',
+    'business_settings',
+    'roles',
     '_sync_state',
   ];
 
@@ -2020,6 +2180,11 @@ class AppDatabase {
     batch.execute(_pushRevisionsDdl);
     batch.execute(_deadLetterDdl);
     batch.execute(_syncMetaDdl);
+    batch.execute(_brandsDdl);
+    batch.execute(_customersDdl);
+    for (final ddl in _f3MasterDdl) {
+      batch.execute(ddl);
+    }
 
     batch.execute('''
       CREATE TABLE categories (
@@ -2037,6 +2202,7 @@ class AppDatabase {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         category_id TEXT NOT NULL,
+		brand_id TEXT,
         price INTEGER NOT NULL,
         cost INTEGER,
         sku TEXT,
@@ -2091,6 +2257,7 @@ class AppDatabase {
         table_id TEXT,
         table_name TEXT,
         customer_name TEXT,
+		customer_id TEXT,
         note TEXT,
         subtotal INTEGER NOT NULL,
         discount INTEGER NOT NULL DEFAULT 0,
@@ -2136,6 +2303,23 @@ class AppDatabase {
         -- How far the server clock was ahead of this device when the sale was
         -- made, as last measured by a sync (v25). NULL before any sync.
         server_time_delta_ms INTEGER
+        ,pricing_version INTEGER
+        ,pricing TEXT
+        ,tax_included INTEGER NOT NULL DEFAULT 0
+        ,rounding_amount INTEGER NOT NULL DEFAULT 0
+        ,tz_offset_minutes INTEGER
+        ,sales_type_id TEXT
+        ,sales_type_name TEXT
+        ,payment_method_id TEXT
+        ,payment_method_name TEXT
+        ,payment_reference TEXT
+        ,served_by_id TEXT
+        ,served_by_name TEXT
+        ,discount_id TEXT
+        ,discount_name TEXT
+        ,discount_authorized_by_id TEXT
+        ,discount_authorized_by_name TEXT
+        ,receipt_snapshot TEXT
       )
     ''');
 
@@ -2157,6 +2341,22 @@ class AppDatabase {
         -- rewrite a sales-by-category report that already ran.
         category_id TEXT,
         category_name TEXT,
+		brand_id TEXT,
+        custom INTEGER NOT NULL DEFAULT 0,
+        base_price INTEGER,
+        price_source TEXT,
+        tax_rate_bp INTEGER,
+        discount_spec TEXT,
+        line_discount_id TEXT,
+        line_discount_name TEXT,
+        line_discount_authorized_by_id TEXT,
+        line_discount_authorized_by_name TEXT,
+        line_discount INTEGER NOT NULL DEFAULT 0,
+        bill_discount_share INTEGER NOT NULL DEFAULT 0,
+        service_share INTEGER NOT NULL DEFAULT 0,
+        tax_amount INTEGER NOT NULL DEFAULT 0,
+        tax_included INTEGER NOT NULL DEFAULT 0,
+        net_amount INTEGER,
         FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
       )
     ''');
@@ -2184,6 +2384,7 @@ class AppDatabase {
         pin TEXT NOT NULL DEFAULT '',
         pin_hash TEXT,
         role TEXT NOT NULL,
+        role_id TEXT,
         active INTEGER NOT NULL DEFAULT 1,
         sort_order INTEGER NOT NULL DEFAULT 0
       )
@@ -2248,7 +2449,161 @@ class AppDatabase {
     batch.execute(_remoteHistoryMetaDdl);
     batch.execute(_remoteReportsDdl);
     batch.execute('ALTER TABLE stock_movements ADD COLUMN order_id TEXT');
+    for (final ddl in _f4Ddl) {
+      batch.execute(ddl);
+    }
+    for (final table in _f4Columns.entries) {
+      for (final column in table.value.entries) {
+        batch.execute(
+          'ALTER TABLE ${table.key} ADD COLUMN ${column.key} ${column.value}',
+        );
+      }
+    }
   }
+
+  /// Saved bills (v33, paritas F4).
+  ///
+  /// A bill is NOT an order. `orders` stays the final receipt — what a
+  /// customer paid — and everything that reads money reads it; a bill is the
+  /// mutable thing a table runs up before that, owned by exactly one till.
+  /// Saving one moves no money and no stock; `kitchen_dispatches` is what
+  /// consumes stock, once per batch sent to the kitchen; the receipt that
+  /// settles a bill consumes nothing again.
+  ///
+  /// No foreign key from these to products, customers, staff or any master:
+  /// a line is a snapshot, and a tombstone must never cascade into a bill a
+  /// guest was already quoted. `bill_lines` and `kitchen_dispatches` hang off
+  /// `bills` only, which is never deleted outside a demo reset.
+  static const _f4Ddl = <String>[
+    '''CREATE TABLE IF NOT EXISTS bills (
+      id TEXT PRIMARY KEY,
+      number TEXT NOT NULL,
+      -- open | closed (settled by a receipt) | cancelled
+      status TEXT NOT NULL,
+      -- owned: this till may edit it. parked: released to the server for
+      -- another till (or this one) to claim; read-only here.
+      ownership TEXT NOT NULL DEFAULT 'owned',
+      owner_generation INTEGER NOT NULL DEFAULT 1,
+      -- The last revision saved here, which is also the push revision: every
+      -- save is exactly one enqueue.
+      revision INTEGER NOT NULL DEFAULT 0,
+      outlet_id TEXT,
+      pos_id TEXT,
+      pos_session_id TEXT,
+      type TEXT NOT NULL,
+      sales_type_id TEXT,
+      sales_type_name TEXT,
+      table_id TEXT,
+      table_name TEXT,
+      table_session_id TEXT,
+      customer_id TEXT,
+      customer_name TEXT,
+      served_by_id TEXT,
+      served_by_name TEXT,
+      note TEXT,
+      created_by_id TEXT,
+      created_by_name TEXT NOT NULL,
+      -- The pricing configuration frozen at the first save (JSON), so a sync
+      -- that changes a rate never re-prices a bill a guest was quoted.
+      pricing TEXT NOT NULL,
+      opened_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      closed_order_id TEXT,
+      closed_at INTEGER,
+      -- Why and by whom a cancelled bill was cancelled (JSON).
+      cancel TEXT
+    )''',
+    'CREATE INDEX IF NOT EXISTS idx_bills_open ON bills(status, outlet_id)',
+    '''CREATE TABLE IF NOT EXISTS bill_lines (
+      id TEXT PRIMARY KEY,
+      bill_id TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      product_id TEXT,
+      product_name TEXT NOT NULL,
+      variant_id TEXT,
+      variant_name TEXT,
+      -- The chosen modifiers as a JSON list: group/option ids and names and
+      -- the delta, frozen with the line.
+      modifiers TEXT NOT NULL DEFAULT '[]',
+      unit_price INTEGER NOT NULL,
+      base_price INTEGER,
+      price_source TEXT,
+      tax_rate_bp INTEGER,
+      unit_cost INTEGER,
+      quantity INTEGER NOT NULL,
+      note TEXT,
+      custom INTEGER NOT NULL DEFAULT 0,
+      category_id TEXT,
+      category_name TEXT,
+      brand_id TEXT,
+      discount TEXT,
+      line_discount_id TEXT,
+      line_discount_name TEXT,
+      line_discount_authorized_by_id TEXT,
+      line_discount_authorized_by_name TEXT,
+      -- Set once, by the dispatch that sent it to the kitchen. A dispatched
+      -- line is never edited or removed again.
+      dispatch_id TEXT,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE
+    )''',
+    'CREATE INDEX IF NOT EXISTS idx_bill_lines_bill ON bill_lines(bill_id, seq)',
+    '''CREATE TABLE IF NOT EXISTS kitchen_dispatches (
+      id TEXT PRIMARY KEY,
+      bill_id TEXT NOT NULL,
+      -- queued -> preparing -> ready -> served; cancelled with its bill.
+      status TEXT NOT NULL,
+      occurred_at INTEGER NOT NULL,
+      status_changed_at INTEGER NOT NULL,
+      employee_id TEXT,
+      employee_name TEXT NOT NULL,
+      pos_session_id TEXT,
+      outlet_id TEXT,
+      -- device: this till sent it and owes its stock effects. server: it came
+      -- with a claimed bill; its stock is already on the server's ledger.
+      origin TEXT NOT NULL DEFAULT 'device',
+      -- For a server dispatch, the batch exactly as the server accepted it:
+      -- reporting its kitchen progress repeats it unchanged (JSON).
+      payload TEXT,
+      FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE
+    )''',
+    'CREATE INDEX IF NOT EXISTS idx_kitchen_dispatches_bill ON kitchen_dispatches(bill_id)',
+    // One seating at one table. On an activated till it is opened and closed
+    // online; the demo keeps it locally.
+    '''CREATE TABLE IF NOT EXISTS table_sessions (
+      id TEXT PRIMARY KEY,
+      table_id TEXT NOT NULL,
+      table_name TEXT NOT NULL,
+      outlet_id TEXT,
+      guest_count INTEGER,
+      opened_at INTEGER NOT NULL,
+      opened_by_name TEXT,
+      closed_at INTEGER
+    )''',
+    // The outlet's last fetched board of open bills and seatings (GET
+    // /till/bills), replaced whole on every fetch. A read cache only: it
+    // never makes a bill editable here.
+    '''CREATE TABLE IF NOT EXISTS _bill_board (
+      outlet_id TEXT PRIMARY KEY,
+      payload TEXT NOT NULL,
+      fetched_at INTEGER NOT NULL
+    )''',
+  ];
+
+  /// Columns v33 adds to tables that already exist.
+  static const _f4Columns = <String, Map<String, String>>{
+    // When the entry was last re-queued. The stock-count barrier orders by it:
+    // a bill cancelled after a count must reach the server after the count.
+    '_outbox': {'last_queued_at': 'INTEGER'},
+    // Which dispatch or cancellation a movement belongs to. Such a movement
+    // travels inside that row's push, never on its own.
+    'stock_movements': {'source_kind': 'TEXT', 'source_id': 'TEXT'},
+    'orders': {'bill_id': 'TEXT'},
+    'order_items': {'bill_line_id': 'TEXT'},
+    // Whether the branch runs saved bills, pulled with the rest of the
+    // outlet's settings. Legacy until the owner switches it on.
+    'outlet_settings': {'bill_model': "TEXT NOT NULL DEFAULT 'legacy'"},
+  };
 
   static const _tillStateDdl = '''
     CREATE TABLE IF NOT EXISTS _till_sessions (
@@ -2260,6 +2615,7 @@ class AppDatabase {
     CREATE TABLE IF NOT EXISTS _till_open_requests (
       register_id TEXT PRIMARY KEY, payload TEXT NOT NULL)
   ''';
+
   /// Server receipts this device has read, keyed by (receipt, VIEWER).
   ///
   /// The viewer is part of the key because the scope of what may be read is a
@@ -3202,12 +3558,19 @@ class AppDatabase {
     }
     final db = await this.db;
     final batch = db.batch();
+    // Children before parents: PRAGMA foreign_keys is on.
+    batch.delete('bill_lines');
+    batch.delete('kitchen_dispatches');
+    batch.delete('bills');
+    batch.delete('table_sessions');
     batch.delete('order_items');
     batch.delete('orders');
     batch.delete('stock_movements');
     batch.delete('product_variants');
     batch.delete('products');
+    batch.delete('brands');
     batch.delete('categories');
+    batch.delete('customers');
     batch.delete('tables');
     batch.delete('employees');
     batch.delete('shifts');

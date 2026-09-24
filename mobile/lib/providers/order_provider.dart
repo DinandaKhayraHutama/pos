@@ -1,18 +1,26 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sqflite/sqflite.dart' show DatabaseExecutor;
 
 import '../core/auth/permissions.dart';
+import '../core/pricing/pricing.dart';
 import '../data/models/enums.dart';
 import '../data/models/order.dart';
 import '../data/models/table.dart';
 import '../data/repositories/order_repository.dart';
 import '../data/repositories/remote_order_repository.dart';
 import '../data/device/till_coordinator.dart';
+import '../data/repositories/sales_config_repository.dart';
 import '../data/repositories/table_repository.dart';
+import '../data/repositories/bill_repository.dart';
+import 'bill_provider.dart';
+import 'device_sync_provider.dart';
 import 'cart_provider.dart';
 import 'catalog_provider.dart';
 import 'settings_provider.dart';
 import 'shift_provider.dart';
 import 'outlet_provider.dart';
+import 'pricing_provider.dart';
+import 'report_provider.dart';
 
 /// Tracks the most recently created order so we can navigate to its receipt.
 final lastPlacedOrderProvider = StateProvider<Order?>((ref) => null);
@@ -62,9 +70,7 @@ class OrdersNotifier
       final local = await OrderRepository.instance.recent(
         status: status,
         cashierId: seesEverything ? null : settings.employeeId,
-        since: seesEverything
-            ? null
-            : DateTime(now.year, now.month, now.day),
+        since: seesEverything ? null : DateTime(now.year, now.month, now.day),
         outletId: outletId,
       );
       // Local wins on a shared id: a status this device changed is newer than
@@ -169,6 +175,9 @@ Future<Order> placeOrderFromCart({
   required T Function<T>(ProviderListenable<T>) read,
   required void Function(ProviderOrFamily) invalidate,
   PaymentMethod paymentMethod = PaymentMethod.cash,
+  String? paymentMethodId,
+  String? paymentMethodName,
+  String? paymentReference,
   int? amountPaid,
 }) async {
   final cart = read(cartProvider);
@@ -183,57 +192,51 @@ Future<Order> placeOrderFromCart({
   // stale selection.
   final table = settings.tableServiceEnabled ? cart.table : null;
   final outlet = read(activeOutletProvider).valueOrNull;
+  // One quote, read here and nowhere else: the figures on the screen the
+  // cashier confirmed, the ones recorded, and the ones sent to the server
+  // are the same object, so they cannot disagree.
+  final context =
+      read(pricingContextProvider).valueOrNull ?? PricingContext.empty;
+  final quote = read(cartQuoteProvider);
+  final result = quote.result;
+  final approver = cart.discountAuthorizedBy;
 
-  final pb1Rate = settings.pb1Rate;
-  final serviceChargeRate = settings.serviceChargeEnabled
-      ? settings.serviceChargeRate
-      : 0.0;
-  final serviceChargeAmount = cart.serviceChargeFor(serviceChargeRate);
-  final pb1Amount = cart.pb1For(
-    pb1Rate: pb1Rate,
-    serviceChargeRate: serviceChargeRate,
-  );
-  final total = cart.totalFor(
-    pb1Rate: pb1Rate,
-    serviceChargeRate: serviceChargeRate,
-  );
-
-  final order = await OrderRepository.instance.create(
+  Future<Order> write({
+    DatabaseExecutor? within,
+    String? billId,
+    List<String>? lineIds,
+  }) => OrderRepository.instance.create(
+    within: within,
+    billId: billId,
     type: cart.type,
-    items: cart.lines
-        .map(
-          (l) => OrderItemDraft(
-            productId: l.product.id,
-            productName: l.product.name,
-            variantName: l.variant?.name,
-            // The variant delta is already in here. The line has to reprint
-            // at what the customer paid, not at today's catalogue price.
-            unitPrice: l.unitPrice,
-            unitCost: l.product.cost,
-            quantity: l.quantity,
-            note: l.note,
-            modifiers: l.modifiers
-                .map(
-                  (m) => (
-                    groupName: m.group.name,
-                    optionName: m.option.name,
-                    priceDelta: m.option.priceDelta,
-                  ),
-                )
-                .toList(),
-          ),
-        )
-        .toList(),
-    subtotal: cart.subtotal,
-    discount: cart.discountAmount,
-    tax: pb1Amount,
-    serviceChargeAmount: serviceChargeAmount,
-    pb1Rate: pb1Rate,
-    serviceChargeRate: serviceChargeRate,
-    total: total,
-    amountPaid: amountPaid ?? total,
+    items: [
+      for (var i = 0; i < cart.lines.length; i++)
+        _draftFor(
+          cart.lines[i],
+          quote.lines[i],
+          quote.isV2,
+          billLineId: lineIds?[i],
+        ),
+    ],
+    subtotal: result.subtotal,
+    discount: result.discount,
+    tax: result.tax,
+    serviceChargeAmount: result.serviceCharge,
+    // The rates snapshot, in the percent the columns have always held.
+    pb1Rate: quote.defaultTaxRateBp / 100,
+    serviceChargeRate: quote.serviceRateBp / 100,
+    total: result.total,
+    amountPaid: amountPaid ?? result.total,
     paymentMethod: paymentMethod,
-    promoName: cart.promo?.name ?? cart.discountAuthorizedBy,
+    paymentMethodId: paymentMethodId,
+    paymentMethodName: paymentMethodName,
+    paymentReference: paymentReference,
+    // A promo's name, and only a promo's. The approver of a manual discount
+    // used to be written here and printed as "Diskon (<manager>)" — a name
+    // is an audit fact, not what the discount was.
+    promoName: cart.discountSource == DiscountSource.promo
+        ? cart.promo?.name
+        : null,
     // Attributed to whoever is signed in. The fallback covers a session that
     // predates per-employee sign-in, where only the name was ever stored.
     cashierId: settings.employeeId.isEmpty ? 'cashier' : settings.employeeId,
@@ -253,8 +256,62 @@ Future<Order> placeOrderFromCart({
     tableId: table?.id,
     tableName: table?.name,
     customerName: cart.customerName,
+    customerId: cart.customerId,
     note: cart.note,
+    // A legacy order carries none of the version 2 terms: the server refuses
+    // a version 1 receipt that brings a snapshot, included tax or rounding.
+    pricingVersion: quote.isV2 ? pricingVersionV2 : null,
+    pricing: quote.pricingSnapshot,
+    taxIncluded: quote.isV2 ? result.taxIncluded : 0,
+    roundingAmount: quote.isV2 ? result.rounding : 0,
+    timezoneOffsetMinutes: merchantOffsetMinutes(),
+    salesTypeId: quote.salesType?.id,
+    salesTypeName: quote.salesType?.name,
+    servedById: cart.servedById,
+    servedByName: cart.servedByName,
+    discountId: cart.discountSource == DiscountSource.named
+        ? cart.namedDiscountId
+        : null,
+    discountName: switch (cart.discountSource) {
+      DiscountSource.named => cart.namedDiscountName,
+      DiscountSource.promo => cart.promo?.name,
+      _ => null,
+    },
+    discountAuthorizedById: cart.discountAuthorizedById,
+    discountAuthorizedByName: approver,
+    receiptHeader: context.config?.receiptHeader,
+    receiptFooter: context.config?.receiptFooter,
+    receiptLogoUrl: context.config?.receiptLogoUrl,
+    receiptStoreName: settings.storeName,
+    receiptAddress: context.config?.showAddress == false
+        ? null
+        : (outlet?.address?.isNotEmpty == true
+              ? outlet!.address
+              : settings.storeAddress),
+    // The outlet's phone comes with the device binding; a standalone till
+    // has none to print.
+    receiptPhone: context.config?.showPhone == true
+        ? TillCoordinator.current?.binding.outlet['phone'] as String?
+        : null,
   );
+
+  // Paritas F4: where saved bills run, every sale is a bill — a direct sale
+  // included. One transaction saves it, sends whatever the kitchen does not
+  // have yet (consuming that stock, once), writes the receipt naming each
+  // bill line, and closes the bill. The receipt itself consumes nothing.
+  final Order order;
+  if (read(billsEnabledProvider)) {
+    final (:draft, :lineIds) = billDraftFromCart(read: read);
+    order = await BillRepository.instance.settle(
+      draft,
+      writeReceipt: (txn, bill) =>
+          write(within: txn, billId: bill.id, lineIds: lineIds),
+    );
+    invalidateBillViews(invalidate);
+    read(deviceSyncControllerProvider)?.nudge();
+  } else {
+    order = await write();
+  }
 
   read(lastPlacedOrderProvider.notifier).state = order;
   read(cartProvider.notifier).clear();
@@ -264,6 +321,7 @@ Future<Order> placeOrderFromCart({
   // Every placed order changes revenue / count / avg + top products, so
   // refresh the dashboard unconditionally.
   invalidate(dashboardSummaryProvider);
+  invalidate(dashboardReportProvider);
   invalidate(topProductsProvider);
 
   // A cash sale just changed what should be in the drawer. Without this the
@@ -285,6 +343,53 @@ Future<Order> placeOrderFromCart({
 
   return order;
 }
+
+/// The line as the order stores it. A version 2 line carries its whole
+/// breakdown so reports and F5 split/refund read the same shares the receipt
+/// printed; a legacy line carries none — its floored shares never added up
+/// to the header, and nothing downstream may treat them as if they did.
+OrderItemDraft _draftFor(
+  CartLine line,
+  QuotedLine quoted,
+  bool v2, {
+  String? billLineId,
+}) => OrderItemDraft(
+  billLineId: billLineId,
+  productId: line.product.id,
+  productName: line.product.name,
+  variantName: line.variant?.name,
+  // The variant and modifier deltas are already in here. The line has to
+  // reprint at what the customer paid, not at today's catalogue price.
+  unitPrice: quoted.unitPrice,
+  // A saved bill's line keeps the cost it was frozen with.
+  unitCost: line.frozen?.unitCost ?? (line.custom ? null : line.product.cost),
+  quantity: line.quantity,
+  note: line.note,
+  custom: line.custom,
+  modifiers: line.modifiers
+      .map(
+        (m) => (
+          groupName: m.group.name,
+          optionName: m.option.name,
+          priceDelta: m.option.priceDelta,
+        ),
+      )
+      .toList(),
+  basePrice: v2 ? quoted.basePrice : null,
+  priceSource: v2 ? quoted.priceSource : null,
+  taxRateBp: v2 ? quoted.taxRateBp : null,
+  discountSpec: v2 ? quoted.discount?.toJson() : null,
+  lineDiscountId: v2 ? line.discountId : null,
+  lineDiscountName: v2 ? line.discountName : null,
+  lineDiscountAuthorizedById: v2 ? line.discountApprovedBy?.id : null,
+  lineDiscountAuthorizedByName: v2 ? line.discountApprovedBy?.name : null,
+  lineDiscount: v2 ? quoted.result.lineDiscount : 0,
+  billDiscountShare: v2 ? quoted.result.billDiscountShare : 0,
+  serviceShare: v2 ? quoted.result.serviceShare : 0,
+  taxAmount: v2 ? quoted.result.taxAmount : 0,
+  taxIncluded: v2 ? quoted.result.taxIncluded : 0,
+  netAmount: v2 ? quoted.result.netAmount : null,
+);
 
 // Tables ---------------------------------------------------------------------
 
@@ -400,6 +505,7 @@ final orderDetailProvider = FutureProvider.autoDispose.family<Order?, String>((
   ref,
   id,
 ) async {
-  final employee=ref.watch(settingsProvider).valueOrNull?.employeeId ?? '';
-  return await OrderRepository.instance.byId(id) ?? await RemoteOrderRepository.byId(id,employee);
+  final employee = ref.watch(settingsProvider).valueOrNull?.employeeId ?? '';
+  return await OrderRepository.instance.byId(id) ??
+      await RemoteOrderRepository.byId(id, employee);
 });

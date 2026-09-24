@@ -265,6 +265,8 @@ class StockRepository {
     int? countedQty,
     int? basisSeq,
     String? orderId,
+    String? sourceKind,
+    String? sourceId,
   }) async {
     final id = _uuid.v4();
     await txn.insert('stock_movements', {
@@ -285,11 +287,85 @@ class StockRepository {
       'basis_seq': basisSeq,
       'origin': originDevice,
       'order_id': orderId,
+      'source_kind': sourceKind,
+      'source_id': sourceId,
     });
-    if (_ledgerMode && orderId == null) {
+    // A movement that belongs to a receipt, a kitchen dispatch or a bill
+    // cancellation travels inside that row's push, committed with it on the
+    // server; queueing it on its own as well would apply it twice.
+    if (_ledgerMode && orderId == null && sourceId == null) {
       await OutboxStore.enqueueWithin(txn, StockMovementPush.entity, id);
     }
     return id;
+  }
+
+  /// Moves stock for a set of products and writes the matching ledger rows,
+  /// inside the caller's transaction.
+  ///
+  /// [quantities] is signed: negative takes stock, positive returns it.
+  /// Untracked products are skipped — they have no count to move and no
+  /// history worth writing — as is any product the device no longer holds. A
+  /// shelf is floored at zero only in the demo; an activated till records a
+  /// shortfall the server has to know about. Returns the movement written per
+  /// product, which is what a kitchen dispatch sends up with itself.
+  ///
+  /// Shared by checkout, void/refund and the Fase 4 dispatch and
+  /// cancellation, so the four cannot disagree about what "consume" means.
+  static Future<void> moveWithin(
+    DatabaseExecutor txn, {
+    required String? outletId,
+    required Map<String, int> quantities,
+    required StockReason reason,
+    required String employeeId,
+    required String employeeName,
+    String? note,
+    String? orderId,
+    String? sourceKind,
+    String? sourceId,
+  }) async {
+    if (quantities.isEmpty) return;
+    // A sale that cannot say which branch it came from must not move any
+    // shelf: guessing an outlet here would draw stock down in a shop that
+    // never served the customer.
+    if (outletId == null) return;
+    final movements = <String, ({String name, int delta, int balanceAfter})>{};
+
+    for (final e in quantities.entries) {
+      final rows = await txn.query(
+        'products',
+        columns: ['name'],
+        where: 'id = ?',
+        whereArgs: [e.key],
+        limit: 1,
+      );
+      if (rows.isEmpty) continue;
+      final current = await countAt(txn, outletId: outletId, productId: e.key);
+      if (current == null) continue; // untracked
+
+      final next = landing(current, e.value);
+      if (next == current) continue;
+      await setCountAt(txn, outletId: outletId, productId: e.key, stock: next);
+      movements[e.key] = (
+        name: rows.first['name'] as String,
+        // The clamped delta, not the requested one: the ledger records what
+        // happened to the shelf, not what was asked for.
+        delta: next - current,
+        balanceAfter: next,
+      );
+    }
+
+    await recordWithin(
+      txn,
+      outletId: outletId,
+      movements: movements,
+      reason: reason,
+      employeeId: employeeId,
+      employeeName: employeeName,
+      note: note,
+      orderId: orderId,
+      sourceKind: sourceKind,
+      sourceId: sourceId,
+    );
   }
 
   /// Records movements written by another transaction (a sale, a void).
@@ -307,6 +383,8 @@ class StockRepository {
     required String employeeName,
     String? note,
     String? orderId,
+    String? sourceKind,
+    String? sourceId,
   }) async {
     for (final e in movements.entries) {
       if (e.value.delta == 0) continue;
@@ -322,6 +400,8 @@ class StockRepository {
         employeeName: employeeName,
         note: note,
         orderId: orderId,
+        sourceKind: sourceKind,
+        sourceId: sourceId,
       );
     }
   }

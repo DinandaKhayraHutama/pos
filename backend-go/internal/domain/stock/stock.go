@@ -427,6 +427,128 @@ func (s *Service) RecordFromDevice(ctx context.Context, w *syncfeed.Writer, b de
 	return applied[0], nil
 }
 
+// RecordBatchFromDevice applies every movement a till committed with one
+// receipt, dispatch or bill cancellation, bound to that source by refType and
+// refID, in ONE application of the ledger.
+//
+// Calling RecordFromDevice in a loop is not equivalent. Each call locks one
+// projection row and then the branch's counters, so a two-product sale locks
+// row A, the counters, then row B — and a second till selling B then A in the
+// same moment holds B and waits for the counters. Here every new movement goes
+// through a single apply, which locks all its projection rows in (outlet,
+// product) order before it touches a counter.
+//
+// Exact retries return what was recorded the first time, and a movement id
+// already bound to a different source — or pushed on its own — is refused as a
+// duplicate. The result is aligned with ins.
+func (s *Service) RecordBatchFromDevice(ctx context.Context, w *syncfeed.Writer, b devices.Binding, ins []DeviceMovement, refType, refID string) ([]Applied, error) {
+	out := make([]Applied, len(ins))
+	if len(ins) == 0 {
+		return out, nil
+	}
+	canonical := make([][]byte, len(ins))
+	seen := map[string]bool{}
+	for i := range ins {
+		in := &ins[i]
+		in.ID = strings.ToLower(in.ID)
+		in.ProductID = strings.ToLower(in.ProductID)
+		if in.EmployeeID != nil {
+			lowered := strings.ToLower(*in.EmployeeID)
+			in.EmployeeID = &lowered
+		}
+		if err := validateDevice(*in); err != nil {
+			return nil, err
+		}
+		if seen[in.ID] {
+			return nil, reject("schema_rejected", "A movement appears twice.")
+		}
+		seen[in.ID] = true
+		canonical[i] = in.canonical()
+	}
+
+	// Concurrent retries of the same source queue on the same ids; taking the
+	// advisory locks in id order keeps two overlapping batches from waiting on
+	// each other in opposite orders.
+	ids := make([]string, 0, len(ins))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		if _, err := w.Tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 72051))`, id); err != nil {
+			return nil, err
+		}
+	}
+
+	type stored struct {
+		device, refType, refID *string
+		payload                []byte
+		applied                Applied
+	}
+	existing := map[string]stored{}
+	rows, err := w.Tx.Query(ctx, `
+		SELECT id::text, device_id::text, ref_type, ref_id::text, payload, delta_qty, balance_after, applied_stock_seq, sync_seq
+		FROM stock_movements WHERE tenant_id = $1 AND id = ANY($2::text[]::uuid[])`, b.Tenant.ID, ids)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var id string
+		var st stored
+		if err := rows.Scan(&id, &st.device, &st.refType, &st.refID, &st.payload,
+			&st.applied.Delta, &st.applied.BalanceAfter, &st.applied.StockSeq, &st.applied.SyncSeq); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		st.applied.ID = id
+		existing[id] = st
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	deviceID := b.Device.ID
+	var fresh []movement
+	var freshAt []int
+	for i, in := range ins {
+		if st, ok := existing[in.ID]; ok {
+			if st.device == nil || *st.device != b.Device.ID {
+				return nil, reject("duplicate", "Movement belongs to a different device.")
+			}
+			if st.refType == nil || st.refID == nil || *st.refType != refType || *st.refID != refID {
+				return nil, reject("duplicate", "Movement belongs to another operation.")
+			}
+			var previous DeviceMovement
+			if json.Unmarshal(st.payload, &previous) != nil || string(previous.canonical()) != string(canonical[i]) {
+				return nil, reject("duplicate", "This identifier already names a different movement.")
+			}
+			out[i] = st.applied
+			continue
+		}
+		rt, ri := refType, refID
+		fresh = append(fresh, movement{
+			id: in.ID, outletID: b.Outlet.ID, productID: in.ProductID, reason: in.Reason,
+			delta: in.DeltaQty, counted: in.CountedQty, basis: in.BasisSeq,
+			occurredAtMs: in.OccurredAtMs, source: SourceDevice, deviceID: &deviceID,
+			employeeName: in.EmployeeName, productName: strings.TrimSpace(in.ProductName),
+			note: in.Note, payload: canonical[i], refType: &rt, refID: &ri,
+		})
+		freshAt = append(freshAt, i)
+	}
+	if len(fresh) == 0 {
+		return out, nil
+	}
+	applied, err := apply(ctx, w, b.Tenant.ID, fresh)
+	if err != nil {
+		return nil, err
+	}
+	for n, i := range freshAt {
+		out[i] = applied[n]
+	}
+	return out, nil
+}
+
 // Actor is who did a Backoffice write.
 type Actor struct {
 	EmployeeID string

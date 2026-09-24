@@ -60,7 +60,8 @@ class _OrdersPageState extends ConsumerState<OrdersPage> {
   /// so the list grows before the person reaches the bottom of it.
   void _onScroll() {
     if (!_scroll.hasClients) return;
-    final remaining = _scroll.position.maxScrollExtent - _scroll.position.pixels;
+    final remaining =
+        _scroll.position.maxScrollExtent - _scroll.position.pixels;
     if (remaining < 600) {
       ref.read(orderHistoryProvider.notifier).loadMore();
     }
@@ -90,9 +91,10 @@ class _OrdersPageState extends ConsumerState<OrdersPage> {
     final history = ref.watch(orderHistoryProvider);
     final filter = ref.watch(orderHistoryFilterProvider);
     final seesEverything =
-        ref.watch(settingsProvider).valueOrNull?.can(
-          AppPermission.viewAllOrders,
-        ) ??
+        ref
+            .watch(settingsProvider)
+            .valueOrNull
+            ?.can(AppPermission.viewAllOrders) ??
         true;
 
     return Scaffold(
@@ -166,8 +168,9 @@ class _HistoryList extends StatelessWidget {
     // user's textScaler, and a grid needs a fixed extent it would clip at.
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns =
-            constraints.maxWidth >= AppDimensions.tabletWidth ? 2 : 1;
+        final columns = constraints.maxWidth >= AppDimensions.tabletWidth
+            ? 2
+            : 1;
         // One row even when there is nothing, so the empty state has somewhere
         // to render and the filters above it stay on screen — an empty list
         // that also loses its filters gives nobody a way to widen the search.
@@ -565,6 +568,7 @@ class _OrderTile extends StatelessWidget {
     OrderType.dineIn => Icons.table_restaurant_rounded,
     OrderType.takeaway => Icons.shopping_bag_rounded,
     OrderType.delivery => Icons.two_wheeler_rounded,
+    OrderType.custom => Icons.receipt_long_rounded,
   };
 
   String _subtitle(Order order, AppLocalizations l10n) {
@@ -572,6 +576,7 @@ class _OrderTile extends StatelessWidget {
       OrderType.dineIn => l10n.posDineIn,
       OrderType.takeaway => l10n.posTakeaway,
       OrderType.delivery => l10n.posDelivery,
+      OrderType.custom => order.salesTypeName ?? l10n.posSalesTypeCustom,
     };
     final customer = order.customerName?.isNotEmpty == true
         ? ' · ${order.customerName}'

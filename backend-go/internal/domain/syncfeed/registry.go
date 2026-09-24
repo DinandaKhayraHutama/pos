@@ -34,6 +34,16 @@ type column struct {
 func col(name string) column     { return column{wire: name, expr: name} }
 func uuidCol(name string) column { return column{wire: name, expr: name + "::text"} }
 
+// listCol publishes an array column as ONE comma-separated string. The till
+// applies pulled rows generically, straight into SQLite columns, and SQLite
+// has no array type; a JSON array there would fail the whole page. Every list
+// published this way holds permission names or uuids, neither of which can
+// contain a comma. NULL stays null (on outlet_settings.sales_type_ids it means
+// "every sales type"); an empty array is the empty string.
+func listCol(name string) column {
+	return column{wire: name, expr: "array_to_string(" + name + "::text[], ',')"}
+}
+
 // renamed publishes a column under a different wire name.
 func renamed(wireName, name string) column { return column{wire: wireName, expr: name} }
 
@@ -54,8 +64,18 @@ type Entity struct {
 	Apply     ApplyMode
 	// Push says tills also write this feed. Only the stock ledger does; the
 	// projection it drives never travels upward.
-	Push    bool
-	columns []column
+	Push bool
+	// Singleton says a scope holds at most one row: one business_settings per
+	// merchant, one outlet_settings per branch. Volume fixtures write exactly
+	// one, and the index-only-scan gates skip it — a single row is a table the
+	// planner is right to read directly, and no fixture of one merchant can
+	// make it prefer the index the fleet-wide table needs.
+	Singleton bool
+	// SystemRows is how many rows every merchant starts with, seeded by a
+	// trigger on tenants (the three system roles, sales types and payment
+	// methods). A fixture's row count is n plus these.
+	SystemRows int
+	columns    []column
 }
 
 // selectJSON builds the row payload.
@@ -88,6 +108,19 @@ func (e Entity) selectJSON() string {
 // The order is the contract; do not sort this slice.
 var entities = []Entity{
 	{
+		// Roles before the staff who hold them (Fase 3). A system role
+		// publishes an empty permission list on purpose: the till takes a
+		// system role's permissions from its own table, so owner stays derived
+		// on the device exactly as it is here. A custom role lists its names;
+		// a till drops any name it does not know rather than guessing.
+		Name: "roles", Scope: ScopeCompany, Table: "roles",
+		Key: []string{"id"}, Apply: ApplyUpsert, SystemRows: 3,
+		columns: []column{
+			uuidCol("id"), col("name"), col("system_key"), listCol("permissions"),
+			col("pos_access"), col("backoffice_access"), col("sort_order"),
+		},
+	},
+	{
 		// Staff first: a till has to know who may sign in before anything else
 		// matters, and nothing in the catalogue depends on it either way.
 		//
@@ -96,9 +129,24 @@ var entities = []Entity{
 		// would put it somewhere far easier to reach than the server.
 		// `pin_hash` travels because offline sign-in genuinely needs it, and it
 		// is a hash the device verifies locally, never a plaintext PIN.
+		//
+		// `phone` (Fase 3) is absent for the same reason as email: contact
+		// details are the Backoffice's business, not every tablet's.
 		Name: "employees", Scope: ScopeCompany, Table: "employees",
-		Key: []string{"id"}, Apply: ApplyUpsert,
-		columns: []column{uuidCol("id"), col("name"), col("pin_hash"), col("role"), col("active"), col("sort_order")},
+		Key: []string{"id"}, DependsOn: []string{"roles"}, Apply: ApplyUpsert,
+		columns: []column{uuidCol("id"), col("name"), col("pin_hash"), col("role"), uuidCol("role_id"), col("active"), col("sort_order")},
+	},
+	{
+		// The merchant's defaults (Fase 3). One row per business, and only
+		// once the owner has saved it: its absence is how a till knows the
+		// business was never configured and keeps its own values.
+		Name: "business_settings", Scope: ScopeCompany, Table: "business_settings",
+		Key: []string{"id"}, Apply: ApplyUpsert, Singleton: true,
+		columns: []column{
+			{wire: "id", expr: "tenant_id::text"}, col("tax_rate_bp"), col("tax_mode"),
+			col("service_enabled"), col("service_rate_bp"), col("service_taxable"),
+			col("rounding_unit"), col("rounding_mode"), col("receipt_logo_url"), col("receipt_footer"),
+		},
 	},
 	{
 		// Branch structure is pulled now, not just handed over once at
@@ -117,17 +165,115 @@ var entities = []Entity{
 		},
 	},
 	{
+		// Fase 3 masters. Company-wide: the three system sales types and
+		// payment methods are seeded for every merchant by trigger, so a till
+		// always has something to show even before anyone opens the settings.
+		Name: "sales_types", Scope: ScopeCompany, Table: "sales_types",
+		Key: []string{"id"}, Apply: ApplyUpsert, SystemRows: 3,
+		columns: []column{
+			uuidCol("id"), col("name"), col("system_key"), col("uses_table"), col("active"), col("sort_order"),
+		},
+	},
+	{
+		Name: "payment_methods", Scope: ScopeCompany, Table: "payment_methods",
+		Key: []string{"id"}, Apply: ApplyUpsert, SystemRows: 3,
+		columns: []column{
+			uuidCol("id"), col("name"), col("kind"), col("system_key"), col("requires_reference"),
+			col("active"), col("sort_order"),
+		},
+	},
+	{
+		Name: "payment_groups", Scope: ScopeCompany, Table: "payment_groups",
+		Key: []string{"id"}, DependsOn: []string{"payment_methods"}, Apply: ApplyUpsert,
+		columns: []column{
+			uuidCol("id"), col("name"), listCol("method_ids"), col("active"), col("sort_order"),
+		},
+	},
+	{
+		Name: "discounts", Scope: ScopeCompany, Table: "discounts",
+		Key: []string{"id"}, Apply: ApplyUpsert,
+		columns: []column{
+			uuidCol("id"), col("name"), col("scope"), col("kind"), col("value"),
+			col("requires_authorization"), col("active"), col("sort_order"),
+		},
+	},
+	{
+		// One branch's overrides (Fase 3), keyed by the outlet like
+		// table_status is keyed by its table. Outlet-scoped: Bintaro's service
+		// charge is no business of the tablet in Kemang.
+		Name: "outlet_settings", Scope: ScopeOutlet, Table: "outlet_settings",
+		Key:       []string{"outlet_id"},
+		DependsOn: []string{"outlets", "sales_types", "payment_groups"}, Apply: ApplyUpsert, Singleton: true,
+		columns: []column{
+			uuidCol("outlet_id"), col("tax_rate_bp"), col("tax_mode"), col("service_enabled"),
+			col("service_rate_bp"), col("service_taxable"), col("rounding_unit"), col("rounding_mode"),
+			col("receipt_header"), col("receipt_footer"), col("show_address"), col("show_phone"),
+			col("track_server"), uuidCol("default_sales_type_id"), listCol("sales_type_ids"),
+			uuidCol("payment_group_id"), col("pricing_model"), col("bill_model"),
+		},
+	},
+	{
 		Name: "categories", Scope: ScopeCompany, Table: "categories",
 		Key: []string{"id"}, Apply: ApplyUpsert,
 		columns: []column{uuidCol("id"), col("name"), col("icon_key"), col("sort_order"), col("is_popular")},
 	},
 	{
+		// A flat label, company-wide like categories — brands.go describes why
+		// there is no outlet scoping. Pulled ahead of products because a brand
+		// id on a product row has to already exist on the device: PRAGMA
+		// foreign_keys is ON there, though today the till table itself carries
+		// no local FK on brand_id (it is nullable and a product may arrive
+		// before its brand on a brand-new device's very first page); the
+		// ordering is kept anyway so a future FK is a device-side change, not
+		// a server-side one.
+		Name: "brands", Scope: ScopeCompany, Table: "brands",
+		Key: []string{"id"}, Apply: ApplyUpsert,
+		columns: []column{uuidCol("id"), col("name"), col("sort_order")},
+	},
+	{
 		Name: "products", Scope: ScopeCompany, Table: "products",
-		Key: []string{"id"}, DependsOn: []string{"categories"}, Apply: ApplyUpsert,
+		Key: []string{"id"}, DependsOn: []string{"categories", "brands"}, Apply: ApplyUpsert,
 		columns: []column{
 			uuidCol("id"), uuidCol("category_id"), col("name"), col("price"), col("cost"),
 			col("sku"), col("tax_rate"), col("description"), col("image_url"), col("icon_key"),
-			col("available"), col("is_popular"), col("sort_order"),
+			col("available"), col("is_popular"), col("sort_order"), uuidCol("brand_id"),
+		},
+	},
+	{
+		// A product's price for one sales type, business-wide (Fase 3).
+		// Variant and modifier deltas are added to it exactly once, as they
+		// always were to products.price.
+		Name: "product_sales_type_prices", Scope: ScopeCompany, Table: "product_sales_type_prices",
+		Key:       []string{"product_id", "sales_type_id"},
+		DependsOn: []string{"products", "sales_types"}, Apply: ApplyUpsert,
+		columns: []column{uuidCol("product_id"), uuidCol("sales_type_id"), col("price")},
+	},
+	{
+		// One branch's override of the above, which wins over it.
+		Name: "outlet_product_sales_type_prices", Scope: ScopeOutlet, Table: "outlet_product_sales_type_prices",
+		Key:       []string{"product_id", "sales_type_id"},
+		DependsOn: []string{"outlets", "products", "sales_types"}, Apply: ApplyUpsert,
+		columns: []column{uuidCol("outlet_id"), uuidCol("product_id"), uuidCol("sales_type_id"), col("price")},
+	},
+	{
+		// Company-scoped like brands, but the one feed here besides
+		// stock_movements that a till also PUSHES to: a cashier meeting a
+		// new customer types the name in at the counter, offline included,
+		// and the device mints the id itself. See migrations/…_customers.sql
+		// and ingest.go's handling of this entity for why the push side is
+		// insert-only rather than an ordinary revisioned update — the wire
+		// protocol has no base-revision concept two independent writers
+		// (a till and the Backoffice) could race to bump correctly.
+		//
+		// merged_into_id and the phone/email normalisation columns are
+		// deliberately absent from columns: a till has no use for merge
+		// bookkeeping, only for the tombstone a losing row gets, which it
+		// already knows how to apply like any other retirement.
+		Name: "customers", Scope: ScopeCompany, Table: "customers",
+		Key: []string{"id"}, Apply: ApplyUpsert, Push: true,
+		columns: []column{
+			uuidCol("id"), col("name"), col("phone"), col("email"), col("address"),
+			col("note"), col("active"),
 		},
 	},
 	{

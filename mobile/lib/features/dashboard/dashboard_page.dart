@@ -16,6 +16,7 @@ import '../../data/models/product.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../providers/catalog_provider.dart';
 import '../../providers/order_provider.dart';
+import '../../providers/report_provider.dart';
 import '../../providers/outlet_provider.dart';
 import '../../providers/settings_provider.dart';
 
@@ -27,7 +28,7 @@ class DashboardPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
     final settings = ref.watch(settingsProvider).valueOrNull;
-    final summary = ref.watch(dashboardSummaryProvider);
+    final summary = ref.watch(dashboardReportProvider);
     final topProducts = ref.watch(topProductsProvider);
     final orders = ref.watch(ordersProvider(null));
 
@@ -47,7 +48,7 @@ class DashboardPage extends ConsumerWidget {
             ),
           IconButton(
             onPressed: () {
-              ref.invalidate(dashboardSummaryProvider);
+              ref.invalidate(dashboardReportProvider);
               ref.invalidate(topProductsProvider);
               ref.invalidate(ordersProvider);
             },
@@ -57,7 +58,7 @@ class DashboardPage extends ConsumerWidget {
       ),
       body: RefreshIndicator(
         onRefresh: () async {
-          ref.invalidate(dashboardSummaryProvider);
+          ref.invalidate(dashboardReportProvider);
           ref.invalidate(topProductsProvider);
           ref.invalidate(ordersProvider);
         },
@@ -67,11 +68,11 @@ class DashboardPage extends ConsumerWidget {
             _HeaderCard(
               greeting: l10n.dashboardGreeting(settings?.cashierName ?? ''),
               // The chain, then the branch. Without the branch this card reports
-        // one shop's takings under the whole business's name.
-        storeName: [
-          settings?.storeName ?? '',
-          ref.watch(activeOutletProvider).valueOrNull?.name,
-        ].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
+              // one shop's takings under the whole business's name.
+              storeName: [
+                settings?.storeName ?? '',
+                ref.watch(activeOutletProvider).valueOrNull?.name,
+              ].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
             ),
             const SizedBox(height: AppDimensions.space14),
             summary.when<Widget>(
@@ -133,45 +134,102 @@ class DashboardPage extends ConsumerWidget {
     );
   }
 
+  /// Today's figures, from the outlet's rollup when this till is connected and
+  /// from this device's own orders when it is not.
+  ///
+  /// The two are never mixed and the source is always named below the tiles: a
+  /// device total and an outlet total look identical on screen, and a manager
+  /// comparing two tablets would otherwise be comparing two questions.
   Widget _statsRow(
     BuildContext context,
     AppLocalizations l10n,
-    ({int revenue, int count, int itemsSold}) data,
+    ReportView view,
   ) {
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            flex: 2,
-            child: _BigStat(
-              label: l10n.dashboardRevenue,
-              value: MoneyFormatter.format(data.revenue),
-              icon: Icons.payments_rounded,
-            ),
-          ),
-          const SizedBox(width: AppDimensions.space10),
-          Expanded(
-            child: Column(
-              children: [
-                _SmallStat(
-                  label: l10n.dashboardOrders,
-                  value: '${data.count}',
-                  icon: Icons.receipt_long_rounded,
+    final report = view.presentable;
+    if (report == null) {
+      return GlassCard.solid(
+        child: Text(
+          view.source == ReportSource.forbidden
+              ? l10n.reportNotPermitted
+              : l10n.reportSourceUnavailable,
+          style: TextStyle(color: context.design.textMedium, fontSize: 12),
+        ),
+      );
+    }
+    final previous = view.previous;
+    String delta(int current, int? before) {
+      // A zero base is not a 100% rise: there is nothing to compare against.
+      if (before == null || before == 0) return l10n.reportNoComparison;
+      final change = (current - before) * 100 / before;
+      return '${change < 0 ? '' : '+'}${change.toStringAsFixed(1)}%';
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                flex: 2,
+                child: _BigStat(
+                  // Net sales, not takings: PB1 and service charge are
+                  // collected on somebody else's behalf, and a headline that
+                  // counts them flatters every day by whatever the tariff is.
+                  label: l10n.reportNetSales,
+                  value: MoneyFormatter.format(report.netSales),
+                  detail: previous == null
+                      ? null
+                      : delta(report.netSales, previous.netSales),
+                  icon: Icons.payments_rounded,
                 ),
-                const SizedBox(height: AppDimensions.space10),
-                _SmallStat(
-                  label: l10n.dashboardAvgOrder,
-                  value: MoneyFormatter.compact(
-                    data.count > 0 ? data.revenue ~/ data.count : 0,
-                  ),
-                  icon: Icons.trending_up_rounded,
+              ),
+              const SizedBox(width: AppDimensions.space10),
+              Expanded(
+                child: Column(
+                  children: [
+                    _SmallStat(
+                      label: l10n.dashboardOrders,
+                      value: '${report.orderCount}',
+                      icon: Icons.receipt_long_rounded,
+                    ),
+                    const SizedBox(height: AppDimensions.space10),
+                    _SmallStat(
+                      label: l10n.dashboardAvgOrder,
+                      value: MoneyFormatter.compact(report.averageOrder),
+                      icon: Icons.trending_up_rounded,
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: AppDimensions.space8),
+        Text(
+          [
+            switch (view.source) {
+              ReportSource.server => l10n.reportSourceServer(
+                view.server?.computedAt == null
+                    ? '—'
+                    : DateFormatter.dateTime(view.server!.computedAt!),
+              ),
+              ReportSource.cache => l10n.reportSourceCache(
+                view.cachedAt == null
+                    ? '—'
+                    : DateFormatter.dateTime(view.cachedAt!),
+              ),
+              ReportSource.unavailable => l10n.reportSourceUnavailable,
+              ReportSource.local => l10n.reportSourceLocal,
+              ReportSource.forbidden => l10n.reportNotPermitted,
+            },
+            if (view.unsyncedCount > 0)
+              l10n.reportUnsyncedNotice(view.unsyncedCount),
+          ].join(' '),
+          style: TextStyle(color: context.design.textMedium, fontSize: 11),
+        ),
+      ],
     );
   }
 
@@ -446,10 +504,15 @@ class _BigStat extends StatelessWidget {
     required this.label,
     required this.value,
     required this.icon,
+    this.detail,
   });
   final String label;
   final String value;
   final IconData icon;
+
+  /// A second line under the figure — the movement against the comparison
+  /// period. Null draws nothing rather than an empty row.
+  final String? detail;
 
   @override
   Widget build(BuildContext context) {
@@ -493,6 +556,15 @@ class _BigStat extends StatelessWidget {
                   ),
                 ),
               ),
+              if (detail != null) ...[
+                const SizedBox(height: AppDimensions.space2),
+                Text(
+                  detail!,
+                  style: TextStyle(color: design.textLow, fontSize: 11),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ],
           ),
         ),

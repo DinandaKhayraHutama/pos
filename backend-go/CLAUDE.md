@@ -8,13 +8,16 @@ taught lives in the invariants below and in `../plan.md`.
 
 **Current work (2026-09-22): the MokaPOS feature-parity roadmap has started,
 and its numbering is its own.** `../docs/RENCANA_PARITAS_FITUR_MOKAPOS.md` runs
-F0 → F10; **its Fase 0 is done on the code and on every automated gate** (see
-`../docs/FASE_0_VERIFICATION.md` for the evidence and for the two things that
-still need a machine with Visual Studio). Do not confuse it with the original
-Fase 0–9 below: that roadmap is finished, and the two numbering schemes overlap.
+F0 → F10; **its Fase 0 and Fase 1 are done on the code and on every automated
+gate that could be run** (see `../docs/FASE_0_VERIFICATION.md` and
+`../docs/FASE_1_VERIFICATION.md` for the evidence and for what still needs a
+machine with Visual Studio). Do not confuse it with the original Fase 0–9
+below: that roadmap is finished, and the two numbering schemes overlap.
 What paritas F0 added here is till recovery — controlled takeover, quarantine of
 a late sale, and a manager's decision with an audit trail. Its invariants are in
-"Till recovery (Fase 0 paritas)" further down.
+"Till recovery (Fase 0 paritas)" further down. What paritas F1 added is the
+sales waterfall, the read-only transaction and shift screens, and two report
+endpoints for the till; see "Reporting F1 (paritas)".
 
 **Fase 0–9 of the original roadmap are done; Fase 10 was postponed by the
 product owner. Fase 9.5 was a local stabilisation pass** — the platform panel refused
@@ -79,6 +82,8 @@ go run ./cmd/justclick worker              # River: partitions, stock reconcile,
 go run ./scripts/verify-reports            # Fase 7 gate: 30-day seed, rollup == raw, < 200 ms, exports
 go run ./scripts/verify-platform           # Fase 8: TOTP, onboarding, limits, modules, impersonation, suspension
 go run ./scripts/verify-recovery           # Fase 0 paritas: the manager's takeover and late-sale path, through the browser
+go run ./scripts/verify-history            # Fase 1 paritas: till history filters, the two report endpoints, transactions/shifts screens
+go run ./cmd/justclick diagnostics reports --tenant …   # read-only: receipts whose money does not close
 go generate ./api ./internal/store         # pinned OpenAPI + SQL generators
 go run ./scripts/verify-sync-load          # Fase 2A gate: disposable 2000-device k6 fleet
 docker compose --profile observability up -d   # Prometheus, Grafana, exporters
@@ -602,11 +607,11 @@ Platform admin (Fase 8), reporting (Fase 7) and the stock ledger (Fase 5) are
 built; each has its section below. Not built for the platform panel: QR codes at
 TOTP enrolment (the secret is typed), admin management in the panel (CLI only),
 an IP allow-list for `/platform` at Caddy, a default-tariff seed at onboarding
-(no settings table exists yet), and module switches that reach the till's feeds. `POST /sync/push`, partitioned order/details, UUID reservations, durable
+(`business_settings` exists since Fase 3 but is written only when the owner saves), and module switches that reach the till's feeds. `POST /sync/push`, partitioned order/details, UUID reservations, durable
 ingest audit and River maintenance are implemented, and the Flutter v2 client
 (Fase 4) consumes them: batched push with per-row results, a local dead-letter
 table, the `/sync/changes` fast path and `X-Schema-Version` on every sync call.
-The till pulls all 16 current feeds, including modifier joins, promos and
+The till pulls all 27 current feeds (18 before Fase 3), including brands, customers, modifier joins, promos and
 `promo_outlets`, stock and floor-plan projections. Local schema v27 stores
 promo outlet scoping and preserves unsent table events across restarts.
 
@@ -994,6 +999,187 @@ The worker runs it through `jobs.Reports`, the Backoffice through
   `routes_test.go` now walks the router for them.
 
 `docs/PHASE_7_VERIFICATION.md` records what was checked and what was not.
+
+## Reporting F1 (paritas) — what must stay true
+
+Migration `20260922000022_reporting_f1` is additive; `internal/domain/history`
+is new and read-only; `internal/httpapi/v2/reports.go` serves the till. See
+`../docs/FASE_1_VERIFICATION.md`, and `scripts/verify-history` alongside the
+extended `scripts/verify-reports`.
+
+**Net sales = gross sales − discounts − sales returns, and gross profit = NET
+SALES − COGS.** The old definition used revenue − COGS, so PB1 and service
+charge — money collected on somebody else's behalf — inflated every margin by
+whatever the tariff was. Gross sales deliberately keep a receipt that was later
+refunded IN, and the return line takes it out again: a refund is then visible
+instead of the day quietly shrinking. Identically, gross − discounts − returns
+== subtotal − discount over the orders `revenue` already counts, which is why
+both are asserted on every slice.
+
+**"Refunded amount" and "sales returns" are two different numbers, and neither
+substitutes for the other.** The return is the sale that came back
+(subtotal − discount); the refunded amount is the money handed over, tax
+included. A full refund of a 15.000 sale with 1.500 PB1 returns 16.500 and
+reverses 15.000. `verify-history`'s Bintaro case exists for exactly this.
+
+**`anomaly_count` flags arithmetic that does not close, never an honest partial
+refund.** The first cut used `refunded_amount IS DISTINCT FROM total`, which
+flagged every ordinary full refund, because a NULL there MEANS "the whole
+total". It is now: total ≠ subtotal − discount + tax + service charge, or a
+refund larger than the sale. Flagged, listed by
+`justclick diagnostics reports`, and never repaired — F1 does not rewrite a
+receipt to make a report tidy.
+
+**The category split and the product-inside-category split share ONE read and
+ONE allocation** (`writeCategoryAndProduct`). The order's discount goes to its
+categories, then each category's share to the products inside it. Two separate
+queries land a rupiah apart on any order whose split has a remainder, and a
+month of those is a breakdown that does not add up to its own total.
+`verify-reports` checks the invariant — that every dimension sums to net sales
+— rather than recomputing the largest-remainder split a second time, which
+would only prove the script agrees with itself.
+
+**The weekday comes from the BUSINESS date, in SQL, with no timezone applied.**
+The business date is already the merchant's trading day; converting it again
+moves a Saturday's late sales into Sunday. The `days` column says how many of
+each weekday actually traded, so a range that is not a whole number of weeks
+can be read honestly.
+
+**Cost and profit are removed from the RESULT, never hidden by a template.**
+`Report.WithoutCostData` clones its slices before zeroing — a `Report` value
+copies slice HEADERS, so blanking in place would also blank the caller's copy.
+The till's `/till/reports/summary` goes further: the cost keys are ABSENT from
+the body, not zeroed, so nothing downstream can read a zero as a figure.
+`/till/reports/sales` is the only place they exist, behind
+`viewFinancialReports`.
+
+**History paging is keyset and the cursor is bound to its filter.** A list
+people scroll while tills are still selling would repeat and skip rows under
+OFFSET. The cursor carries the full sort key — business date, the millisecond,
+then the UUID, because a v4 UUID orders at random — and the business date leads
+it now that a page can span days. A cursor minted by the old single-day
+contract has no date in it and is refused with `invalid_cursor` rather than
+guessed at.
+
+**A scope a cashier may not have is REFUSED, not narrowed.** `resolveHistory`
+answers `forbidden_scope`, `forbidden_range` or `forbidden_cashier`; handing
+back a narrower list unlabelled makes a colleague look like they sold nothing.
+`day` combined with `from`/`to` is `ambiguous_range` for the same reason. The
+response echoes the scope and range the server actually applied, so a till can
+say which list it is showing.
+
+**`internal/domain/history` never writes.** A receipt is immutable once printed
+and a closed session keeps its snapshot; correcting either happens on the till,
+where the person and the drawer are. The Backoffice screens over it offer no
+void and no refund, and that is a product decision, not a stage of work.
+
+**A session's receipts are read WITHOUT a date range.** A shift can run past
+midnight and own receipts on two business dates; bounding by one drops half of
+them. Receipts whose timestamp is later than the closing snapshot are listed
+separately (`AfterClose`) — a counted drawer is not rewritten.
+
+**The backfill is the durable markers, and nothing else.** `QueuePending`
+drains `report_dirty_slices` a hundred slices per merchant per minute; progress
+lives only in those markers, so an interrupted backfill resumes rather than
+restarting, and an overlapping sweep enqueues nothing new (the slice job key is
+unique). There is deliberately no active-outlet predicate: a closed branch
+still has years of sales, and leaving them at calculation version 1 would make
+every whole-chain report permanently incomplete. A report counts the version-1
+slices in range and says the waterfall is not final yet.
+
+**The Device API was 2.7.0 here** (Fase 1), additive: `/till/orders` keeps `day` and
+`before`, and the master-data feed schema is unchanged at version 1. Fase 3 made
+it 2.8.0 — see the pricing section below.
+
+## Pricing, roles and business settings (Fase 3 paritas) — what must stay true
+
+Plan: `../docs/RENCANA_IMPLEMENTASI_FASE_3.md`; evidence:
+`../docs/FASE_3_VERIFICATION.md`.
+
+**One pricing engine, written twice, held together by shared vectors.**
+`internal/domain/pricing` (Go, no DB) and `mobile/lib/core/pricing/pricing.dart`
+compute the same thing from the same `Input`. `testdata/pricing/*.json` at the
+REPOSITORY ROOT is the contract: both `vectors_test` files read every file and
+fail when a file is added that the other side does not know. Change the engine
+on one side only and CI goes red on the other; both workflows watch
+`testdata/**`. Money is integer rupiah, rates are basis points, products use
+`big.Int` / `BigInt` so nothing rounds through a float. Version 1 is an EXACT
+port of the old Flutter cart math (share floors, no remainder, no rounding) and
+exists so one vector format covers both; the server never recomputes a v1
+receipt. Allocation is Hamilton largest-remainder (`pricing.Allocate`) — NOT
+"whole remainder to the largest line", which can hand a line more than its own
+weight.
+
+**Ingest refuses only arithmetic that does not close; it FLAGS what does not
+reproduce.** The header equation is
+`total = subtotal − discount + tax − tax_included + service_charge + rounding`
+with `0 ≤ tax_included ≤ tax`; a pre-F3 till sends neither new term, so its
+check is the old one. A version 1 receipt carrying a snapshot, included tax or
+rounding is refused. A version 2 receipt needs its snapshot and a full line
+breakdown; each line must satisfy `net = unit_price·qty − line_discount −
+bill_share − tax_included`, and the lines must sum to the header. Then
+`pricing.Compute(snapshot)` is run: a different answer sets
+`orders.pricing_mismatch` (written at insert only, part of the immutable
+revision) and counts as a report anomaly. **Never turn that into a refusal** —
+the customer paid what the receipt says, and an offline till cannot re-price.
+
+**Device capabilities gate what an old app cannot read.**
+`X-Device-Capabilities` (`pricing-v2`, `roles-v1`; unknown tokens dropped) is
+recorded on `devices.capabilities` only when the set CHANGES, and never touches
+`updated_at` (that is the device revision a till polls). An absent header on a
+`/sync/*` route is an old build and records the empty set; other routes leave
+it alone. `devices.IncompatibleDevices` is the one query behind every gate:
+`settings.SetPricingModel` (per outlet, locks the outlet row) and custom-role
+assignment (`staff`, tenant-wide, because the employee feed is company-wide and
+an old till reads an unknown role as a cashier who may sell). Activation of an
+old build is refused while either model is on. The Backoffice devices page
+marks active devices that lack a capability ("perlu update").
+
+**Roles: a row for identity, code for system permissions.** `roles` is seeded
+with the three system rows by a trigger on `tenants` (every fixture and
+`tenancy.Provision` get them for free). System roles take their permissions
+from `auth/permission.go`, so a permission added later reaches the owner
+without a reseed; custom roles store a list and unknown names are dropped when
+read, never granted. `employees.role` is DERIVED from `role_id` by trigger
+(`custom` for a custom role), so every existing `role = 'owner'` lookup still
+works. An editor may grant only what they hold plus the till set; only an owner
+makes owners; nobody edits their own role. The Backoffice staff form posts a
+role row id, and still accepts a system role key.
+
+**Business and outlet settings.** `business_settings` has one row per merchant
+and it exists only once the owner has SAVED it — a till treats "no row" as "not
+configured" and keeps its own preferences (D8). `outlet_settings` overrides it
+field by field: NULL inherits, 0 is a real override. The outlet's sales-type
+and payment-group assignment ride on `outlet_settings` as arrays instead of two
+join feeds (no rows = everything active). Nine feeds were added — `roles`,
+`business_settings`, `sales_types`, `payment_methods`, `payment_groups`,
+`discounts`, `outlet_settings`, `product_sales_type_prices`,
+`outlet_product_sales_type_prices` — for **27** in all. `Entity.Singleton` and
+`Entity.SystemRows` tell `syncfixture` and `verify-sync` what a merchant starts
+with.
+
+**`payment_method` on the wire stays the KIND** (`cash`, `card`, `qris`,
+`ewallet`, `transfer`, `other`), so every drawer expectation that compares to
+`'cash'` is unchanged. The method's own id and name travel beside it, and
+`reporting.PaymentLabel` prefers the name.
+
+**Timezone is per merchant, limited to WIB/WITA/WIT.** `tenants.legacy_timezone`
+froze the zone every pre-F3 order was dated in; `hourlySQL` uses an order's own
+`tz_offset_minutes` and falls back to that frozen zone, so recomputing an old
+slice never moves its hours. A change marks today's slices dirty.
+
+**Reports.** Net sales are `subtotal − discount − tax_included` everywhere
+(waterfall, anomalies, history, sessions); a version 2 order's category,
+product and brand net read each line's `net_amount`, because item discounts
+are not proportional. Rounding is revenue, never sales. Migration 035 added
+`tax_included`/`rounding` to the daily rollup plus sales-type and payment-method
+rollups, and marked every historical slice dirty; `calculation_version` did not
+move (only v2 receipts, which did not exist before, read differently).
+
+**The Device API is 2.8.0**, additive. `scripts/verify-pricing` is the live
+gate: capability recording, the v2 refusal and release, v2 receipts accepted /
+flagged / refused, and a report whose waterfall closes with included tax and
+rounding.
 
 ## Floor plan and table status (Fase 6)
 
